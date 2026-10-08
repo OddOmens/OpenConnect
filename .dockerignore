@@ -1,0 +1,16 @@
+node_modules
+.next
+*.tsbuildinfo
+.git
+.gitignore
+.claude
+.DS_Store
+README.md
+
+# Personal data stays out of the image; it's mounted at runtime instead.
+.env
+.env.*
+data/
+keys/
+*.p8
+*.pem

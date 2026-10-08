@@ -1,0 +1,21 @@
+# Dependencies & build output
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# Personal data: never commit
+.env
+.env.*
+!.env.example
+data/
+keys/*
+!keys/.gitkeep
+*.p8
+*.pem
+
+# Local tooling
+.claude/
+.DS_Store
+npm-debug.log*

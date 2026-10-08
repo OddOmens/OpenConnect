@@ -1,0 +1,21 @@
+# docker compose up -d   →   http://localhost:3000
+# Configure via a .env file next to this one (see .env.example) or in the dashboard's Settings.
+services:
+  dashboard:
+    build: .
+    image: openconnect:latest
+    container_name: openconnect
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      # SQLite database + settings: survives rebuilds and upgrades.
+      - ./data:/app/data
+      # Drop AuthKey_<KEY_ID>.p8 in here; mounted read-only.
+      - ${ASC_KEYS_DIR_HOST:-./keys}:/keys:ro
+    environment:
+      ASC_KEY_ID: ${ASC_KEY_ID:-}
+      ASC_ISSUER_ID: ${ASC_ISSUER_ID:-}
+      ASC_VENDOR_NUMBER: ${ASC_VENDOR_NUMBER:-}
+      ASC_PRIVATE_KEY_PATH: ${ASC_PRIVATE_KEY_PATH:-}
+      ASC_KEYS_DIR: /keys
+    restart: unless-stopped

@@ -9,6 +9,7 @@
 - A startup warning when the password is off or `OPENCONNECT_PASSWORD` is too short.
 - Security policy, contributing guide, issue templates and CI.
 - Dependabot updates for npm, the Docker base image and GitHub Actions.
+- Published Docker images for Intel and ARM at `ghcr.io/oddomens/openconnect`. `docker compose up -d` now pulls the image, and `--build` builds from source.
 - Licensed under MIT with the Commons Clause: free to use, modify and share; not to be sold.
 
 ### Changed

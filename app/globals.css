@@ -68,6 +68,18 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Native controls (selects, scrollbars, date pickers) follow the theme too. */
+  :root {
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+  }
+  /* Thin scrollbars in the theme's border color instead of the bright system default. */
+  * {
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
 }
 
 @layer utilities {

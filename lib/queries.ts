@@ -1,5 +1,5 @@
 import { getDb } from './db';
-import { addDays, daysBetween, pacificToday } from './dates';
+import { addDays, daysBetween, pacificToday, previousRange } from './dates';
 
 export interface Filter {
   appId?: string;   // undefined = all visible apps
@@ -11,12 +11,19 @@ function appClause(appId: string | undefined, col = 'apple_id'): [string, any[]]
   return appId ? [`${col} = ?`, [appId]] : [`${col} IN (SELECT apple_id FROM apps WHERE hidden = 0)`, []];
 }
 
-/** Daily rows by date; monthly rows (older history) by the month they belong to. */
-function salesWhere(f: Filter, includeMonthly = true): [string, any[]] {
+type Granularity = 'D' | 'M' | 'Y';
+
+/**
+ * Daily rows by date; monthly rows by the month they belong to; yearly remainders
+ * only when the range starts on or before Jan 1 of their year. `coarsest` drops
+ * rows that can't be split finely enough for the view (e.g. yearly rows in a monthly chart).
+ */
+function salesWhere(f: Filter, coarsest: Granularity = 'Y'): [string, any[]] {
   const [app, params] = appClause(f.appId, 's.apple_id');
   const parts = [app];
   const p = [...params];
-  if (!includeMonthly) parts.push(`s.granularity = 'D'`);
+  if (coarsest === 'D') parts.push(`s.granularity = 'D'`);
+  if (coarsest === 'M') parts.push(`s.granularity IN ('D', 'M')`);
   if (f.start) {
     parts.push(`(CASE WHEN s.granularity = 'M' THEN substr(s.date, 1, 7) >= substr(?, 1, 7) ELSE s.date >= ? END)`);
     p.push(f.start, f.start);
@@ -37,6 +44,28 @@ const SUMS = `
   COALESCE(SUM(CASE WHEN s.category = 'iap' THEN s.units END), 0) AS iap,
   COALESCE(SUM(${PROCEEDS_USD}), 0) AS proceeds_usd`;
 
+// App Store analytics: impressions are list appearances; product page views exclude other page types.
+const ENGAGEMENT_SUMS = `
+  COALESCE(SUM(CASE WHEN lower(e.event) = 'impression' THEN e.counts END), 0) AS impressions,
+  COALESCE(SUM(CASE WHEN lower(e.event) = 'page view' AND lower(e.page_type) = 'product page' THEN e.counts END), 0) AS page_views`;
+
+/** Same rules as salesWhere, for the engagement table (which has no yearly rows). */
+function engagementWhere(f: Filter, coarsest: 'D' | 'M' = 'M'): [string, any[]] {
+  const [app, params] = appClause(f.appId, 'e.apple_id');
+  const parts = [app];
+  const p = [...params];
+  if (coarsest === 'D') parts.push(`e.granularity = 'D'`);
+  if (f.start) {
+    parts.push(`(CASE WHEN e.granularity = 'M' THEN substr(e.date, 1, 7) >= substr(?, 1, 7) ELSE e.date >= ? END)`);
+    p.push(f.start, f.start);
+  }
+  if (f.end) {
+    parts.push(`e.date <= ?`);
+    p.push(f.end);
+  }
+  return [parts.join(' AND '), p];
+}
+
 export function currencyRate(currency: string): number {
   if (!currency || currency === 'USD') return 1;
   const row = getDb().prepare(`SELECT per_usd FROM fx_rates WHERE currency = ?`).get(currency) as { per_usd: number } | undefined;
@@ -49,17 +78,23 @@ export interface Totals {
   updates: number;
   iap: number;
   proceeds: number;
+  impressions: number;
+  page_views: number;
 }
 
 function totals(f: Filter, rate: number): Totals {
   const [where, params] = salesWhere(f);
   const r = getDb().prepare(`SELECT ${SUMS} FROM sales s ${FX_JOIN} WHERE ${where}`).get(...params) as any;
+  const [eWhere, eParams] = engagementWhere(f);
+  const e = getDb().prepare(`SELECT ${ENGAGEMENT_SUMS} FROM engagement e WHERE ${eWhere}`).get(...eParams) as any;
   return {
     first_time: r.first_time,
     redownloads: r.redownloads,
     updates: r.updates,
     iap: r.iap,
     proceeds: r.proceeds_usd * rate,
+    impressions: e.impressions,
+    page_views: e.page_views,
   };
 }
 
@@ -68,22 +103,38 @@ export function dataBounds(appId?: string): { first: string | null; last: string
   return getDb().prepare(`SELECT MIN(s.date) AS first, MAX(s.date) AS last FROM sales s WHERE ${app}`).get(...params) as any;
 }
 
-function bucketExpr(granularity: string) {
-  if (granularity === 'month') return `substr(s.date, 1, 7) || '-01'`;
-  if (granularity === 'week') return `date(s.date, '-6 days', 'weekday 1')`;
-  return 's.date';
+export type HistoryGranularity = 'day' | 'week' | 'month' | 'year';
+
+function bucketExpr(granularity: HistoryGranularity, col = 's.date') {
+  if (granularity === 'year') return `substr(${col}, 1, 4) || '-01-01'`;
+  if (granularity === 'month') return `substr(${col}, 1, 7) || '-01'`;
+  if (granularity === 'week') return `date(${col}, '-6 days', 'weekday 1')`;
+  return col;
 }
 
-function history(f: Filter, granularity: 'day' | 'week' | 'month', rate: number) {
-  // Monthly reports can't be split into days/weeks, so they only show in the monthly view.
-  const [where, params] = salesWhere(f, granularity === 'month');
+function bucketOf(granularity: HistoryGranularity, d: string) {
+  if (granularity === 'year') return d.slice(0, 4) + '-01-01';
+  if (granularity === 'month') return d.slice(0, 7) + '-01';
+  return addDays(d, -((new Date(d + 'T00:00:00Z').getUTCDay() + 6) % 7));
+}
+
+function history(f: Filter, granularity: HistoryGranularity, rate: number) {
+  // Monthly and yearly reports can't be split further, so they only show in views at least that coarse.
+  const coarsest: Granularity = granularity === 'year' ? 'Y' : granularity === 'month' ? 'M' : 'D';
+  const [where, params] = salesWhere(f, coarsest);
   const rows = getDb()
     .prepare(`SELECT ${bucketExpr(granularity)} AS date, ${SUMS} FROM sales s ${FX_JOIN} WHERE ${where} GROUP BY 1 ORDER BY 1`)
     .all(...params) as any[];
+  const [eWhere, eParams] = engagementWhere(f, coarsest === 'D' ? 'D' : 'M');
+  const eRows = getDb()
+    .prepare(`SELECT ${bucketExpr(granularity, 'e.date')} AS date, ${ENGAGEMENT_SUMS} FROM engagement e WHERE ${eWhere} GROUP BY 1 ORDER BY 1`)
+    .all(...eParams) as any[];
 
   const byDate = new Map(rows.map((r) => [r.date, r]));
-  const first = f.start || rows[0]?.date;
-  const last = f.end || rows[rows.length - 1]?.date;
+  const engagementByDate = new Map(eRows.map((r) => [r.date, r]));
+  const dates = [...byDate.keys(), ...engagementByDate.keys()].sort();
+  const first = f.start || dates[0];
+  const last = f.end || dates[dates.length - 1];
   if (!first || !last) return [];
 
   // Zero-fill so gaps show as gaps, not as interpolated lines.
@@ -92,10 +143,7 @@ function history(f: Filter, granularity: 'day' | 'week' | 'month', rate: number)
   else {
     const seen = new Set<string>();
     for (const d of daysBetween(first, last)) {
-      const key =
-        granularity === 'month'
-          ? d.slice(0, 7) + '-01'
-          : addDays(d, -((new Date(d + 'T00:00:00Z').getUTCDay() + 6) % 7));
+      const key = bucketOf(granularity, d);
       if (!seen.has(key)) {
         seen.add(key);
         buckets.push(key);
@@ -104,12 +152,15 @@ function history(f: Filter, granularity: 'day' | 'week' | 'month', rate: number)
   }
   return buckets.map((date) => {
     const r = byDate.get(date);
+    const e = engagementByDate.get(date);
     return {
       date,
       first_time: r?.first_time ?? 0,
       redownloads: r?.redownloads ?? 0,
       updates: r?.updates ?? 0,
       iap: r?.iap ?? 0,
+      impressions: e?.impressions ?? 0,
+      page_views: e?.page_views ?? 0,
       proceeds: (r?.proceeds_usd ?? 0) * rate,
     };
   });
@@ -219,28 +270,56 @@ function subscriptions(f: Filter, rate: number) {
   return { events, active, bySubscription, trend };
 }
 
-export function dashboard(f: Filter, granularity: 'day' | 'week' | 'month', currency: string, compare: boolean) {
+export function dashboard(f: Filter, granularity: HistoryGranularity, currency: string, compare: boolean, range: string | null = null) {
   const rate = currencyRate(currency);
   let previous: Totals | null = null;
   if (compare && f.start) {
-    const end = f.end || addDays(pacificToday(), -1);
-    const len = daysBetween(f.start, end).length;
-    previous = totals({ appId: f.appId, start: addDays(f.start, -len), end: addDays(f.start, -1) }, rate);
+    const prev = previousRange(range, f.start, f.end || addDays(pacificToday(), -1));
+    const prevStart = prev.start;
+    // Before the first daily/monthly row, history only exists as yearly totals, which can't be
+    // cut to an arbitrary window: comparing against them would be wrong, so don't compare.
+    const fineFrom = (getDb().prepare(`SELECT MIN(date) AS d FROM sales WHERE granularity IN ('D', 'M')`).get() as { d: string | null }).d;
+    if (fineFrom && prevStart >= fineFrom) {
+      previous = totals({ appId: f.appId, start: prev.start, end: prev.end }, rate);
+    }
   }
   const [where, params] = salesWhere(f);
-  const monthlyRows = getDb()
-    .prepare(`SELECT COUNT(*) AS n FROM sales s WHERE ${where} AND s.granularity = 'M'`)
-    .get(...params) as { n: number };
+  // Earliest daily/monthly row in range: everything before it only exists as coarser totals.
+  const coarse = getDb()
+    .prepare(`
+      SELECT MAX(s.granularity = 'M') AS monthly, MAX(s.granularity = 'Y') AS yearly,
+             MIN(CASE WHEN s.granularity = 'D' THEN s.date END) AS daily_from,
+             MIN(CASE WHEN s.granularity IN ('D', 'M') THEN s.date END) AS monthly_from
+      FROM sales s WHERE ${where}`)
+    .get(...params) as { monthly: number | null; yearly: number | null; daily_from: string | null; monthly_from: string | null };
+
+  // Impressions only exist once Apple has generated the analytics reports (1-2 days after they're requested).
+  const imported = (getDb().prepare(`SELECT COUNT(*) AS n FROM analytics_instances`).get() as { n: number }).n;
 
   return {
     totals: totals(f, rate),
     previous,
+    engagementPending: imported === 0,
     history: history(f, granularity, rate),
-    hasMonthlyHistory: monthlyRows.n > 0,
+    coarseHistory: {
+      monthly: !!coarse.monthly,
+      yearly: !!coarse.yearly,
+      dailyFrom: coarse.daily_from,
+      monthlyFrom: coarse.monthly_from,
+    },
     territories: territories(f, rate),
     breakdowns: breakdowns(f, rate),
     subscriptions: subscriptions(f, rate),
   };
+}
+
+/** Per-app sales totals in range, best first (for the All Apps share card). */
+export function appLeaderboard(f: Filter, currency: string) {
+  const rate = currencyRate(currency);
+  const [where, params] = salesWhere(f);
+  return (getDb()
+    .prepare(`SELECT s.apple_id, ${SUMS} FROM sales s ${FX_JOIN} WHERE ${where} GROUP BY s.apple_id ORDER BY first_time DESC`)
+    .all(...params) as any[]).map((r) => ({ apple_id: r.apple_id as string, first_time: r.first_time as number, proceeds: r.proceeds_usd * rate }));
 }
 
 // ---------------------------------------------------------------------------
@@ -366,6 +445,13 @@ export function reviews(opts: { appId?: string; country?: string; rating?: numbe
   return { items, total, distribution, countries };
 }
 
+/** Months that can be picked as a range: those with daily or monthly sales data, newest first. */
+export function availableMonths(): string[] {
+  return (getDb()
+    .prepare(`SELECT DISTINCT substr(date, 1, 7) AS m FROM sales WHERE granularity IN ('D', 'M') ORDER BY m DESC`)
+    .all() as { m: string }[]).map((r) => r.m);
+}
+
 // ---------------------------------------------------------------------------
 // Apps
 // ---------------------------------------------------------------------------
@@ -377,7 +463,7 @@ export function listApps() {
       SELECT a.*,
         COALESCE((SELECT SUM(units) FROM sales s WHERE s.apple_id = a.apple_id AND s.category = 'download'), 0) AS first_time_downloads,
         COALESCE((SELECT SUM(units) FROM sales s WHERE s.apple_id = a.apple_id AND s.category IN ('download', 'redownload')), 0) AS total_downloads
-      FROM apps a ORDER BY a.hidden ASC, total_downloads DESC, a.name ASC`)
+      FROM apps a ORDER BY a.hidden ASC, first_time_downloads DESC, a.name ASC`)
     .all()
     .map((a: any) => ({ ...a, hidden: !!a.hidden }));
 }

@@ -15,7 +15,7 @@ interface SectionProps {
   children: React.ReactNode
 }
 
-/** Card wrapper used by every dashboard section; the eye button hides the section (restore it from Customize). */
+/** Card wrapper used by every dashboard section; the eye button hides the section (restore it in Settings → Customize). */
 export function Section({ title, description, actions, onHide, className, contentClassName, children }: SectionProps) {
   return (
     <Card className={cn("overflow-hidden", className)}>
@@ -93,7 +93,7 @@ export function Stars({ value }: { value: number | null }) {
     <span className="inline-flex items-center gap-1.5 tabular-nums">
       <span className="relative inline-block text-[13px] leading-none tracking-[1px] text-muted-foreground/40">
         ★★★★★
-        <span className="absolute inset-0 overflow-hidden text-amber-400" style={{ width: `${(value / 5) * 100}%` }}>
+        <span className="absolute inset-0 overflow-hidden text-amber-600 dark:text-amber-400" style={{ width: `${(value / 5) * 100}%` }}>
           ★★★★★
         </span>
       </span>

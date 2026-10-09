@@ -80,11 +80,16 @@ const CHART_FEED: Record<ChartId, string> = {
 
 const OVERALL_FEED: Partial<Record<ChartId, string>> = { topfree: 'top-free', toppaid: 'top-paid' };
 
+/** False for charts served by the newer marketing-tools feed, which isn't rate limited. */
+export function isThrottledChart(chart: ChartId, genreId: string): boolean {
+  return !((!genreId || genreId === '0') && OVERALL_FEED[chart]);
+}
+
 /** Returns app ids in chart order (index 0 = #1). Empty if the storefront has no such chart. */
 export async function fetchChart(country: string, chart: ChartId, genreId: string): Promise<string[]> {
   const overall = !genreId || genreId === '0';
   // The newer marketing-tools feed covers the overall free/paid charts and isn't throttled.
-  if (overall && OVERALL_FEED[chart]) {
+  if (!isThrottledChart(chart, genreId)) {
     const body = await getJson(
       `https://rss.marketingtools.apple.com/api/v2/${country.toLowerCase()}/apps/${OVERALL_FEED[chart]}/100/apps.json`
     );

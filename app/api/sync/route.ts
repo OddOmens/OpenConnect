@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
+import { guard } from '@/lib/auth';
 import { getCoverage, getJobStates, lastRun, resetSyncState, startJob } from '@/lib/sync';
 import { getSyncConfig } from '@/lib/config';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
+  const denied = guard(request);
+  if (denied) return denied;
   try {
     const states = getJobStates();
     return NextResponse.json({
@@ -20,6 +23,8 @@ export async function GET() {
 
 /** Body: { job?: 'asc' | 'store' | 'all', reset?: 'errors' | 'all' } */
 export async function POST(request: Request) {
+  const denied = guard(request);
+  if (denied) return denied;
   try {
     const body = await request.json().catch(() => ({}));
     if (body.reset === 'errors' || body.reset === 'all') {

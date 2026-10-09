@@ -72,7 +72,6 @@ export function getSyncConfig(): SyncConfig {
 
 export function setSyncConfig(patch: Partial<SyncConfig>) {
   const next = { ...getSyncConfig(), ...patch };
-  next.backfillYears = Math.max(0, Math.min(5, Math.round(Number(next.backfillYears) || 0)));
   next.autoSyncHours = Math.max(0, Number(next.autoSyncHours) || 0);
   next.storeSyncHours = Math.max(0, Number(next.storeSyncHours) || 0);
   setSetting('sync_config', JSON.stringify(next));

@@ -188,7 +188,7 @@ docker compose up -d --build
 
 ## Run without Docker
 
-Requires Node.js 20+.
+Requires Node.js 22+.
 
 ```bash
 npm install
@@ -211,7 +211,7 @@ Data goes to `./data` (or `DATA_DIR`). The setup code is printed in the terminal
 
 ## Tech
 
-Next.js (App Router) · React · TypeScript · Tailwind CSS · Radix UI · Recharts · SQLite (better-sqlite3) · Satori + resvg for share cards.
+Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS · Radix UI · Recharts · SQLite (better-sqlite3) · Satori + resvg for share cards.
 
 ## Contributing
 

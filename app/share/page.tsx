@@ -3,7 +3,7 @@ import { requireSignIn } from '@/lib/auth-page'
 
 export const dynamic = 'force-dynamic'
 
-export default function SharePage() {
-  requireSignIn()
+export default async function SharePage() {
+  await requireSignIn()
   return <ShareStudio />
 }

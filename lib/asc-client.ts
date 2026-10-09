@@ -23,7 +23,7 @@ export function keyDirs(): string[] {
   return [
     process.env.ASC_KEYS_DIR,
     '/keys',
-    path.join(process.cwd(), 'keys'),
+    path.join(/*turbopackIgnore: true*/ process.cwd(), 'keys'),
     path.join(os.homedir(), '.appstoreconnect', 'private_keys'),
   ].filter(Boolean) as string[];
 }

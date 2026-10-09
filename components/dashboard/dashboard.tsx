@@ -114,7 +114,7 @@ export function Dashboard({ initial }: { initial: InitialData }) {
   // Persist preference changes (debounced) so they survive reloads and live in the data volume.
   // Only the changed fields are sent, so this tab can't overwrite settings saved elsewhere
   // (e.g. the share page's choices).
-  const saveTimer = useRef<ReturnType<typeof setTimeout>>()
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const pendingPrefs = useRef<Partial<UiPrefs>>({})
   const updatePrefs = useCallback((patch: Partial<UiPrefs>) => {
     setPrefs((prev) => ({ ...prev, ...patch }))

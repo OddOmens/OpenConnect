@@ -6,8 +6,8 @@ export const dynamic = 'force-dynamic'
 
 // Rendered on the server with the first view's data already in the HTML: the dashboard
 // shows its numbers without waiting for any API call. All of it comes from the local DB.
-export default function DashboardPage() {
-  requireSignIn()
+export default async function DashboardPage() {
+  await requireSignIn()
   const settings = settingsResponse()
   const { prefs } = settings
   const initial = {

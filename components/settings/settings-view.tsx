@@ -43,7 +43,7 @@ export function SettingsView({ initial, apps: initialApps, version }: { initial:
   const [prefs, setPrefs] = React.useState(initial.prefs)
   const [saved, setSaved] = React.useState<"saving" | "saved" | null>(null)
   const pending = React.useRef<Partial<UiPrefs>>({})
-  const timer = React.useRef<ReturnType<typeof setTimeout>>()
+  const timer = React.useRef<ReturnType<typeof setTimeout>>(undefined)
   const updatePrefs = React.useCallback((patch: Partial<UiPrefs>) => {
     setPrefs((p) => ({ ...p, ...patch }))
     if (patch.theme) applyTheme(patch.theme)

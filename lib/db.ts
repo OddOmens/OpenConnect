@@ -7,7 +7,8 @@ const SCHEMA_VERSION = 2;
 const g = globalThis as unknown as { __dashboardDb?: Database.Database };
 
 export function dataDir(): string {
-  return process.env.DATA_DIR || path.join(process.cwd(), 'data');
+  // Resolved at runtime; the ignore comment keeps the build from tracing (and copying) ./data.
+  return process.env.DATA_DIR || path.join(/*turbopackIgnore: true*/ process.cwd(), 'data');
 }
 
 function initDb(): Database.Database {
@@ -18,7 +19,7 @@ function initDb(): Database.Database {
 
   const db = new Database(path.join(dir, 'dashboard.db'));
   // Tighten files from older installs too: the database holds API settings and sessions.
-  const modes: [string, number][] = [[dir, 0o700], ...['dashboard.db', 'dashboard.db-wal', 'dashboard.db-shm'].map((f): [string, number] => [path.join(dir, f), 0o600])];
+  const modes: [string, number][] = [[dir, 0o700], ...['dashboard.db', 'dashboard.db-wal', 'dashboard.db-shm'].map((f): [string, number] => [path.join(/*turbopackIgnore: true*/ dir, f), 0o600])];
   for (const [file, mode] of modes) {
     try {
       fs.chmodSync(file, mode);

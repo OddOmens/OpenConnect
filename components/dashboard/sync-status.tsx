@@ -1,12 +1,14 @@
 "use client"
 
 import * as React from "react"
-import { AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react"
+import { AlertTriangle, CheckCircle2, ListChecks, RefreshCw } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { fmtDate } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import type { SyncReport } from "@/lib/sync-report"
+import { SyncReportDialog } from "./sync-report"
 
 type JobId = "asc" | "store"
 
@@ -22,7 +24,7 @@ interface JobState {
 
 interface Coverage {
   reportType: string
-  granularity: "D" | "M"
+  granularity: "D" | "M" | "Y"
   expected: number
   ok: number
   empty: number
@@ -34,17 +36,34 @@ interface Coverage {
   lastError: string | null
 }
 
+interface RunRecord {
+  id: number
+  trigger: string | null
+  started_at: string
+  finished_at: string
+  status: string
+  message: string
+  report: SyncReport | null
+}
+
 interface SyncStatusData {
   jobs: Record<JobId, JobState>
-  lastRuns: Record<JobId, { started_at: string; finished_at: string; status: string; message: string } | null>
+  lastRuns: Record<JobId, RunRecord | null>
   coverage: { reports: Coverage[] }
   config: { autoSyncHours: number; storeSyncHours: number }
 }
 
-/** Polls sync status; fast while a job runs, slow otherwise (to notice scheduled runs). */
+/**
+ * Polls sync status; fast while a job runs, slow otherwise (to notice scheduled runs).
+ * Runs started from this browser open a report of what changed when they finish.
+ */
 export function useSyncStatus(onJobFinished: (job: JobId) => void) {
   const [status, setStatus] = React.useState<SyncStatusData | null>(null)
+  const [reports, setReports] = React.useState<SyncReport[]>([])
   const prevRunning = React.useRef<Record<JobId, boolean>>({ asc: false, store: false })
+  // Jobs started here, with the id of the run that was latest when we asked (null = none yet).
+  const awaiting = React.useRef<Partial<Record<JobId, number | null>>>({})
+  const lastIds = React.useRef<Record<JobId, number | null>>({ asc: null, store: null })
   const finishedRef = React.useRef(onJobFinished)
   finishedRef.current = onJobFinished
 
@@ -53,10 +72,20 @@ export function useSyncStatus(onJobFinished: (job: JobId) => void) {
       const res = await fetch("/api/sync")
       if (!res.ok) return
       const data: SyncStatusData = await res.json()
+      const ready: SyncReport[] = []
       for (const id of ["asc", "store"] as JobId[]) {
+        const last = data.lastRuns[id]
+        lastIds.current[id] = last?.id ?? null
+        // A run can finish between two polls, so compare run ids rather than watch "running".
+        if (id in awaiting.current && !data.jobs[id].running && last && last.id !== awaiting.current[id]) {
+          delete awaiting.current[id]
+          if (last.report) ready.push(last.report)
+          if (!prevRunning.current[id]) finishedRef.current(id)
+        }
         if (prevRunning.current[id] && !data.jobs[id].running) finishedRef.current(id)
         prevRunning.current[id] = data.jobs[id].running
       }
+      if (ready.length) setReports((r) => [...r, ...ready])
       setStatus(data)
     } catch {
       // server restarting; try again next tick
@@ -72,6 +101,9 @@ export function useSyncStatus(onJobFinished: (job: JobId) => void) {
 
   const start = React.useCallback(
     async (job: JobId | "all", reset?: "errors" | "all") => {
+      for (const id of ["asc", "store"] as JobId[]) {
+        if (job === id || job === "all") awaiting.current[id] = lastIds.current[id]
+      }
       await fetch("/api/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -82,18 +114,29 @@ export function useSyncStatus(onJobFinished: (job: JobId) => void) {
     [refresh]
   )
 
-  return { status, start, refresh }
+  const showReport = React.useCallback((report: SyncReport) => setReports([report]), [])
+  const closeReports = React.useCallback(() => setReports([]), [])
+
+  return { status, start, refresh, reports, showReport, closeReports }
 }
 
 const LABELS: Record<string, string> = {
   "SALES:D": "Daily sales",
-  "SALES:M": "Monthly sales (history)",
+  "SALES:M": "Monthly sales",
+  "SALES:Y": "Yearly sales (history)",
   "SUBSCRIPTION_EVENT:D": "Subscription events",
   "SUBSCRIPTION:D": "Active subscriptions",
 }
 
 export function SyncStatusButton({ sync }: { sync: ReturnType<typeof useSyncStatus> }) {
-  const { status, start } = sync
+  const { status, start, reports, showReport, closeReports } = sync
+  const [open, setOpen] = React.useState(false)
+  // The report replaces this dialog rather than stacking on top of it.
+  const dialogOpen = open && reports.length === 0
+  const closeReport = () => {
+    setOpen(false)
+    closeReports()
+  }
   const asc = status?.jobs.asc
   const store = status?.jobs.store
   const running = asc?.running || store?.running
@@ -108,7 +151,9 @@ export function SyncStatusButton({ sync }: { sync: ReturnType<typeof useSyncStat
     : null
 
   return (
-    <Dialog>
+    <>
+    <SyncReportDialog reports={reports} onClose={closeReport} />
+    <Dialog open={dialogOpen} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="gap-2">
           {running ? (
@@ -146,6 +191,7 @@ export function SyncStatusButton({ sync }: { sync: ReturnType<typeof useSyncStat
               job={status.jobs.asc}
               last={status.lastRuns.asc}
               onRun={() => start("asc")}
+              onReport={showReport}
             />
             <JobCard
               title="Ratings & Rankings"
@@ -153,6 +199,7 @@ export function SyncStatusButton({ sync }: { sync: ReturnType<typeof useSyncStat
               job={status.jobs.store}
               last={status.lastRuns.store}
               onRun={() => start("store")}
+              onReport={showReport}
             />
 
             <div>
@@ -188,7 +235,7 @@ export function SyncStatusButton({ sync }: { sync: ReturnType<typeof useSyncStat
                 </table>
               </div>
               {status.coverage.reports.find((r) => r.lastError)?.lastError && (
-                <p className="mt-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+                <p className="mt-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-400">
                   {status.coverage.reports.find((r) => r.lastError)!.lastError}
                 </p>
               )}
@@ -216,17 +263,19 @@ export function SyncStatusButton({ sync }: { sync: ReturnType<typeof useSyncStat
         )}
       </DialogContent>
     </Dialog>
+    </>
   )
 }
 
 function JobCard({
-  title, subtitle, job, last, onRun,
+  title, subtitle, job, last, onRun, onReport,
 }: {
   title: string
   subtitle: string
   job: JobState
-  last: { finished_at: string; status: string; message: string } | null
+  last: RunRecord | null
   onRun: () => void
+  onReport: (report: SyncReport) => void
 }) {
   const pct = job.total ? (job.done / job.total) * 100 : 0
   const lines = (job.running ? job.errors : last?.message?.split("\n") || []).filter(Boolean)
@@ -256,6 +305,16 @@ function JobCard({
         <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
           {last.status === "ok" ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> : <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />}
           Last run {formatDistanceToNow(new Date(last.finished_at), { addSuffix: true })} ({fmtDate(last.finished_at, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })})
+          {last.report && (
+            <button
+              type="button"
+              onClick={() => onReport(last.report!)}
+              className="ml-auto inline-flex items-center gap-1 font-medium text-foreground underline-offset-2 hover:underline"
+            >
+              <ListChecks className="h-3.5 w-3.5" />
+              {last.report.changed ? "What changed" : "Report"}
+            </button>
+          )}
         </div>
       ) : (
         <div className="mt-3 text-xs text-muted-foreground">Never run</div>
@@ -263,7 +322,7 @@ function JobCard({
       {lines.length > 0 && (
         <ul className="mt-2 space-y-1 text-xs">
           {lines.map((l, i) => (
-            <li key={i} className={/^(Synced|Checked) /.test(l) ? "text-muted-foreground" : "text-amber-400"}>
+            <li key={i} className={/^(Synced|Checked) /.test(l) ? "text-muted-foreground" : "text-amber-600 dark:text-amber-400"}>
               {l}
             </li>
           ))}

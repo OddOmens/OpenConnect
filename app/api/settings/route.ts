@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
+import { guard } from '@/lib/auth';
 import {
-  credentialSources,
-  getCredentials,
   getSyncConfig,
   getUiPrefs,
   setSetting,
@@ -9,25 +8,15 @@ import {
   setUiPrefs,
 } from '@/lib/config';
 import { resetTokenCache } from '@/lib/asc-client';
+import { settingsResponse } from '@/lib/data';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
+  const denied = guard(request);
+  if (denied) return denied;
   try {
-    const creds = getCredentials();
-    return NextResponse.json({
-      credentials: {
-        key_id: creds.key_id,
-        issuer_id: creds.issuer_id,
-        private_key_path: creds.private_key_path,
-        vendor_number: creds.vendor_number,
-        // Never send the key itself back to the browser.
-        has_private_key: !!creds.private_key,
-      },
-      sources: credentialSources(),
-      sync: getSyncConfig(),
-      prefs: getUiPrefs(),
-    });
+    return NextResponse.json(settingsResponse());
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -35,10 +24,16 @@ export async function GET() {
 
 /** Body may contain any of: { credentials: {...}, sync: {...}, prefs: {...} } */
 export async function POST(request: Request) {
+  const denied = guard(request);
+  if (denied) return denied;
   try {
     const body = await request.json();
     const c = body.credentials;
     if (c && typeof c === 'object') {
+      // The key path is read as a file, so only accept .p8 files (not any file on the server).
+      if (typeof c.private_key_path === 'string' && c.private_key_path.trim() && !/\.p8$/i.test(c.private_key_path.trim())) {
+        return NextResponse.json({ error: 'The private key path must point to an AuthKey_….p8 file.' }, { status: 400 });
+      }
       for (const key of ['vendor_number', 'key_id', 'issuer_id', 'private_key_path'] as const) {
         if (typeof c[key] === 'string') setSetting(key, c[key].trim());
       }

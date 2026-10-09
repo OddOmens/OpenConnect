@@ -1,10 +1,12 @@
 import { getDb } from './db';
 import { getCredentials, getSyncConfig } from './config';
 import { AscError, ReportType, fetchApps, fetchCustomerReviews, fetchReport } from './asc-client';
-import { fetchChart, fetchUsdRates, lookupApps, mapLimit, StoreListing } from './itunes-client';
-import { addDays, daysBetween, monthsBetween, pacificToday, syncWindow, SyncWindow } from './dates';
+import { fetchChart, fetchUsdRates, isThrottledChart, lookupApps, mapLimit, StoreListing } from './itunes-client';
+import { addDays, daysBetween, monthsBetween, pacificToday, syncWindow, SyncWindow, yearsBetween } from './dates';
 import { TERRITORIES } from './territories';
 import type { ChartId } from './prefs';
+import { syncEngagement } from './analytics';
+import { buildReport, NO_FIGURES, Revision, salesFigures, SyncReport, takeSnapshot } from './sync-report';
 
 export type JobId = 'asc' | 'store';
 
@@ -21,7 +23,13 @@ export interface JobState {
   summary: string | null;
 }
 
-const g = globalThis as unknown as { __syncJobs?: Record<JobId, JobState> };
+const g = globalThis as unknown as { __syncJobs?: Record<JobId, JobState>; __syncRevisions?: Record<JobId, Revision[]> };
+
+/** Sales report dates replaced during the current run, for its change report. */
+function revisions(id: JobId): Revision[] {
+  g.__syncRevisions ??= { asc: [], store: [] };
+  return g.__syncRevisions[id];
+}
 
 function freshState(id: JobId): JobState {
   return { id, running: false, phase: '', done: 0, total: 0, startedAt: null, finishedAt: null, trigger: null, errors: [], summary: null };
@@ -41,8 +49,15 @@ export function startJob(id: JobId, trigger: string): boolean {
   const state = jobs()[id];
   if (state.running) return false;
   Object.assign(state, freshState(id), { running: true, startedAt: new Date().toISOString(), trigger });
+  revisions(id).length = 0;
 
   const db = getDb();
+  let before: ReturnType<typeof takeSnapshot> | null = null;
+  try {
+    before = takeSnapshot(id);
+  } catch (err) {
+    console.error(`[sync:${id}] snapshot failed`, err);
+  }
   const runId = db
     .prepare(`INSERT INTO job_runs (job, trigger, started_at, status) VALUES (?, ?, ?, 'running')`)
     .run(id, trigger, state.startedAt).lastInsertRowid;
@@ -54,25 +69,59 @@ export function startJob(id: JobId, trigger: string): boolean {
       console.error(`[sync:${id}]`, err);
     })
     .finally(() => {
-      state.running = false;
-      state.phase = 'done';
       state.finishedAt = new Date().toISOString();
       const status = state.errors.length ? 'error' : 'ok';
-      db.prepare(`UPDATE job_runs SET finished_at = ?, status = ?, message = ? WHERE id = ?`).run(
+      let report: SyncReport | null = null;
+      try {
+        if (before) {
+          report = buildReport(before, revisions(id), {
+            trigger, startedAt: state.startedAt, finishedAt: state.finishedAt, errors: state.errors.slice(0, 20),
+          });
+        }
+      } catch (err) {
+        console.error(`[sync:${id}] change report failed`, err);
+      }
+      revisions(id).length = 0;
+      db.prepare(`UPDATE job_runs SET finished_at = ?, status = ?, message = ?, report = ? WHERE id = ?`).run(
         state.finishedAt,
         status,
         [state.summary, ...state.errors].filter(Boolean).join('\n').slice(0, 4000),
+        report ? JSON.stringify(report) : null,
         runId
       );
+      // Reports are for looking back a little; older runs keep just their summary line.
+      db.prepare(`UPDATE job_runs SET report = NULL WHERE id < ? AND report IS NOT NULL`).run(Number(runId) - 100);
+      // Only now, so anyone who sees the job finish can already read its report.
+      state.running = false;
+      state.phase = 'done';
       console.log(`[sync:${id}] finished (${status}) ${state.summary || ''}`);
     });
   return true;
 }
 
-export function lastRun(id: JobId): { started_at: string; finished_at: string; status: string; message: string } | undefined {
-  return getDb()
-    .prepare(`SELECT started_at, finished_at, status, message FROM job_runs WHERE job = ? AND finished_at IS NOT NULL ORDER BY id DESC LIMIT 1`)
-    .get(id) as any;
+export interface RunRecord {
+  id: number;
+  trigger: string | null;
+  started_at: string;
+  finished_at: string;
+  status: string;
+  message: string;
+  report: SyncReport | null;
+}
+
+export function lastRun(id: JobId): RunRecord | undefined {
+  const row = getDb()
+    .prepare(`SELECT id, trigger, started_at, finished_at, status, message, report FROM job_runs
+              WHERE job = ? AND finished_at IS NOT NULL ORDER BY id DESC LIMIT 1`)
+    .get(id) as (Omit<RunRecord, 'report'> & { report: string | null }) | undefined;
+  if (!row) return undefined;
+  let report: SyncReport | null = null;
+  try {
+    report = row.report ? JSON.parse(row.report) : null;
+  } catch {
+    // written by an older version
+  }
+  return { ...row, report };
 }
 
 // ---------------------------------------------------------------------------
@@ -80,26 +129,33 @@ export function lastRun(id: JobId): { started_at: string; finished_at: string; s
 // ---------------------------------------------------------------------------
 
 function earliestRelease(): string | null {
-  const row = getDb().prepare(`SELECT MIN(substr(release_date, 1, 10)) AS d FROM apps WHERE release_date IS NOT NULL`).get() as any;
-  return row?.d || null;
+  // An app whose release date is unknown could predate the others, so then nothing is bounded.
+  const row = getDb()
+    .prepare(`SELECT MIN(substr(release_date, 1, 10)) AS d, COALESCE(SUM(release_date IS NULL), 0) AS unknown FROM apps`)
+    .get() as { d: string | null; unknown: number };
+  return row.unknown ? null : row.d;
 }
 
 function currentWindow(): SyncWindow {
-  return syncWindow(getSyncConfig().backfillYears, earliestRelease());
+  return syncWindow(earliestRelease());
 }
 
 interface ReportPlan {
   reportType: ReportType;
-  granularity: 'D' | 'M';
-  dates: string[]; // YYYY-MM-DD for D, YYYY-MM for M
+  granularity: 'D' | 'M' | 'Y';
+  dates: string[]; // YYYY-MM-DD for D, YYYY-MM for M, YYYY for Y
 }
+
+const FREQUENCY = { D: 'DAILY', M: 'MONTHLY', Y: 'YEARLY' } as const;
 
 function plans(window: SyncWindow, includeSubs: boolean): ReportPlan[] {
   const days = window.dailyStart <= window.latestDay ? daysBetween(window.dailyStart, window.latestDay) : [];
   const months = window.monthlyStart <= window.monthlyEnd ? monthsBetween(window.monthlyStart, window.monthlyEnd) : [];
+  const years = window.yearlyStart <= window.yearlyEnd ? yearsBetween(window.yearlyStart, window.yearlyEnd) : [];
   const out: ReportPlan[] = [
     { reportType: 'SALES', granularity: 'D', dates: days },
     { reportType: 'SALES', granularity: 'M', dates: months },
+    { reportType: 'SALES', granularity: 'Y', dates: years },
   ];
   if (includeSubs) {
     // Subscription reports are daily-only and kept for the same 365 days.
@@ -187,50 +243,88 @@ function skuMap(): Map<string, string> {
   return new Map(rows.map((r) => [r.sku, r.apple_id]));
 }
 
+// Columns shared by `sales` and `yearly_sales`.
+const SALES_COLUMNS = [
+  'apple_id', 'product_apple_id', 'sku', 'parent_sku', 'title', 'product_type', 'category', 'units',
+  'proceeds_per_unit', 'proceeds_currency', 'customer_price', 'customer_currency', 'country_code', 'device',
+  'app_version', 'promo_code', 'subscription', 'period',
+];
+
+function salesRow(r: Record<string, string>, skus: Map<string, string>) {
+  const productId = r['Apple Identifier'];
+  const parentSku = r['Parent Identifier'] || '';
+  return {
+    apple_id: (parentSku && skus.get(parentSku)) || productId,
+    product_apple_id: productId,
+    sku: r['SKU'] || null,
+    parent_sku: parentSku || null,
+    title: r['Title'] || null,
+    product_type: r['Product Type Identifier'] || null,
+    category: categorize(r['Product Type Identifier']),
+    units: int(r['Units']),
+    proceeds_per_unit: num(r['Developer Proceeds']),
+    proceeds_currency: r['Currency of Proceeds'] || 'USD',
+    customer_price: num(r['Customer Price']),
+    customer_currency: r['Customer Currency'] || null,
+    country_code: r['Country Code'] || null,
+    device: r['Device'] || null,
+    app_version: r['Version'] || null,
+    promo_code: r['Promo Code'] || null,
+    subscription: r['Subscription'] || null,
+    period: r['Period'] || null,
+  };
+}
+
+/**
+ * Yearly reports overlap the daily/monthly rows we already hold for that year.
+ * Store only the difference as 'Y' rows, grouped on every column that carries
+ * meaning, so any total over D + M + Y rows equals Apple's yearly figure.
+ * Rebuilt from scratch after each sync because the daily data underneath changes.
+ */
+export function rebuildYearlyRemainder() {
+  const db = getDb();
+  const keys = SALES_COLUMNS.filter((c) => !['sku', 'parent_sku', 'title', 'category', 'units'].includes(c));
+  const cols = SALES_COLUMNS.join(', ');
+  db.transaction(() => {
+    db.prepare(`DELETE FROM sales WHERE granularity = 'Y'`).run();
+    db.prepare(`
+      INSERT INTO sales (granularity, date, ${cols})
+      SELECT 'Y', year || '-01-01', ${SALES_COLUMNS.map((c) => (c === 'units' ? 'SUM(units)' : keys.includes(c) ? c : `MAX(${c})`)).join(', ')}
+      FROM (
+        SELECT year, ${cols} FROM yearly_sales
+        UNION ALL
+        SELECT substr(date, 1, 4), ${SALES_COLUMNS.map((c) => (c === 'units' ? '-units' : c)).join(', ')}
+        FROM sales WHERE granularity IN ('D', 'M') AND substr(date, 1, 4) IN (SELECT DISTINCT year FROM yearly_sales)
+      )
+      GROUP BY year, ${keys.join(', ')}
+      HAVING SUM(units) != 0`).run();
+  })();
+}
+
 function storeReport(plan: ReportPlan, date: string, rows: Record<string, string>[], skus: Map<string, string>) {
   const db = getDb();
   const day = plan.granularity === 'M' ? `${date}-01` : date;
 
-  if (plan.reportType === 'SALES') {
-    const insert = db.prepare(`
-      INSERT INTO sales (granularity, date, apple_id, product_apple_id, sku, parent_sku, title, product_type, category,
-        units, proceeds_per_unit, proceeds_currency, customer_price, customer_currency, country_code, device,
-        app_version, promo_code, subscription, period)
-      VALUES (@granularity, @date, @apple_id, @product_apple_id, @sku, @parent_sku, @title, @product_type, @category,
-        @units, @proceeds_per_unit, @proceeds_currency, @customer_price, @customer_currency, @country_code, @device,
-        @app_version, @promo_code, @subscription, @period)`);
+  if (plan.reportType === 'SALES' && plan.granularity === 'Y') {
+    const insert = db.prepare(
+      `INSERT INTO yearly_sales (year, ${SALES_COLUMNS.join(', ')}) VALUES (@year, ${SALES_COLUMNS.map((c) => '@' + c).join(', ')})`
+    );
+    db.transaction(() => {
+      db.prepare(`DELETE FROM yearly_sales WHERE year = ?`).run(date);
+      for (const r of rows) insert.run({ year: date, ...salesRow(r, skus) });
+    })();
+  } else if (plan.reportType === 'SALES') {
+    const insert = db.prepare(
+      `INSERT INTO sales (granularity, date, ${SALES_COLUMNS.join(', ')})
+       VALUES (@granularity, @date, ${SALES_COLUMNS.map((c) => '@' + c).join(', ')})`
+    );
     db.transaction(() => {
       db.prepare(`DELETE FROM sales WHERE granularity = ? AND date = ?`).run(plan.granularity, day);
       // A monthly report supersedes any daily rows that aged out of the daily window.
       if (plan.granularity === 'M') {
         db.prepare(`DELETE FROM sales WHERE granularity = 'D' AND substr(date, 1, 7) = ?`).run(date);
       }
-      for (const r of rows) {
-        const productId = r['Apple Identifier'];
-        const parentSku = r['Parent Identifier'] || '';
-        insert.run({
-          granularity: plan.granularity,
-          date: day,
-          apple_id: (parentSku && skus.get(parentSku)) || productId,
-          product_apple_id: productId,
-          sku: r['SKU'] || null,
-          parent_sku: parentSku || null,
-          title: r['Title'] || null,
-          product_type: r['Product Type Identifier'] || null,
-          category: categorize(r['Product Type Identifier']),
-          units: int(r['Units']),
-          proceeds_per_unit: num(r['Developer Proceeds']),
-          proceeds_currency: r['Currency of Proceeds'] || 'USD',
-          customer_price: num(r['Customer Price']),
-          customer_currency: r['Customer Currency'] || null,
-          country_code: r['Country Code'] || null,
-          device: r['Device'] || null,
-          app_version: r['Version'] || null,
-          promo_code: r['Promo Code'] || null,
-          subscription: r['Subscription'] || null,
-          period: r['Period'] || null,
-        });
-      }
+      for (const r of rows) insert.run({ granularity: plan.granularity, date: day, ...salesRow(r, skus) });
     })();
   } else if (plan.reportType === 'SUBSCRIPTION_EVENT') {
     const insert = db.prepare(`
@@ -280,13 +374,16 @@ function markState(plan: ReportPlan, date: string, status: 'ok' | 'empty' | 'err
 const PLAN_LABEL: Record<string, string> = {
   'SALES:D': 'daily sales',
   'SALES:M': 'monthly sales',
+  'SALES:Y': 'yearly sales',
   'SUBSCRIPTION_EVENT:D': 'subscription events',
   'SUBSCRIPTION:D': 'active subscriptions',
 };
 
 async function syncReports(state: JobState, vendor: string, includeSubs: boolean) {
   const window = currentWindow();
-  const recentCutoff = addDays(window.latestDay, -1); // Apple may not have published these yet
+  // A 404 for these may just mean "not published yet": leave them missing so the next run retries.
+  const unpublished = (plan: ReportPlan, date: string) =>
+    plan.granularity === 'D' ? date >= addDays(window.latestDay, -1) : plan.granularity === 'Y' && date === window.yearlyEnd;
   const skus = skuMap();
   const work = plans(window, includeSubs).map((p) => ({ plan: p, dates: missingDates(p) }));
 
@@ -299,27 +396,42 @@ async function syncReports(state: JobState, vendor: string, includeSubs: boolean
     if (!dates.length) continue;
     state.phase = `Fetching ${label}`;
     let blocked: AscError | null = null;
+    // Daily and monthly sales dates also note what they held before, for the change report.
+    const tracked = plan.reportType === 'SALES' && plan.granularity !== 'Y' ? (plan.granularity as 'D' | 'M') : null;
+    const store = (date: string, rows: Record<string, string>[]) => {
+      const was = tracked ? salesFigures(tracked, date) : null;
+      storeReport(plan, date, rows, skus);
+      if (tracked) {
+        revisions('asc').push({
+          label,
+          date,
+          before: was,
+          after: salesFigures(tracked, date) || NO_FIGURES,
+        });
+      }
+    };
 
-    await mapLimit(dates, 4, async (date) => {
+    // Apple allows 3600 requests/hour per key and handles a dozen in parallel fine;
+    // a full first backfill is roughly 1100 requests.
+    await mapLimit(dates, 12, async (date) => {
       if (blocked) {
         state.done++;
         return;
       }
       try {
-        const result = await fetchReport(vendor, plan.reportType, plan.granularity === 'M' ? 'MONTHLY' : 'DAILY', date);
+        const result = await fetchReport(vendor, plan.reportType, FREQUENCY[plan.granularity], date);
         if (result.status === 'ok') {
-          storeReport(plan, date, result.rows, skus);
+          store(date, result.rows);
           markState(plan, date, 'ok', result.rows.length);
           fetched[label] = (fetched[label] || 0) + 1;
-        } else if (plan.granularity === 'M' || date < recentCutoff) {
-          storeReport(plan, date, [], skus);
+        } else if (!unpublished(plan, date)) {
+          store(date, []);
           markState(plan, date, 'empty');
         }
-        // A 404 for the last two days means "not published yet": leave it missing so the next run retries.
       } catch (err: any) {
         const e = err instanceof AscError ? err : new AscError(0, err?.message || String(err));
-        if (e.status === 400) {
-          // Deterministic rejection (e.g. a month older than Apple retains): don't keep retrying it.
+        if (e.status === 400 || e.status === 410) {
+          // Deterministic rejection (e.g. a report older than Apple retains): don't keep retrying it.
           markState(plan, date, 'empty', 0, e.message);
         } else {
           markState(plan, date, 'error', 0, e.message);
@@ -335,6 +447,7 @@ async function syncReports(state: JobState, vendor: string, includeSubs: boolean
     }
   }
 
+  rebuildYearlyRemainder();
   return fetched;
 }
 
@@ -420,14 +533,20 @@ async function runAscSync(state: JobState) {
   const parts: string[] = [`${apps.length} apps`];
   if (vendor_number) {
     const fetched = await syncReports(state, vendor_number, config.syncSubscriptions);
-    for (const [label, n] of Object.entries(fetched)) parts.push(`${n} ${label} reports`);
+    for (const [label, n] of Object.entries(fetched)) parts.push(`${n} ${label} report${n === 1 ? '' : 's'}`);
   } else {
     state.errors.push('Vendor number is not set, so sales and subscription reports were skipped.');
   }
 
+  if (config.syncAnalytics) {
+    const { imported, pending } = await syncEngagement(state, apps.map((a) => a.id));
+    if (imported) parts.push(`${imported} impressions & page views report${imported === 1 ? '' : 's'}`);
+    if (pending) parts.push(`asked Apple to start ${pending} analytics reports (ready in 1–2 days)`);
+  }
+
   if (config.syncReviews) {
     const added = await syncReviews(state);
-    parts.push(`${added} new reviews`);
+    parts.push(`${added} new review${added === 1 ? '' : 's'}`);
   }
   state.summary = `Synced ${parts.join(', ')}.`;
 }
@@ -481,7 +600,7 @@ async function runStoreSync(state: JobState) {
   state.phase = `Checking ratings in ${countries.length} storefronts`;
   state.total = countries.length;
   state.done = 0;
-  const availability = new Map<string, Set<string>>(); // country -> app ids sold there
+  const availability = new Map<string, Map<string, number | null>>(); // country -> app id -> price there
   const upsertRating = db.prepare(`
     INSERT INTO ratings (apple_id, country_code, date, avg_rating, rating_count, current_avg_rating, current_rating_count, version, price)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -496,7 +615,7 @@ async function runStoreSync(state: JobState) {
       // Lookup accepts up to ~200 ids at once.
       const listings: StoreListing[] = [];
       for (let i = 0; i < ids.length; i += 150) listings.push(...(await lookupApps(ids.slice(i, i + 150), cc)));
-      availability.set(cc, new Set(listings.map((l) => l.appleId)));
+      availability.set(cc, new Map(listings.map((l) => [l.appleId, l.price])));
       db.transaction(() => {
         for (const l of listings) {
           upsertRating.run(l.appleId, cc, today, l.avgRating, l.ratingCount, l.currentAvgRating, l.currentRatingCount, l.version, l.price);
@@ -521,18 +640,36 @@ async function runStoreSync(state: JobState) {
     (db.prepare(`SELECT apple_id, primary_genre_id FROM apps`).all() as { apple_id: string; primary_genre_id: string | null }[])
       .map((r) => [r.apple_id, r.primary_genre_id])
   );
+  // Skip charts an app can't be on: free apps aren't in Top Paid (and vice versa), and an app
+  // with no proceeds in a storefront lately can't be in its Top Grossing.
+  const recentSales = db.prepare(`SELECT COUNT(*) AS n FROM sales WHERE granularity = 'D' AND date >= ?`).get(addDays(today, -30)) as { n: number };
+  const earning = new Set(
+    (db.prepare(`
+      SELECT DISTINCT apple_id || ':' || country_code AS k FROM sales
+      WHERE granularity = 'D' AND date >= ? AND units * proceeds_per_unit > 0`)
+      .all(addDays(today, -30)) as { k: string }[]).map((r) => r.k)
+  );
+  const canChart = (chart: ChartId, id: string, cc: string, price: number | null) => {
+    if (chart === 'topfree') return price === null || price === 0;
+    if (chart === 'toppaid') return price === null || price > 0;
+    return !recentSales.n || earning.has(`${id}:${cc}`);
+  };
+
   type Task = { cc: string; chart: ChartId; genre: string };
   const tasks: Task[] = [];
   for (const cc of countries) {
     const sold = availability.get(cc);
     if (!sold?.size) continue;
-    const genres = new Set<string>();
-    sold.forEach((id) => {
-      const gid = genreOf.get(id);
-      if (gid) genres.add(gid);
-    });
-    if (config.rankOverall) genres.add('0');
-    for (const chart of config.rankCharts) for (const genre of genres) tasks.push({ cc, chart, genre });
+    for (const chart of config.rankCharts) {
+      const genres = new Set<string>();
+      sold.forEach((price, id) => {
+        if (!canChart(chart, id, cc, price)) return;
+        genres.add(genreOf.get(id) || '0');
+        if (config.rankOverall) genres.add('0');
+      });
+      if (!config.rankOverall) genres.delete('0');
+      for (const genre of genres) tasks.push({ cc, chart, genre });
+    }
   }
 
   state.phase = `Checking ${tasks.length} top charts`;
@@ -544,8 +681,7 @@ async function runStoreSync(state: JobState) {
   // Saved as we go, so an interrupted run still keeps what it found.
   db.prepare(`DELETE FROM rankings WHERE date = ?`).run(today);
   const insertRank = db.prepare(`INSERT OR REPLACE INTO rankings (apple_id, country_code, date, chart, genre_id, rank) VALUES (?, ?, ?, ?, ?, ?)`);
-  // Requests are paced by the shared itunes.apple.com gate; concurrency only overlaps latency.
-  await mapLimit(tasks, 4, async (t) => {
+  const check = async (t: Task) => {
     try {
       const list = await fetchChart(t.cc, t.chart, t.genre);
       list.forEach((id, i) => {
@@ -558,7 +694,12 @@ async function runStoreSync(state: JobState) {
       chartFailures++;
     }
     state.done++;
-  });
+  };
+  // itunes.apple.com requests are paced by its shared gate, so concurrency there only overlaps
+  // latency; the unthrottled feed runs alongside it instead of queueing behind the gate.
+  const throttled = tasks.filter((t) => isThrottledChart(t.chart, t.genre));
+  const free = tasks.filter((t) => !isThrottledChart(t.chart, t.genre));
+  await Promise.all([mapLimit(throttled, 4, check), mapLimit(free, 16, check)]);
   if (chartFailures) state.errors.push(`${chartFailures} chart requests failed (Apple throttling); they'll be retried next run.`);
 
   const rated = [...availability.values()].reduce((n, s) => n + s.size, 0);

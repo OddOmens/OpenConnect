@@ -19,3 +19,6 @@ keys/*
 .claude/
 .DS_Store
 npm-debug.log*
+
+# Tailscale node state (docker-compose.tailscale.yml)
+tailscale/

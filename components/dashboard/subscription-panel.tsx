@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from "recharts"
 import { Section, EmptyState } from "./section"
+import type { SubscriptionItem } from "@/lib/prefs"
 import { fmtDate, fmtMoney, fmtNumber } from "@/lib/format"
 
 export interface SubscriptionData {
@@ -25,10 +26,12 @@ export interface SubscriptionData {
 interface Props {
   data: SubscriptionData | null
   currency: string
+  hidden: SubscriptionItem[]
   onHide: () => void
 }
 
-export function SubscriptionPanel({ data, currency, onHide }: Props) {
+export function SubscriptionPanel({ data, currency, hidden, onHide }: Props) {
+  const show = (item: SubscriptionItem) => !hidden.includes(item)
   const a = data?.active
   const hasData = !!a || !!data?.events.length
   const maxEvent = Math.max(1, ...(data?.events || []).map((e) => e.count))
@@ -46,15 +49,15 @@ export function SubscriptionPanel({ data, currency, onHide }: Props) {
           <div className="space-y-4">
             {a && (
               <div className="grid grid-cols-3 gap-3">
-                <Mini label="Active" value={fmtNumber(a.total)} />
-                <Mini label="Paying" value={fmtNumber(a.standard)} />
-                <Mini label="Free trials" value={fmtNumber(a.trial)} />
-                <Mini label="Intro / promo" value={fmtNumber(a.intro + a.promo)} />
-                <Mini label="Billing retry" value={fmtNumber(a.billing_retry)} />
-                <Mini label="Est. period proceeds" value={fmtMoney(a.proceeds, currency, true)} />
+                {show("active") && <Mini label="Active" value={fmtNumber(a.total)} />}
+                {show("paying") && <Mini label="Paying" value={fmtNumber(a.standard)} />}
+                {show("trials") && <Mini label="Free trials" value={fmtNumber(a.trial)} />}
+                {show("intro") && <Mini label="Intro / promo" value={fmtNumber(a.intro + a.promo)} />}
+                {show("billingRetry") && <Mini label="Billing retry" value={fmtNumber(a.billing_retry)} />}
+                {show("proceeds") && <Mini label="Est. period proceeds" value={fmtMoney(a.proceeds, currency, true)} />}
               </div>
             )}
-            {data!.trend.length > 1 && (
+            {show("trend") && data!.trend.length > 1 && (
               <div className="h-28">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={data!.trend}>
@@ -70,7 +73,7 @@ export function SubscriptionPanel({ data, currency, onHide }: Props) {
                 </ResponsiveContainer>
               </div>
             )}
-            {data!.bySubscription.length > 0 && (
+            {show("bySubscription") && data!.bySubscription.length > 0 && (
               <div className="space-y-1.5">
                 <div className="text-xs font-medium text-muted-foreground">By subscription</div>
                 {data!.bySubscription.map((s) => (
@@ -82,7 +85,7 @@ export function SubscriptionPanel({ data, currency, onHide }: Props) {
               </div>
             )}
           </div>
-          <div className="space-y-2">
+          {show("events") && <div className="space-y-2">
             <div className="text-xs font-medium text-muted-foreground">Events in this range</div>
             {!data!.events.length && <div className="text-sm text-muted-foreground">No events</div>}
             {data!.events.map((e) => (
@@ -99,7 +102,7 @@ export function SubscriptionPanel({ data, currency, onHide }: Props) {
                 </div>
               </div>
             ))}
-          </div>
+          </div>}
         </div>
       )}
     </Section>

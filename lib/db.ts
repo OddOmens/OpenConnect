@@ -7,7 +7,8 @@ const SCHEMA_VERSION = 2;
 const g = globalThis as unknown as { __dashboardDb?: Database.Database };
 
 export function dataDir(): string {
-  return process.env.DATA_DIR || path.join(process.cwd(), 'data');
+  // Resolved at runtime; the ignore comment keeps the build from tracing (and copying) ./data.
+  return process.env.DATA_DIR || path.join(/*turbopackIgnore: true*/ process.cwd(), 'data');
 }
 
 function initDb(): Database.Database {
@@ -17,6 +18,15 @@ function initDb(): Database.Database {
   }
 
   const db = new Database(path.join(dir, 'dashboard.db'));
+  // Tighten files from older installs too: the database holds API settings and sessions.
+  const modes: [string, number][] = [[dir, 0o700], ...['dashboard.db', 'dashboard.db-wal', 'dashboard.db-shm'].map((f): [string, number] => [path.join(/*turbopackIgnore: true*/ dir, f), 0o600])];
+  for (const [file, mode] of modes) {
+    try {
+      fs.chmodSync(file, mode);
+    } catch {
+      // not there yet, or not ours to change
+    }
+  }
   db.pragma('journal_mode = WAL');
   db.pragma('busy_timeout = 5000');
 
@@ -55,10 +65,12 @@ function initDb(): Database.Database {
 
     -- One row per line of an Apple SALES SUMMARY report. A report date is always
     -- replaced wholesale, so re-syncing a date can never double count.
+    -- 'Y' rows are derived: a yearly report minus the daily/monthly rows we hold
+    -- for that year (see rebuildYearlyRemainder), so the three never overlap.
     CREATE TABLE IF NOT EXISTS sales (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      granularity TEXT NOT NULL,          -- 'D' daily report, 'M' monthly report
-      date TEXT NOT NULL,                 -- YYYY-MM-DD (first of month for 'M')
+      granularity TEXT NOT NULL,          -- 'D' daily, 'M' monthly, 'Y' rest of the year
+      date TEXT NOT NULL,                 -- YYYY-MM-DD (first of month for 'M', Jan 1 for 'Y')
       apple_id TEXT,                      -- parent app (IAPs resolved via parent SKU)
       product_apple_id TEXT,
       sku TEXT,
@@ -80,6 +92,82 @@ function initDb(): Database.Database {
     );
     CREATE INDEX IF NOT EXISTS idx_sales_app_date ON sales(apple_id, date);
     CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(granularity, date);
+
+    -- Yearly SALES reports exactly as Apple sent them. Never queried directly:
+    -- they overlap the daily/monthly rows, and only the remainder goes into sales.
+    CREATE TABLE IF NOT EXISTS yearly_sales (
+      year TEXT NOT NULL,                 -- YYYY
+      apple_id TEXT,
+      product_apple_id TEXT,
+      sku TEXT,
+      parent_sku TEXT,
+      title TEXT,
+      product_type TEXT,
+      category TEXT,
+      units INTEGER DEFAULT 0,
+      proceeds_per_unit REAL DEFAULT 0,
+      proceeds_currency TEXT,
+      customer_price REAL DEFAULT 0,
+      customer_currency TEXT,
+      country_code TEXT,
+      device TEXT,
+      app_version TEXT,
+      promo_code TEXT,
+      subscription TEXT,
+      period TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_yearly_sales ON yearly_sales(year);
+
+    -- App Store Discovery and Engagement reports (Analytics Reports API), summed over
+    -- device and OS version. Rows for one app + granularity + date always come from a
+    -- single report instance: a newer processing date replaces them wholesale.
+    CREATE TABLE IF NOT EXISTS engagement_raw (
+      granularity TEXT NOT NULL,          -- DAILY | MONTHLY
+      date TEXT NOT NULL,                 -- YYYY-MM-DD (first of month for MONTHLY)
+      apple_id TEXT NOT NULL,
+      territory TEXT,
+      event TEXT,                         -- Impression | Page view | Tap
+      page_type TEXT,
+      source_type TEXT,
+      engagement_type TEXT,
+      counts INTEGER DEFAULT 0,
+      processing_date TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_engagement_raw ON engagement_raw(apple_id, granularity, date);
+
+    -- What the dashboard reads: daily rows where we have whole months of them, monthly
+    -- rows before that ('D' / 'M', like sales). Rebuilt from engagement_raw after each sync.
+    CREATE TABLE IF NOT EXISTS engagement (
+      granularity TEXT NOT NULL,
+      date TEXT NOT NULL,
+      apple_id TEXT NOT NULL,
+      territory TEXT,
+      event TEXT,
+      page_type TEXT,
+      source_type TEXT,
+      engagement_type TEXT,
+      counts INTEGER DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_engagement ON engagement(apple_id, date);
+
+    -- Signed-in browsers. Only a hash of each session token is stored.
+    CREATE TABLE IF NOT EXISTS sessions (
+      id_hash TEXT PRIMARY KEY,
+      created_at TEXT,
+      expires_at TEXT,
+      last_seen TEXT,
+      user_agent TEXT
+    );
+
+    -- Report instances already imported, so each one is downloaded once.
+    CREATE TABLE IF NOT EXISTS analytics_instances (
+      id TEXT PRIMARY KEY,
+      apple_id TEXT,
+      granularity TEXT,
+      processing_date TEXT,
+      rows INTEGER DEFAULT 0,
+      imported_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
 
     CREATE TABLE IF NOT EXISTS sub_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -177,7 +265,8 @@ function initDb(): Database.Database {
       started_at TEXT,
       finished_at TEXT,
       status TEXT,
-      message TEXT
+      message TEXT,
+      report TEXT
     );
   `);
 
@@ -192,6 +281,9 @@ function initDb(): Database.Database {
       price: 'REAL',
       current_version: 'TEXT',
       release_date: 'TEXT',
+    },
+    job_runs: {
+      report: 'TEXT', // JSON change report (see lib/sync-report.ts)
     },
   };
   for (const [table, columns] of Object.entries(addColumns)) {

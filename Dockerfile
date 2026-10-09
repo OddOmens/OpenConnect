@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM node:20-alpine AS base
+FROM node:22-alpine AS base
 
 # Install dependencies (better-sqlite3 compiles a native module)
 FROM base AS deps
@@ -35,6 +35,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=deps /app/node_modules/better-sqlite3 ./node_modules/better-sqlite3
 COPY --from=deps /app/node_modules/bindings ./node_modules/bindings
 COPY --from=deps /app/node_modules/file-uri-to-path ./node_modules/file-uri-to-path
+# Native PNG renderer for share cards (its platform binary is an optional dependency).
+COPY --from=deps /app/node_modules/@resvg ./node_modules/@resvg
 
 RUN mkdir -p /app/data /keys && chown nextjs:nodejs /app/data
 

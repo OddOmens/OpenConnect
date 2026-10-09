@@ -17,6 +17,7 @@
 - The Docker image runs on Node.js 22 LTS (Node 20 reached end of life).
 - `npm run lint` uses ESLint 9 with a flat config.
 - Password hashes use OWASP's recommended scrypt cost. Existing hashes upgrade on next sign-in.
+- A password set with `OPENCONNECT_PASSWORD` is now checked against a scrypt hash too, instead of a plain SHA-256 comparison.
 - Native scrollbars follow the light/dark theme.
 
 ### Fixed

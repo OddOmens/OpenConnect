@@ -1,0 +1,44 @@
+# HTTPS for OpenConnect on your tailnet: https://openconnect.<tailnet>.ts.net
+# Browsers block downloads (share card PNGs) on plain http:// pages, so use this address.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.tailscale.yml up -d --build
+#
+# First start: without TS_AUTHKEY the node waits for you to log in. Run
+#   docker logs openconnect-tailscale
+# and open the login link it prints. Its state is kept in ./tailscale, so this is one-time.
+# Needs MagicDNS and HTTPS certificates enabled for the tailnet (admin console → DNS).
+services:
+  tailscale:
+    image: tailscale/tailscale:stable
+    container_name: openconnect-tailscale
+    restart: unless-stopped
+    network_mode: service:dashboard
+    # Restart this container whenever the app restarts, so it never keeps a dead network.
+    depends_on:
+      dashboard:
+        condition: service_started
+        restart: true
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY:-}
+      - TS_HOSTNAME=${TS_HOSTNAME:-openconnect}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SERVE_CONFIG=/serve.json
+    configs:
+      - source: tailscale-serve
+        target: /serve.json
+    volumes:
+      - ./tailscale:/var/lib/tailscale
+
+configs:
+  # HTTPS on the tailnet name, handed to the app on its container port.
+  # $$ keeps Compose from filling in ${TS_CERT_DOMAIN}; Tailscale fills it in itself.
+  tailscale-serve:
+    content: |
+      {
+        "TCP": { "443": { "HTTPS": true } },
+        "Web": {
+          "$${TS_CERT_DOMAIN}:443": {
+            "Handlers": { "/": { "Proxy": "http://127.0.0.1:3000" } }
+          }
+        }
+      }

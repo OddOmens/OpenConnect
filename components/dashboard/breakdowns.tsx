@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Section, Segmented, EmptyState } from "./section"
 import { fmtMoney, fmtNumber } from "@/lib/format"
+import { BREAKDOWN_TABS, BreakdownTab } from "@/lib/prefs"
 
 export interface BreakdownData {
   products: { id: string; title: string; category: string; product_type: string; units: number; proceeds: number }[]
@@ -11,13 +12,23 @@ export interface BreakdownData {
   prices: { currency: string; price: number; units: number }[]
 }
 
-type Tab = "products" | "devices" | "versions" | "prices"
+type Tab = BreakdownTab
 
-export function Breakdowns({ data, currency, onHide }: { data: BreakdownData | null; currency: string; onHide: () => void }) {
-  const [tab, setTab] = React.useState<Tab>("products")
+interface Props {
+  data: BreakdownData | null
+  currency: string
+  hidden: BreakdownTab[]
+  onHide: () => void
+}
+
+export function Breakdowns({ data, currency, hidden, onHide }: Props) {
+  const tabs = (Object.keys(BREAKDOWN_TABS) as Tab[]).filter((t) => !hidden.includes(t))
+  const [picked, setTab] = React.useState<Tab>(tabs[0] ?? "devices")
+  // If the open tab gets hidden in Settings → Customize, fall back to the first one still shown.
+  const tab = tabs.includes(picked) ? picked : tabs[0]
 
   const rows: { label: string; sub?: string; value: number; display: string; extra?: string }[] = React.useMemo(() => {
-    if (!data) return []
+    if (!data || !tab) return []
     switch (tab) {
       case "products":
         return data.products.map((p) => ({
@@ -44,22 +55,18 @@ export function Breakdowns({ data, currency, onHide }: { data: BreakdownData | n
 
   return (
     <Section
-      title="Breakdowns"
+      // With a single breakdown left, it names the section and the tab switcher goes away.
+      title={tabs.length === 1 ? BREAKDOWN_TABS[tabs[0]] : "Breakdowns"}
       onHide={onHide}
       actions={
-        <Segmented
-          value={tab}
-          onChange={setTab}
-          options={[
-            { value: "products", label: "Products" },
-            { value: "devices", label: "Devices" },
-            { value: "versions", label: "Versions" },
-            { value: "prices", label: "Price points" },
-          ]}
-        />
+        tabs.length > 1 && (
+          <Segmented value={tab} onChange={setTab} options={tabs.map((t) => ({ value: t, label: BREAKDOWN_TABS[t] }))} />
+        )
       }
     >
-      {!rows.length ? (
+      {!tab ? (
+        <EmptyState>Every breakdown is hidden. Turn them back on in Settings → Customize.</EmptyState>
+      ) : !rows.length ? (
         <EmptyState>Nothing to break down in this range.</EmptyState>
       ) : (
         <div className="space-y-3">

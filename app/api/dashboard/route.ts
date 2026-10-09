@@ -1,20 +1,25 @@
 import { NextResponse } from 'next/server';
-import { dashboard, dataBounds } from '@/lib/queries';
-import { resolveRange } from '@/lib/dates';
+import { guard } from '@/lib/auth';
+import { dashboardResponse } from '@/lib/data';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
+  const denied = guard(request);
+  if (denied) return denied;
   try {
     const q = new URL(request.url).searchParams;
-    const appId = q.get('app') && q.get('app') !== 'all' ? q.get('app')! : undefined;
-    const { start, end } = resolveRange(q.get('range'), q.get('start'), q.get('end'));
-    const granularity = (['day', 'week', 'month'].includes(q.get('granularity') || '') ? q.get('granularity') : 'day') as
-      | 'day'
-      | 'week'
-      | 'month';
-    const data = dashboard({ appId, start, end }, granularity, q.get('currency') || 'USD', q.get('compare') !== '0');
-    return NextResponse.json({ range: { start, end }, bounds: dataBounds(appId), ...data });
+    return NextResponse.json(
+      dashboardResponse({
+        app: q.get('app'),
+        range: q.get('range'),
+        start: q.get('start'),
+        end: q.get('end'),
+        granularity: q.get('granularity'),
+        currency: q.get('currency'),
+        compare: q.get('compare') !== '0',
+      })
+    );
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

@@ -88,20 +88,29 @@ async function errorFrom(res: Response): Promise<AscError> {
 }
 
 async function ascFetch(url: string, accept = 'application/json', attempt = 0): Promise<Response> {
-  const res = await fetch(url.startsWith('http') ? url : API + url, {
-    headers: { Authorization: `Bearer ${generateToken()}`, Accept: accept },
-    cache: 'no-store',
-  });
-  // Rate limited or transient server error: back off and retry a few times.
-  if ((res.status === 429 || res.status >= 500) && attempt < 4) {
-    const wait = Number(res.headers.get('retry-after')) * 1000 || 2000 * 2 ** attempt;
+  const retry = async (wait: number) => {
     await new Promise((r) => setTimeout(r, wait));
     return ascFetch(url, accept, attempt + 1);
+  };
+  let res: Response;
+  try {
+    res = await fetch(url.startsWith('http') ? url : API + url, {
+      headers: { Authorization: `Bearer ${generateToken()}`, Accept: accept },
+      cache: 'no-store',
+    });
+  } catch (err) {
+    // Network blip (DNS, reset connection): retry before giving up on the whole report type.
+    if (err instanceof AscError || attempt >= 4) throw err;
+    return retry(1000 * 2 ** attempt);
+  }
+  // Rate limited or transient server error: back off and retry a few times.
+  if ((res.status === 429 || res.status >= 500) && attempt < 4) {
+    return retry(Number(res.headers.get('retry-after')) * 1000 || 2000 * 2 ** attempt);
   }
   return res;
 }
 
-async function ascGetAll(path: string): Promise<{ data: any[]; included: any[] }> {
+export async function ascGetAll(path: string): Promise<{ data: any[]; included: any[] }> {
   const data: any[] = [];
   const included: any[] = [];
   let next: string | null = path;
@@ -114,6 +123,17 @@ async function ascGetAll(path: string): Promise<{ data: any[]; included: any[] }
     next = body.links?.next || null;
   }
   return { data, included };
+}
+
+export async function ascPost(path: string, body: unknown): Promise<any> {
+  const res = await fetch(API + path, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${generateToken()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  });
+  if (!res.ok) throw await errorFrom(res);
+  return res.json();
 }
 
 export interface AscApp {
@@ -144,13 +164,14 @@ const REPORT_VERSIONS: Record<ReportType, string[]> = {
 export type ReportResult = { status: 'ok'; rows: Record<string, string>[] } | { status: 'empty' };
 
 /**
- * Fetch one SUMMARY report. `reportDate` is YYYY-MM-DD for DAILY, YYYY-MM for MONTHLY.
- * Apple answers 404 when there is no data for that date (or it isn't published yet).
+ * Fetch one SUMMARY report. `reportDate` is YYYY-MM-DD for DAILY, YYYY-MM for MONTHLY, YYYY for YEARLY.
+ * Apple answers 404 when there is no data for that date (or it isn't published yet)
+ * and 410 once a report has aged out (daily: 365 days, monthly: 12 months).
  */
 export async function fetchReport(
   vendorNumber: string,
   reportType: ReportType,
-  frequency: 'DAILY' | 'MONTHLY',
+  frequency: 'DAILY' | 'MONTHLY' | 'YEARLY',
   reportDate: string
 ): Promise<ReportResult> {
   let lastErr: AscError | null = null;

@@ -14,3 +14,11 @@ data/
 keys/
 *.p8
 *.pem
+
+# Tailscale node state
+tailscale/
+
+# Docs and repo tooling aren't needed in the image
+docs/
+.github/
+*.md

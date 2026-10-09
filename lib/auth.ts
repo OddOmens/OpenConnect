@@ -24,6 +24,7 @@ const g = globalThis as unknown as {
   __setupCode?: string;
   __loginFailures?: Map<string, { count: number; until: number }>;
   __envPassword?: string | null;
+  __envHash?: string;
 };
 
 // --- On / off ------------------------------------------------------------------------
@@ -84,9 +85,9 @@ export function passwordSource(): 'env' | 'settings' | null {
 export function checkPassword(password: string): boolean {
   const env = envPassword();
   if (env) {
-    const a = crypto.createHash('sha256').update(password).digest();
-    const b = crypto.createHash('sha256').update(env).digest();
-    return crypto.timingSafeEqual(a, b);
+    // Checked the same way as a stored password: against a scrypt hash made once per start.
+    g.__envHash ??= hashPassword(env);
+    return verifyHash(password, g.__envHash);
   }
   const stored = getSetting('auth_password');
   if (!stored || !verifyHash(password, stored)) return false;

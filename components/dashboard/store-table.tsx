@@ -102,7 +102,7 @@ export function StoreTable({ data, apps, selectedAppId, hiddenColumns, onColumns
       <div className="flex flex-col items-end leading-tight">
         {cat && (
           <span className="tabular-nums">
-            <span className={cn("font-semibold", cat.rank <= 10 && "text-amber-400")}>#{cat.rank}</span>
+            <span className={cn("font-semibold", cat.rank <= 10 && "text-amber-600 dark:text-amber-400")}>#{cat.rank}</span>
             <span className="ml-1 text-[11px] text-muted-foreground">{genreName(cat.genre_id)}</span>
           </span>
         )}

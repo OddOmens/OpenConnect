@@ -13,6 +13,8 @@ export interface HistoryPoint {
   redownloads: number
   updates: number
   iap: number
+  impressions: number
+  page_views: number
   proceeds: number
 }
 
@@ -21,28 +23,52 @@ const COLORS: Record<HistorySeries, string> = {
   redownloads: "hsl(var(--chart-2))",
   updates: "hsl(var(--chart-3))",
   iap: "hsl(var(--chart-4))",
+  impressions: "hsl(190 80% 50%)",
+  page_views: "hsl(25 90% 55%)",
   proceeds: "hsl(var(--chart-5))",
+}
+
+export interface CoarseHistory {
+  monthly: boolean
+  yearly: boolean
+  dailyFrom: string | null
+  monthlyFrom: string | null
 }
 
 interface Props {
   data: HistoryPoint[]
   isLoading: boolean
-  hasMonthlyHistory: boolean
+  coarseHistory: CoarseHistory | null
   prefs: UiPrefs
   onPrefs: (p: Partial<UiPrefs>) => void
   onHide: () => void
 }
 
-export function HistoryChart({ data, isLoading, hasMonthlyHistory, prefs, onPrefs, onHide }: Props) {
+export function HistoryChart({ data, isLoading, coarseHistory, prefs, onPrefs, onHide }: Props) {
   const hidden = prefs.hiddenHistorySeries
   const series = (Object.keys(HISTORY_SERIES) as HistorySeries[]).filter((s) => !hidden.includes(s))
-  const units = series.filter((s) => s !== "proceeds")
+  // Impressions and page views dwarf download counts, so they get their own (unstacked) scale.
+  const VIEWS: HistorySeries[] = ["impressions", "page_views"]
+  const units = series.filter((s) => s !== "proceeds" && !VIEWS.includes(s))
+  const views = series.filter((s) => VIEWS.includes(s))
   const showProceeds = series.includes("proceeds")
   const toggle = (s: HistorySeries) =>
     onPrefs({ hiddenHistorySeries: hidden.includes(s) ? hidden.filter((x) => x !== s) : [...hidden, s] })
 
+  const g = prefs.granularity
   const tickFormat = (d: string) =>
-    fmtDate(d, prefs.granularity === "month" ? { month: "short", year: "2-digit" } : { month: "short", day: "numeric" })
+    fmtDate(d, g === "year" ? { year: "numeric" } : g === "month" ? { month: "short", year: "2-digit" } : { month: "short", day: "numeric" })
+  const labelFormat = (d: string) =>
+    fmtDate(d, g === "year" ? { year: "numeric" } : g === "month" ? { month: "long", year: "numeric" } : undefined)
+
+  // Apple only keeps 365 days of daily and 12 months of monthly reports; older history is yearly totals.
+  const monthYear = (d: string | null) => fmtDate(d, { month: "short", year: "numeric" })
+  let note: string | undefined
+  if (coarseHistory?.yearly && g !== "year") {
+    note = `Before ${monthYear(coarseHistory.monthlyFrom)} Apple only keeps yearly totals. Switch to Yearly to include them.`
+  } else if (coarseHistory?.monthly && (g === "day" || g === "week")) {
+    note = `${monthYear(coarseHistory.monthlyFrom)} only has a monthly total. Switch to Monthly to include it.`
+  }
 
   const Chart = prefs.chartType === "bar" ? BarChart : prefs.chartType === "line" ? LineChart : AreaChart
   const renderSeries = (key: HistorySeries, axis: string) => {
@@ -56,11 +82,7 @@ export function HistoryChart({ data, isLoading, hasMonthlyHistory, prefs, onPref
   return (
     <Section
       title="History"
-      description={
-        hasMonthlyHistory && prefs.granularity !== "month"
-          ? "Older history comes from monthly reports. Switch to Monthly to include it."
-          : undefined
-      }
+      description={note}
       onHide={onHide}
       actions={
         <>
@@ -71,6 +93,7 @@ export function HistoryChart({ data, isLoading, hasMonthlyHistory, prefs, onPref
               { value: "day", label: "Daily" },
               { value: "week", label: "Weekly" },
               { value: "month", label: "Monthly" },
+              { value: "year", label: "Yearly" },
             ]}
           />
           <Segmented
@@ -103,15 +126,17 @@ export function HistoryChart({ data, isLoading, hasMonthlyHistory, prefs, onPref
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
               <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} tickFormatter={tickFormat} minTickGap={24} />
               <YAxis yAxisId="units" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => fmtCompact(v)} width={40} hide={!units.length} />
+              <YAxis yAxisId="views" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => fmtCompact(v)} width={40} hide={!views.length || units.length > 0} />
               <YAxis yAxisId="money" orientation="right" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => fmtMoney(v, prefs.currency, true)} width={56} hide={!showProceeds} />
               <Tooltip
                 cursor={{ fill: "hsl(var(--accent))", opacity: 0.4 }}
                 contentStyle={{ backgroundColor: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
                 labelStyle={{ color: "hsl(var(--foreground))", marginBottom: 4 }}
-                labelFormatter={(d) => fmtDate(String(d), prefs.granularity === "month" ? { month: "long", year: "numeric" } : undefined)}
+                labelFormatter={(d) => labelFormat(String(d))}
                 formatter={(v: number, name: string) => [name === HISTORY_SERIES.proceeds ? fmtMoney(v, prefs.currency) : fmtNumber(v), name]}
               />
               {units.map((s) => renderSeries(s, "units"))}
+              {views.map((s) => renderSeries(s, "views"))}
               {showProceeds && renderSeries("proceeds", "money")}
             </Chart>
           </ResponsiveContainer>

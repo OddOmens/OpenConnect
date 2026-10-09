@@ -1,12 +1,17 @@
-# docker compose up -d   →   http://localhost:3000
+# docker compose up -d            →   http://localhost:3000 (pulls the published image)
+# docker compose up -d --build    →   builds from this source instead
 # Configure via a .env file next to this one (see .env.example) or in the dashboard's Settings.
+# On first start, sign-in setup asks for a code printed by: docker logs openconnect
 services:
   dashboard:
     build: .
-    image: openconnect:latest
+    # Published for Intel and ARM on every release. Pin a version with OPENCONNECT_VERSION=1.1.0.
+    image: ghcr.io/oddomens/openconnect:${OPENCONNECT_VERSION:-latest}
     container_name: openconnect
     ports:
-      - "${PORT:-3000}:3000"
+      # Only this computer by default. Set BIND_ADDRESS=0.0.0.0 to reach it from your network
+      # (or use docker-compose.tailscale.yml for HTTPS on your tailnet).
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-3000}:3000"
     volumes:
       # SQLite database + settings: survives rebuilds and upgrades.
       - ./data:/app/data
@@ -18,4 +23,20 @@ services:
       ASC_VENDOR_NUMBER: ${ASC_VENDOR_NUMBER:-}
       ASC_PRIVATE_KEY_PATH: ${ASC_PRIVATE_KEY_PATH:-}
       ASC_KEYS_DIR: /keys
+      # Sign-in. true (default) = password required; false = no password at all.
+      OPENCONNECT_PASSWORD_REQUIRED: ${OPENCONNECT_PASSWORD_REQUIRED:-true}
+      # Optional: fixes the sign-in password here instead of choosing it in the browser.
+      OPENCONNECT_PASSWORD: ${OPENCONNECT_PASSWORD:-}
+      # Only used with the password off: extra hostnames you open the dashboard by.
+      OPENCONNECT_ALLOWED_HOSTS: ${OPENCONNECT_ALLOWED_HOSTS:-}
+    # Hardening: nothing in the image can be changed at runtime except the data volume,
+    # no Linux capabilities, and no way to gain privileges.
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/.next/cache
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped

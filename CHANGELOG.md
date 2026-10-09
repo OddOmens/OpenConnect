@@ -8,6 +8,7 @@
 - `OPENCONNECT_PASSWORD_FILE` reads the password from a file, such as a Docker secret.
 - A startup warning when the password is off or `OPENCONNECT_PASSWORD` is too short.
 - Security policy, contributing guide, issue templates and CI.
+- Dependabot updates for npm, the Docker base image and GitHub Actions.
 - Licensed under MIT with the Commons Clause: free to use, modify and share; not to be sold.
 
 ### Changed

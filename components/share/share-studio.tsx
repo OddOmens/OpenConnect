@@ -74,7 +74,7 @@ export function ShareStudio() {
       .catch(() => {})
       .finally(() => setLoaded(true))
   }, [])
-  const saveTimer = useRef<ReturnType<typeof setTimeout>>()
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const update = (patch: Partial<UiPrefs['share']>) => {
     setShare((prev) => {
       const next = { ...prev, ...patch }

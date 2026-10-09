@@ -5,7 +5,7 @@ import pkg from '../../package.json'
 
 export const dynamic = 'force-dynamic'
 
-export default function SettingsPage() {
-  requireSignIn()
+export default async function SettingsPage() {
+  await requireSignIn()
   return <SettingsView initial={settingsResponse() as ServerSettings} apps={appsResponse().apps as any} version={pkg.version} />
 }

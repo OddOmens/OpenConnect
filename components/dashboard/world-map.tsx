@@ -169,7 +169,6 @@ function InteractiveMap({ points, focus, onFocus, renderTooltip }: {
     }
     placeTooltip()
     raf.current = done ? null : requestAnimationFrame(frame)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const kick = () => {
     if (raf.current == null) raf.current = requestAnimationFrame(frame)

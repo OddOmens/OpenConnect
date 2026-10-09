@@ -132,9 +132,11 @@ export function SyncStatusButton({ sync }: { sync: ReturnType<typeof useSyncStat
   const { status, start, reports, showReport, closeReports } = sync
   const [open, setOpen] = React.useState(false)
   // The report replaces this dialog rather than stacking on top of it.
-  React.useEffect(() => {
-    if (reports.length) setOpen(false)
-  }, [reports.length])
+  const dialogOpen = open && reports.length === 0
+  const closeReport = () => {
+    setOpen(false)
+    closeReports()
+  }
   const asc = status?.jobs.asc
   const store = status?.jobs.store
   const running = asc?.running || store?.running
@@ -150,8 +152,8 @@ export function SyncStatusButton({ sync }: { sync: ReturnType<typeof useSyncStat
 
   return (
     <>
-    <SyncReportDialog reports={reports} onClose={closeReports} />
-    <Dialog open={open} onOpenChange={setOpen}>
+    <SyncReportDialog reports={reports} onClose={closeReport} />
+    <Dialog open={dialogOpen} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="gap-2">
           {running ? (

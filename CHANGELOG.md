@@ -11,10 +11,14 @@
 - Licensed under MIT with the Commons Clause: free to use, modify and share; not to be sold.
 
 ### Changed
+- Upgraded to Next.js 16 and React 19. Next.js 14 no longer receives security fixes, and production dependencies now have no known vulnerabilities.
+- The Docker image runs on Node.js 22 LTS (Node 20 reached end of life).
+- `npm run lint` uses ESLint 9 with a flat config.
 - Password hashes use OWASP's recommended scrypt cost. Existing hashes upgrade on next sign-in.
 - Native scrollbars follow the light/dark theme.
 
 ### Fixed
+- Production builds no longer trace the whole project. Before, a local `npm run build` could copy `data/` and `keys/` into `.next/standalone`; the Docker image was never affected, thanks to `.dockerignore`.
 - `/api/reviews` no longer accepts a negative `limit`, which used to return every review in one response.
 - Sync summaries use singular wording for single items ("1 daily sales report").
 

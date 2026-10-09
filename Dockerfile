@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM node:20-alpine AS base
+FROM node:22-alpine AS base
 
 # Install dependencies (better-sqlite3 compiles a native module)
 FROM base AS deps

@@ -1,0 +1,78 @@
+# Publishing a release: bump "version" in package.json, add a section to CHANGELOG.md, then
+#   git tag v1.2.3 && git push origin v1.2.3
+# This builds the Docker image for Intel and ARM (Apple Silicon, Raspberry Pi), pushes it to
+# ghcr.io/oddomens/openconnect, and creates the GitHub Release from the changelog.
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the GitHub Release
+      packages: write   # push to GitHub Container Registry
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches package.json
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match package.json version $version"
+            exit 1
+          fi
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/openconnect
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Release notes from CHANGELOG.md
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '
+            $0 ~ "^## " { if (found) exit; if ($2 == v) { found = 1; next } }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          {
+            echo
+            echo "### Install or update"
+            echo '```bash'
+            echo "docker pull ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/openconnect:$version"
+            echo '```'
+            echo "See the [README](https://github.com/$GITHUB_REPOSITORY#quick-start) for setup."
+          } >> notes.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "OpenConnect $GITHUB_REF_NAME" --notes-file notes.md --verify-tag

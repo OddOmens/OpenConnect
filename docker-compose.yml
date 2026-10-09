@@ -1,10 +1,12 @@
-# docker compose up -d   →   http://localhost:3000
+# docker compose up -d            →   http://localhost:3000 (pulls the published image)
+# docker compose up -d --build    →   builds from this source instead
 # Configure via a .env file next to this one (see .env.example) or in the dashboard's Settings.
 # On first start, sign-in setup asks for a code printed by: docker logs openconnect
 services:
   dashboard:
     build: .
-    image: openconnect:latest
+    # Published for Intel and ARM on every release. Pin a version with OPENCONNECT_VERSION=1.1.0.
+    image: ghcr.io/oddomens/openconnect:${OPENCONNECT_VERSION:-latest}
     container_name: openconnect
     ports:
       # Only this computer by default. Set BIND_ADDRESS=0.0.0.0 to reach it from your network

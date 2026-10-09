@@ -52,8 +52,10 @@ git clone https://github.com/OddOmens/OpenConnect.git
 cd OpenConnect
 cp .env.example .env                    # fill in Key ID, Issuer ID, Vendor Number
 cp ~/Downloads/AuthKey_XXXXXXXXXX.p8 keys/
-docker compose up -d --build
+docker compose up -d
 ```
+
+This pulls the published image (Intel and ARM, including Apple Silicon and Raspberry Pi). To build from source instead, use `docker compose up -d --build`.
 
 Then:
 
@@ -90,6 +92,7 @@ Set these in `.env` next to `docker-compose.yml`. Anything marked *Settings* can
 | `ASC_VENDOR_NUMBER` | | Vendor number for sales reports. *Settings* |
 | `ASC_PRIVATE_KEY_PATH` | auto | Path to the `.p8` inside the container. Without it, `AuthKey_<KEY_ID>.p8` is found in `./keys` automatically. |
 | `ASC_KEYS_DIR_HOST` | `./keys` | Host folder holding the `.p8`, mounted read-only. |
+| `OPENCONNECT_VERSION` | `latest` | Which published image to run, e.g. `1.1.0`. |
 | `PORT` | `3000` | Port on the host. |
 | `BIND_ADDRESS` | `127.0.0.1` | `127.0.0.1` means only this computer can connect. `0.0.0.0` lets your whole network connect. |
 | `OPENCONNECT_PASSWORD_REQUIRED` | `true` | `false` turns the password off completely. See [Running without a password](#running-without-a-password). |
@@ -168,7 +171,7 @@ Scheduled syncs don't pop up. Open **Sync → What changed** to see the report o
 Browsers block some features (like downloading share cards) on plain `http://` pages that aren't `localhost`. To get HTTPS on your tailnet at `https://openconnect.<tailnet>.ts.net`:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.tailscale.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.tailscale.yml up -d
 docker logs openconnect-tailscale   # first start only: open the login link
 ```
 
@@ -178,8 +181,11 @@ This needs MagicDNS and HTTPS certificates enabled for your tailnet (admin conso
 
 ```bash
 git pull
-docker compose up -d --build
+docker compose pull && docker compose up -d     # published image
+# or: docker compose up -d --build              # from source
 ```
+
+Releases and their notes are on the [Releases page](https://github.com/OddOmens/OpenConnect/releases).
 
 - All data lives in `./data/dashboard.db` (SQLite), which is mounted into the container. Rebuilds and upgrades keep it.
 - **Back up** by copying `./data` while the container is stopped, or at any time with `docker exec openconnect node -e "require('better-sqlite3')('/app/data/dashboard.db').backup('/app/data/backup.db')"`.

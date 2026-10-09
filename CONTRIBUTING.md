@@ -46,6 +46,12 @@ CI runs the same checks, plus a Docker build.
 | `lib/auth.ts` | Password, sessions, CSRF and rate limiting |
 | `lib/db.ts` | Schema and migrations |
 
+## Releasing (maintainers)
+
+1. Bump `version` in `package.json` (and `package-lock.json` via `npm install`), and add a section for it to `CHANGELOG.md`.
+2. Merge to `main`, then tag: `git tag v1.2.3 && git push origin v1.2.3`.
+3. The Release workflow publishes `ghcr.io/oddomens/openconnect` and creates the GitHub Release from the changelog.
+
 ## Guidelines
 
 - Keep pull requests focused. One change per PR is easiest to review.

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Download, RefreshCw, ArrowUpCircle, ShoppingBag, DollarSign, Eye, MousePointerClick, Users, Star, MessageSquare, Globe, Trophy, X } from "lucide-react"
+import { MapPinned, Download, RefreshCw, ArrowUpCircle, ShoppingBag, DollarSign, Eye, MousePointerClick, Users, Star, MessageSquare, Globe, Trophy, X } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { KPIS, KpiId } from "@/lib/prefs"
 import { fmtMoney, fmtNumber, fmtRating, pctChange } from "@/lib/format"
@@ -14,6 +14,8 @@ export interface KpiData {
   previous: Totals | null
   activeSubs: number | null
   engagementPending: boolean
+  reach: { count: number; newInRange: number } | null
+  reachTotal: number
   store: { rating: number | null; rating_count: number; storefronts: number; best_rank: number | null } | null
 }
 
@@ -29,6 +31,7 @@ const ICONS: Record<KpiId, React.ElementType> = {
   rating: Star,
   ratingCount: MessageSquare,
   countries: Globe,
+  reach: MapPinned,
   bestRank: Trophy,
 }
 
@@ -53,7 +56,7 @@ export function KPICards({ data, currency, hidden, order, columns, onHide }: KPI
     const change = pctChange(now, before)
     return change == null && before === 0 && now > 0 ? { change, delta: fmt(now) } : { change }
   }
-  const values: Record<KpiId, { value: string; change: number | null; delta?: string; hint?: string }> = {
+  const values: Record<KpiId, { value: string; change: number | null; delta?: string; up?: string; hint?: string }> = {
     downloads: { value: fmtNumber(t?.first_time), ...vs(t?.first_time, p?.first_time) },
     redownloads: { value: fmtNumber(t?.redownloads), ...vs(t?.redownloads, p?.redownloads) },
     updates: { value: fmtNumber(t?.updates), ...vs(t?.updates, p?.updates) },
@@ -69,6 +72,11 @@ export function KPICards({ data, currency, hidden, order, columns, onHide }: KPI
     rating: { value: fmtRating(data.store?.rating), change: null, hint: "Weighted, all storefronts" },
     ratingCount: { value: fmtNumber(data.store?.rating_count), change: null, hint: "All storefronts" },
     countries: { value: data.store ? `${data.store.storefronts}` : "—", change: null, hint: "of 175" },
+    reach: data.reach
+      ? data.reach.newInRange > 0
+        ? { value: `${data.reach.count} of ${data.reachTotal}`, change: null, up: `${data.reach.newInRange} new this period` }
+        : { value: `${data.reach.count} of ${data.reachTotal}`, change: null, hint: "Storefronts with downloads" }
+      : { value: "—", change: null },
     bestRank: { value: data.store?.best_rank ? `#${data.store.best_rank}` : "—", change: null, hint: "Any chart, any country" },
   }
 
@@ -100,6 +108,8 @@ export function KPICards({ data, currency, hidden, order, columns, onHide }: KPI
                   {v.change > 0 ? "▲" : v.change < 0 ? "▼" : "•"} {Math.abs(v.change).toFixed(1)}%
                   <span className="ml-1 text-muted-foreground">vs prev.</span>
                 </span>
+              ) : v.up ? (
+                <span className="text-emerald-600 dark:text-emerald-500">▲ {v.up}</span>
               ) : v.delta != null ? (
                 <span className="tabular-nums text-emerald-500">
                   ▲ +{v.delta}

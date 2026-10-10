@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.0
+
+### Added
+- **More share card designs.** Alongside Overview, the Share page now makes **Global Reach**, **World Map**, **Rating**, **Review** (one of your best recent 5★ written reviews, with "Another review" to pick a different one) and **Milestone** cards, all in the dashboard's look and in both 4:5 and 9:16.
+- **Global Reach** on the dashboard: in how many of the 175 App Store storefronts each app has been downloaded, all time, with a map, a per-app comparison and the countries not reached yet. A **Countries Reached** KPI shows the count and how many are new in the selected range.
+
+### Changed
+- The **World Map** counts **first-time downloads** (new customers) instead of first-time plus redownloads, on the dashboard and on the World Map share card. The country tooltip still lists redownloads.
+- Dashboard sections added in an update appear next to the section they belong with, instead of at the end of a saved layout.
+
 ## 1.1.0
 
 ### Added

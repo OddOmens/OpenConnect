@@ -4,6 +4,7 @@ export const SECTIONS = {
   kpis: 'Key Metrics',
   history: 'History Chart',
   map: 'World Map',
+  reach: 'Global Reach',
   breakdowns: 'Products, Devices & Versions',
   store: 'Ratings & Rankings',
   territories: 'Territories',
@@ -24,6 +25,7 @@ export const KPIS = {
   rating: 'Average Rating',
   ratingCount: 'Ratings',
   countries: 'Storefronts Available',
+  reach: 'Countries Reached',
   bestRank: 'Best Chart Rank',
 } as const
 export type KpiId = keyof typeof KPIS
@@ -69,13 +71,20 @@ export const BREAKDOWN_TABS = {
 export type BreakdownTab = keyof typeof BREAKDOWN_TABS
 
 export const MAP_ITEMS = {
-  downloads: 'Downloads view',
+  downloads: 'First-time downloads view',
   proceeds: 'Proceeds view',
   rating: 'Rating view',
   rank: 'Rank view',
   topList: 'Top storefronts list',
 } as const
 export type MapItem = keyof typeof MAP_ITEMS
+
+export const REACH_ITEMS = {
+  map: 'Map',
+  apps: 'Per-app comparison',
+  missing: 'Countries not reached yet',
+} as const
+export type ReachItem = keyof typeof REACH_ITEMS
 
 export const SUBSCRIPTION_ITEMS = {
   active: 'Active',
@@ -108,6 +117,17 @@ export function monthRangeLabel(id: string, month: 'long' | 'short' = 'long') {
   return new Date(m + '-01T00:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', month, year: 'numeric' })
 }
 
+// Share card designs.
+export const SHARE_TEMPLATES = {
+  overview: 'Overview',
+  reach: 'Global Reach',
+  map: 'World Map',
+  rating: 'Rating',
+  review: 'Review',
+  milestone: 'Milestone',
+} as const
+export type ShareTemplateId = keyof typeof SHARE_TEMPLATES
+
 // Share cards: the stat tiles you can pick, in the order they appear.
 export const SHARE_STATS = {
   proceeds: 'Proceeds',
@@ -119,6 +139,7 @@ export const SHARE_STATS = {
   bestRank: 'Best Chart Rank',
   storefronts: 'Storefronts',
   updates: 'Updates',
+  reach: 'Countries Reached',
 } as const
 export type ShareStatId = keyof typeof SHARE_STATS
 
@@ -152,6 +173,7 @@ export interface UiPrefs {
   hiddenHistorySeries: HistorySeries[]
   hiddenBreakdowns: BreakdownTab[]
   hiddenMapItems: MapItem[]
+  hiddenReachItems: ReachItem[]
   hiddenSubscriptionItems: SubscriptionItem[]
   range: RangeId | MonthRangeId
   granularity: 'day' | 'week' | 'month' | 'year'
@@ -163,7 +185,8 @@ export interface UiPrefs {
     format: '4x5' | '9x16'
     theme: 'dark' | 'light'
     range: '30d' | '90d' | '365d' | 'ytd' | 'all' | MonthRangeId
-    hero: ShareHeroId            // the big number and its chart
+    template: ShareTemplateId    // which card design
+    hero: ShareHeroId            // the big number and its chart (Overview)
     stats: ShareStatId[]         // tiles to show, in this order
     showList: boolean            // Top Markets (one app) / Top Apps (All Apps)
   }
@@ -183,6 +206,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   hiddenHistorySeries: ['updates', 'proceeds'],
   hiddenBreakdowns: [],
   hiddenMapItems: [],
+  hiddenReachItems: [],
   hiddenSubscriptionItems: [],
   range: '90d',
   granularity: 'day',
@@ -194,6 +218,7 @@ export const DEFAULT_PREFS: UiPrefs = {
     format: '4x5',
     theme: 'dark',
     range: '30d',
+    template: 'overview',
     hero: 'first_time',
     stats: Object.keys(SHARE_STATS) as ShareStatId[],
     showList: true,
@@ -206,11 +231,17 @@ export function mergePrefs(saved: Partial<UiPrefs> | null | undefined): UiPrefs 
   // Keep order valid if sections were added or removed since the prefs were saved.
   const known = Object.keys(SECTIONS) as SectionId[]
   const order = p.sectionOrder.filter((s) => known.includes(s))
-  for (const s of known) if (!order.includes(s)) order.push(s)
+  // Sections added since the prefs were saved go right after the one they follow by default.
+  known.forEach((s, i) => {
+    if (order.includes(s)) return
+    const after = i > 0 ? order.indexOf(known[i - 1]) : -1
+    order.splice(after + 1, 0, s)
+  })
   p.sectionOrder = order
   const kpis = Object.keys(KPIS) as KpiId[]
   p.kpiOrder = [...p.kpiOrder.filter((k) => kpis.includes(k)), ...kpis.filter((k) => !p.kpiOrder.includes(k))]
   if (!SHARE_HEROES[p.share.hero]) p.share.hero = DEFAULT_PREFS.share.hero
+  if (!SHARE_TEMPLATES[p.share.template]) p.share.template = DEFAULT_PREFS.share.template
   return p
 }
 

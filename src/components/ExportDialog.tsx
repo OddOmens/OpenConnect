@@ -1,14 +1,18 @@
 import { useState } from 'react';
 import { Download, X } from 'lucide-react';
-import type { App, DeviceId } from '../shared/types';
+import type { App, CreativeId, DeviceId } from '../shared/types';
+import { CREATIVE_IDS } from '../shared/types';
+import { CREATIVES } from '../shared/creatives';
+import { setName } from '../shared/sets';
 import { DEVICES, exportSizes, slideInDevice } from '../shared/devices';
 import { api } from '../api';
 
 export function ExportDialog({ app, device, onClose }: { app: App; device: DeviceId; onClose: () => void }) {
   const [devices, setDevices] = useState<DeviceId[]>([device]);
+  const [creatives, setCreatives] = useState<CreativeId[]>(() => CREATIVE_IDS.filter((c) => app.creatives[c].enabled));
   const [sizes, setSizes] = useState(() => Object.fromEntries(app.devices.map((d) => [d, exportSizes(app, d)])) as Record<DeviceId, string[]>);
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ dir: string; zipUrl: string | null; files: unknown[] } | null>(null);
+  const [result, setResult] = useState<{ dir: string; zipUrl: string | null; files: unknown[]; creatives?: unknown[] } | null>(null);
   const [error, setError] = useState('');
 
   const count = (d: DeviceId) =>
@@ -18,7 +22,7 @@ export function ExportDialog({ app, device, onClose }: { app: App; device: Devic
     setBusy(true);
     setError('');
     try {
-      const r = await api.export(app.id, { devices, sizes });
+      const r = await api.export(app.id, { devices, sizes, creatives }, app.activeSet);
       setResult(r);
       if (r.zipUrl) {
         const a = document.createElement('a');
@@ -37,7 +41,7 @@ export function ExportDialog({ app, device, onClose }: { app: App; device: Devic
     <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal" role="dialog" aria-modal aria-labelledby="export-title">
         <header className="row spread">
-          <h2 id="export-title">Export screenshots</h2>
+          <h2 id="export-title">Export {app.sets.length ? `“${setName(app)}”` : 'screenshots'}</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Close">
             <X size={16} />
           </button>
@@ -74,17 +78,39 @@ export function ExportDialog({ app, device, onClose }: { app: App; device: Devic
             </div>
           ))}
         </div>
+        {CREATIVE_IDS.some((c) => app.creatives[c].enabled) && (
+          <div className="export-devices">
+            <div className="export-device">
+              <strong>Product page</strong>
+              <div className="export-sizes">
+                {CREATIVE_IDS.filter((c) => app.creatives[c].enabled).map((c) => {
+                  const [w, h] = CREATIVES[c].sizes[CREATIVES[c].defaultSize];
+                  return (
+                    <label key={c} className="check">
+                      <input
+                        type="checkbox"
+                        checked={creatives.includes(c)}
+                        onChange={(e) => setCreatives((x) => (e.target.checked ? [...x, c] : x.filter((y) => y !== c)))}
+                      />
+                      {CREATIVES[c].label} {w} × {h}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
         {error && <p className="error">{error}</p>}
         {result && (
           <p className="success">
-            Saved {result.files.length} files to <code>{result.dir}</code>
+            Saved {result.files.length + (result.creatives?.length ?? 0)} files to <code>{result.dir}</code>
           </p>
         )}
         <footer className="row end">
           <button className="btn ghost" onClick={onClose}>
             {result ? 'Done' : 'Cancel'}
           </button>
-          <button className="btn primary" onClick={run} disabled={busy || !devices.length || devices.every((d) => !count(d) || !sizes[d]?.length)}>
+          <button className="btn primary" onClick={run} disabled={busy || ((!devices.length || devices.every((d) => !count(d) || !sizes[d]?.length)) && !creatives.length)}>
             <Download size={15} /> {busy ? 'Rendering…' : 'Export and download zip'}
           </button>
         </footer>

@@ -1,12 +1,27 @@
-import { CircleAlert, Copy, ImageUp, Trash2, TriangleAlert, X } from 'lucide-react';
-import type { App, AppProfile, Asset, Background, DeviceId, Layout, Palette, PaletteKey, Slide } from '../shared/types';
+import { CircleAlert, Copy, ImageUp, PanelRightClose, Trash2, TriangleAlert, X } from 'lucide-react';
+import type { ReactNode } from 'react';
+import type { AnnotationKind, App, AppProfile, Asset, Background, BadgeKind, DecorKind, DeviceId, FrameKind, Layout, PaletteKey, Slide, TextureKind, Theme } from '../shared/types';
 import { DEVICE_IDS } from '../shared/types';
 import { DEVICES, exportSizes } from '../shared/devices';
 import { checkSlide } from '../shared/guidelines';
-import { FONTS, PRESETS } from '../shared/presets';
+import { FONTS, PRESETS, slideTheme } from '../shared/presets';
+import { setName } from '../shared/sets';
 import { assetUrl } from '../render/SlideView';
 import type { EditorActions } from '../Editor';
 import { ColorField, Field, FilePick, Group, Segmented, Slider, TextInput } from './controls';
+import { CalloutPicker } from './CalloutPicker';
+import { CreativePanel } from './CreativePanel';
+import { StickerPanel } from './StickerPanel';
+import type { CreativeId } from '../shared/types';
+
+/** Common device finishes for the drawn hardware. */
+const DEVICE_COLORS: { label: string; value: string }[] = [
+  { label: 'Black', value: '#2b2b2e' },
+  { label: 'Silver', value: '#d9dadc' },
+  { label: 'Natural', value: '#bdb6aa' },
+  { label: 'Desert', value: '#c9a98a' },
+  { label: 'Blue', value: '#3d4a5c' },
+];
 
 const LAYOUT_OPTIONS: { value: Layout; label: string; title: string }[] = [
   { value: 'top', label: 'Text on top', title: 'Headline above, screenshot below' },
@@ -20,19 +35,25 @@ export function Inspector({
   app,
   device,
   slide,
+  productPage,
+  creative,
   tab,
   onTab,
   actions,
+  onClose,
 }: {
+  onClose: () => void;
   app: App;
   device: DeviceId;
   slide: Slide | null;
+  productPage: boolean;
+  creative: CreativeId | null;
   tab: InspectorTab;
   onTab: (t: InspectorTab) => void;
   actions: EditorActions;
 }) {
   const tabs: [InspectorTab, string][] = [
-    ['slide', 'Slide'],
+    ['slide', productPage ? 'Asset' : 'Slide'],
     ['style', 'Style'],
     ['app', 'App'],
   ];
@@ -45,14 +66,27 @@ export function Inspector({
               {label}
             </button>
           ))}
+          <button className="icon-btn panel-toggle" title="Hide panel (⌘/Ctrl + \ hides all)" aria-label="Hide inspector" onClick={onClose}>
+            <PanelRightClose size={15} />
+          </button>
         </div>
       </div>
       <div className="inspector-body">
         {tab === 'slide' &&
+          productPage &&
+          (creative ? (
+            <CreativePanel app={app} id={creative} actions={actions} />
+          ) : (
+            <p className="empty-note">
+              Select the header or the search results asset to edit it. Colors, type and the screenshot frame come from Style.
+            </p>
+          ))}
+        {tab === 'slide' &&
+          !productPage &&
           (slide ? (
             <SlidePanel app={app} device={device} slide={slide} actions={actions} />
           ) : (
-            <p className="empty-note">Select a slide to edit its words and screenshot. Colors, layout and type are in Style and apply to every slide.</p>
+            <p className="empty-note">Select a slide to edit its words and screenshot. Style sets the look of every slide; a slide can change any of it for itself here.</p>
           ))}
         {tab === 'style' && <StylePanel app={app} actions={actions} />}
         {tab === 'app' && <AppInfoPanel app={app} actions={actions} />}
@@ -61,7 +95,7 @@ export function Inspector({
   );
 }
 
-/** A slide is only its words and screenshot; everything visual is app-wide in Style. */
+/** A slide's words, screenshot, callout and role, plus any style it changes for itself. */
 function SlidePanel({ app, device, slide, actions }: { app: App; device: DeviceId; slide: Slide; actions: EditorActions }) {
   const patch = (p: unknown) => actions.patchSlide(slide.id, p);
   const shot = slide.shots[device] ? app.assets[slide.shots[device]!] : null;
@@ -90,6 +124,10 @@ function SlidePanel({ app, device, slide, actions }: { app: App; device: DeviceI
         <Field label="Subtitle">
           <TextInput multiline rows={2} value={slide.subtitle} placeholder="Optional" onChange={(v) => patch({ subtitle: v })} />
         </Field>
+        <label className="check">
+          <input type="checkbox" checked={slide.role === 'hero'} onChange={(e) => patch({ role: e.target.checked ? 'hero' : 'standard' })} />
+          Hero slide — badge, app icon and name, and a leaning device
+        </label>
         {issues.length > 0 && (
           <ul className="issues" aria-label="App Store guideline checks">
             {issues.map((i) => (
@@ -102,6 +140,8 @@ function SlidePanel({ app, device, slide, actions }: { app: App; device: DeviceI
         )}
       </Group>
 
+      {slide.role === 'hero' && <HeroSettings app={app} actions={actions} />}
+
       <Group title={`${label} screenshot`}>
         <ShotRow
           app={app}
@@ -111,6 +151,32 @@ function SlidePanel({ app, device, slide, actions }: { app: App; device: DeviceI
           onClear={() => patch({ shots: { [device]: null } })}
         />
       </Group>
+
+      {shot && (
+        <Group
+          title={`${label} callout`}
+          aside={
+            slide.callouts?.[device] ? (
+              <button className="btn small ghost" onClick={() => patch({ callouts: { [device]: null } })}>
+                Remove
+              </button>
+            ) : undefined
+          }
+        >
+          <p className="group-desc">
+            Drag a box on the screenshot around one thing to point at — a card, a row, a button. It's shown larger, lifted above
+            the screen. Size and shadow are in Style.
+          </p>
+          <CalloutPicker
+            src={assetUrl(app.id, shot.id)}
+            asset={shot}
+            value={slide.callouts?.[device]}
+            onChange={(r) => patch({ callouts: { [device]: r } })}
+          />
+        </Group>
+      )}
+
+      <StickerPanel app={app} slide={slide} device={device} actions={actions} />
 
       <Group title="Screen">
         <Field label="Screen shown">
@@ -126,6 +192,8 @@ function SlidePanel({ app, device, slide, actions }: { app: App; device: DeviceI
           />
         </Field>
       </Group>
+
+      <SlideStyle app={app} slide={slide} actions={actions} />
     </>
   );
 }
@@ -167,15 +235,15 @@ function ShotRow({
   );
 }
 
-function BackgroundImage({
-  app,
+export function BackgroundImage({
+  appId,
   bg,
-  actions,
+  upload,
   onChange,
 }: {
-  app: App;
+  appId: string;
   bg: Background;
-  actions: EditorActions;
+  upload: (f: File) => Promise<string | undefined>;
   onChange: (b: Partial<Background>) => void;
 }) {
   return (
@@ -186,7 +254,7 @@ function BackgroundImage({
           <FilePick
             className="btn small"
             onFiles={async ([f]) => {
-              const id = await actions.uploadBackground(f);
+              const id = await upload(f);
               if (id) onChange({ type: 'image', imageAssetId: id });
             }}
           >
@@ -201,7 +269,7 @@ function BackgroundImage({
       </div>
       {bg.imageAssetId && (
         <>
-          <img className="bg-thumb" src={assetUrl(app.id, bg.imageAssetId)} alt="" />
+          <img className="bg-thumb" src={assetUrl(appId, bg.imageAssetId)} alt="" />
           <Field label="Darken">
             <Slider value={bg.overlay} min={0} max={0.9} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => onChange({ overlay: v })} />
           </Field>
@@ -211,18 +279,56 @@ function BackgroundImage({
   );
 }
 
-/** Every setting here applies to all slides in the app. */
+/** Nested object from a dotted path: nest('frame.kind', 'device') → { frame: { kind: 'device' } }. */
+function nest(path: string, value: unknown): Record<string, unknown> {
+  return path
+    .split('.')
+    .reverse()
+    .reduce<unknown>((acc, k) => ({ [k]: acc }), value) as Record<string, unknown>;
+}
+function getPath(o: unknown, path: string): unknown {
+  return path.split('.').reduce<unknown>((acc, k) => (acc && typeof acc === 'object' ? (acc as Record<string, unknown>)[k] : undefined), o);
+}
+
+/**
+ * Where style edits go: the app's theme (Style tab) or one slide's override (Slide tab). `reset` returns a
+ * function only when the slide overrides that setting, which is what shows its ↺ button.
+ */
+interface StyleScope {
+  t: Theme;
+  set: (path: string, value: unknown) => void;
+  reset: (path: string) => (() => void) | undefined;
+  palettes: PaletteKey[];
+  uploadBackground: (f: File) => Promise<string | undefined>;
+  appId: string;
+  /** the app's brand colors, to seed new gradients and meshes */
+  brand: string[];
+}
+
+/** The Style tab: the app-wide look every slide starts from. */
 function StylePanel({ app, actions }: { app: App; actions: EditorActions }) {
   const t = app.theme;
-  const patch = actions.patchApp;
-  const theme = (p: unknown) => patch({ theme: p });
+  const scope: StyleScope = {
+    t,
+    set: (path, v) => actions.patchApp({ theme: nest(path, v) }),
+    reset: () => undefined,
+    palettes: t.alternate ? ['primary', 'alt'] : ['primary'],
+    uploadBackground: actions.uploadBackground,
+    appId: app.id,
+    brand: app.profile.brandColors,
+  };
 
   return (
     <>
       <Group title="Theme">
         <p className="group-desc">
-          Everything in Style applies to every slide on every device — iPhone, iPhone Duo, iPad and Mac. A theme changes colors and
-          type; your layout and screenshot size stay.
+          {app.sets.length > 0 && (
+            <>
+              Editing the <strong>{setName(app)}</strong> set — other sets keep their own style.{' '}
+            </>
+          )}
+          Style is the look of every slide on every device. A slide can change any of it for itself in the Slide tab. A theme
+          changes colors and type; your layout and screenshot size stay.
         </p>
         <div className="preset-grid">
           {PRESETS.map((p) => (
@@ -230,7 +336,7 @@ function StylePanel({ app, actions }: { app: App; actions: EditorActions }) {
               key={p.id}
               className={`preset-card ${t.presetId === p.id ? 'on' : ''}`}
               aria-pressed={t.presetId === p.id}
-              onClick={() => patch({ preset: p.id })}
+              onClick={() => actions.patchApp({ preset: p.id })}
               style={{ background: p.theme.palettes.primary.background.color, color: p.theme.palettes.primary.textColor, fontFamily: `"${p.theme.fontFamily}"` }}
             >
               <span style={{ fontWeight: p.theme.headlineWeight }}>
@@ -242,32 +348,108 @@ function StylePanel({ app, actions }: { app: App; actions: EditorActions }) {
           ))}
         </div>
       </Group>
+      <StyleControls
+        scope={scope}
+        afterColors={
+          <Group title="Alternate colors">
+            <label className="check">
+              <input type="checkbox" checked={t.alternate} onChange={(e) => actions.patchApp({ theme: { alternate: e.target.checked } })} />
+              Use a second color scheme on every other slide
+            </label>
+          </Group>
+        }
+      />
+    </>
+  );
+}
 
+/** Style for one slide: starts from the app's Style; any change here applies to this slide only. */
+function SlideStyle({ app, slide, actions }: { app: App; slide: Slide; actions: EditorActions }) {
+  const index = app.slides.findIndex((s) => s.id === slide.id);
+  const key: PaletteKey = app.theme.alternate && index % 2 === 1 ? 'alt' : 'primary';
+  const overrides = countLeaves(slide.style);
+  const scope: StyleScope = {
+    t: slideTheme(app, slide),
+    set: (path, v) => actions.patchSlide(slide.id, { style: nest(path, v) }),
+    reset: (path) => {
+      const v = getPath(slide.style, path);
+      return v === undefined || v === null || (typeof v === 'object' && !countLeaves(v))
+        ? undefined
+        : () => actions.patchSlide(slide.id, { style: nest(path, null) });
+    },
+    palettes: [key],
+    uploadBackground: actions.uploadBackground,
+    appId: app.id,
+    brand: app.profile.brandColors,
+  };
+  return (
+    <details className="slide-style" open={overrides > 0 || undefined}>
+      <summary>
+        Style for this slide
+        {overrides > 0 && <span className="override-count">{overrides} changed</span>}
+      </summary>
+      <Group
+        title="Overrides"
+        aside={
+          overrides > 0 ? (
+            <button className="btn small ghost" onClick={() => actions.patchSlide(slide.id, { style: null })}>
+              Revert all
+            </button>
+          ) : undefined
+        }
+      >
+        <p className="group-desc">
+          Everything starts from the app's Style. Change a setting here to use it on this slide only; ↺ next to it goes back to
+          the app style.
+        </p>
+      </Group>
+      <StyleControls scope={scope} />
+    </details>
+  );
+}
+
+function countLeaves(o: unknown): number {
+  if (o === null || o === undefined) return 0;
+  if (typeof o !== 'object' || Array.isArray(o)) return 1;
+  return Object.values(o as Record<string, unknown>).reduce<number>((n, v) => n + countLeaves(v), 0);
+}
+
+/** Layout, colors, type, frame and callouts — shared by the Style tab and a slide's own style. */
+function StyleControls({ scope, afterColors }: { scope: StyleScope; afterColors?: ReactNode }) {
+  const { t, set, reset } = scope;
+  return (
+    <>
       <Group title="Layout">
-        <Segmented value={t.layout} options={LAYOUT_OPTIONS} onChange={(v) => theme({ layout: v })} />
-        <Field label="Text alignment">
-          <Segmented value={t.align} options={[{ value: 'left', label: 'Left' }, { value: 'center', label: 'Center' }]} onChange={(v) => theme({ align: v })} />
+        <Field group label="Arrangement" onReset={reset('layout')}>
+          <Segmented value={t.layout} options={LAYOUT_OPTIONS} onChange={(v) => set('layout', v)} />
         </Field>
-        <Field label="Screenshot size">
-          <Slider value={t.shotScale} min={0.5} max={1.5} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => theme({ shotScale: v })} />
+        <Field group label="Text alignment" onReset={reset('align')}>
+          <Segmented value={t.align} options={[{ value: 'left', label: 'Left' }, { value: 'center', label: 'Center' }]} onChange={(v) => set('align', v)} />
         </Field>
-        <Field label="Screenshot position">
-          <Slider value={t.shotOffsetY} min={-600} max={600} step={5} onChange={(v) => theme({ shotOffsetY: v })} />
+        <Field label="Screenshot size" onReset={reset('shotScale')}>
+          <Slider value={t.shotScale} min={0.5} max={1.5} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => set('shotScale', v)} />
+        </Field>
+        <Field label="Screenshot position" onReset={reset('shotOffsetY')}>
+          <Slider value={t.shotOffsetY} min={-600} max={600} step={5} onChange={(v) => set('shotOffsetY', v)} />
+        </Field>
+        <Field label="Text position" hint="Move the headline up or down; the screenshot stays put." onReset={reset('textOffsetY')}>
+          <Slider value={t.textOffsetY} min={-400} max={600} step={5} onChange={(v) => set('textOffsetY', v)} />
         </Field>
       </Group>
 
-      <PaletteEditor app={app} k="primary" actions={actions} />
-      <Group title="Alternate colors">
-        <label className="check">
-          <input type="checkbox" checked={t.alternate} onChange={(e) => theme({ alternate: e.target.checked })} />
-          Use a second color scheme on every other slide
-        </label>
-      </Group>
-      {t.alternate && <PaletteEditor app={app} k="alt" actions={actions} />}
+      {scope.palettes.map((k, i) => (
+        <PaletteEditor
+          key={k}
+          scope={scope}
+          k={k}
+          title={scope.palettes.length > 1 ? (i === 0 ? 'Colors — odd slides' : 'Colors — even slides') : 'Colors'}
+        />
+      ))}
+      {afterColors}
 
       <Group title="Type">
-        <Field label="Typeface">
-          <select value={t.fontFamily} onChange={(e) => theme({ fontFamily: e.target.value })} style={{ fontFamily: `"${t.fontFamily}"` }}>
+        <Field label="Typeface" onReset={reset('fontFamily')}>
+          <select value={t.fontFamily} onChange={(e) => set('fontFamily', e.target.value)} style={{ fontFamily: `"${t.fontFamily}"` }}>
             {FONTS.map((f) => (
               <option key={f} value={f} style={{ fontFamily: `"${f}"` }}>
                 {f.replace(' Variable', '').replace('-apple-system', 'SF Pro (system)')}
@@ -275,36 +457,276 @@ function StylePanel({ app, actions }: { app: App; actions: EditorActions }) {
             ))}
           </select>
         </Field>
-        <Field label="Weight">
-          <Slider value={t.headlineWeight} min={300} max={900} step={50} onChange={(v) => theme({ headlineWeight: v })} />
+        <Field label="Weight" onReset={reset('headlineWeight')}>
+          <Slider value={t.headlineWeight} min={300} max={900} step={50} onChange={(v) => set('headlineWeight', v)} />
         </Field>
-        <Field label="Headline size">
-          <Slider value={t.headlineSize} min={40} max={160} onChange={(v) => theme({ headlineSize: v })} />
+        <Field label="Headline size" onReset={reset('headlineSize')}>
+          <Slider value={t.headlineSize} min={40} max={160} onChange={(v) => set('headlineSize', v)} />
         </Field>
-        <Field label="Subtitle size">
-          <Slider value={t.subtitleSize} min={20} max={80} onChange={(v) => theme({ subtitleSize: v })} />
+        <Field label="Subtitle size" onReset={reset('subtitleSize')}>
+          <Slider value={t.subtitleSize} min={20} max={80} onChange={(v) => set('subtitleSize', v)} />
         </Field>
-        <Field label="Letter spacing">
-          <Slider value={t.letterSpacing} min={-0.06} max={0.1} step={0.005} format={(v) => v.toFixed(3)} onChange={(v) => theme({ letterSpacing: v })} />
+        <Field label="Letter spacing" onReset={reset('letterSpacing')}>
+          <Slider value={t.letterSpacing} min={-0.06} max={0.1} step={0.005} format={(v) => v.toFixed(3)} onChange={(v) => set('letterSpacing', v)} />
         </Field>
-        <Field label="Line height">
-          <Slider value={t.lineHeight} min={0.85} max={1.5} step={0.01} format={(v) => v.toFixed(2)} onChange={(v) => theme({ lineHeight: v })} />
+        <Field label="Line height" onReset={reset('lineHeight')}>
+          <Slider value={t.lineHeight} min={0.85} max={1.5} step={0.01} format={(v) => v.toFixed(2)} onChange={(v) => set('lineHeight', v)} />
         </Field>
       </Group>
 
+      <Group title="Headline marks">
+        <p className="group-desc">Hand-drawn marks on the *highlighted* words of each headline.</p>
+        <Field group label="Mark" onReset={reset('annotation.kind')}>
+          <Segmented<AnnotationKind>
+            value={t.annotation.kind}
+            options={[
+              { value: 'none', label: 'None' },
+              { value: 'underline', label: 'Underline' },
+              { value: 'double', label: 'Double' },
+              { value: 'circle', label: 'Circle' },
+              { value: 'box', label: 'Box' },
+              { value: 'marker', label: 'Marker' },
+              { value: 'strike', label: 'Strike' },
+              { value: 'brackets', label: 'Brackets' },
+              { value: 'squiggle', label: 'Squiggle' },
+            ]}
+            onChange={(v) => set('annotation.kind', v)}
+          />
+        </Field>
+        {t.annotation.kind !== 'none' && (
+          <>
+            <Field label="Thickness" onReset={reset('annotation.width')}>
+              <Slider value={t.annotation.width} min={1} max={20} step={0.5} onChange={(v) => set('annotation.width', v)} />
+            </Field>
+            <Field label="Sketchiness" onReset={reset('annotation.roughness')}>
+              <Slider value={t.annotation.roughness} min={0} max={3.5} step={0.1} format={(v) => (v < 0.3 ? 'Clean' : v.toFixed(1))} onChange={(v) => set('annotation.roughness', v)} />
+            </Field>
+            <Field label="Spacing" onReset={reset('annotation.padding')}>
+              <Slider value={t.annotation.padding} min={0} max={50} onChange={(v) => set('annotation.padding', v)} />
+            </Field>
+            <label className="check">
+              <input type="checkbox" checked={!t.annotation.color} onChange={(e) => set('annotation.color', e.target.checked ? '' : t.palettes.primary.textColor)} />
+              Mark in the highlight color
+            </label>
+            {t.annotation.color && <ColorField label="Mark color" value={t.annotation.color} onChange={(v) => set('annotation.color', v)} onReset={reset('annotation.color')} />}
+            <label className="check">
+              <input type="checkbox" checked={t.annotation.recolor} onChange={(e) => set('annotation.recolor', e.target.checked)} />
+              Also color the marked words
+            </label>
+          </>
+        )}
+      </Group>
+
       <Group title="Screenshot frame">
-        <ColorField label="Stroke" value={t.frame.strokeColor} onChange={(v) => theme({ frame: { strokeColor: v } })} />
-        <Field label="Stroke width">
-          <Slider value={t.frame.strokeWidth} min={0} max={30} step={0.5} onChange={(v) => theme({ frame: { strokeWidth: v } })} />
+        <Field group label="Frame" onReset={reset('frame.kind')}>
+          <Segmented<FrameKind>
+            value={t.frame.kind}
+            options={[
+              { value: 'outline', label: 'Outline', title: 'Rounded screenshot with a stroke' },
+              { value: 'device', label: 'Device', title: 'Drawn iPhone, iPad or Mac around the screenshot' },
+            ]}
+            onChange={(v) => set('frame.kind', v)}
+          />
         </Field>
-        <Field label="Corner radius">
-          <Slider value={t.frame.radius} min={0} max={20} step={0.25} format={(v) => `${v}%`} onChange={(v) => theme({ frame: { radius: v } })} />
+        {t.frame.kind === 'device' ? (
+          <>
+            <div className="device-colors" role="group" aria-label="Device finish">
+              {DEVICE_COLORS.map((c) => (
+                <button
+                  key={c.value}
+                  className={`device-color ${t.frame.deviceColor.toLowerCase() === c.value ? 'on' : ''}`}
+                  title={c.label}
+                  aria-label={c.label}
+                  aria-pressed={t.frame.deviceColor.toLowerCase() === c.value}
+                  style={{ background: c.value }}
+                  onClick={() => set('frame.deviceColor', c.value)}
+                />
+              ))}
+            </div>
+            <ColorField label="Device color" value={t.frame.deviceColor} onChange={(v) => set('frame.deviceColor', v)} onReset={reset('frame.deviceColor')} />
+          </>
+        ) : (
+          <>
+            <ColorField label="Stroke" value={t.frame.strokeColor} onChange={(v) => set('frame.strokeColor', v)} onReset={reset('frame.strokeColor')} />
+            <Field label="Stroke width" onReset={reset('frame.strokeWidth')}>
+              <Slider value={t.frame.strokeWidth} min={0} max={30} step={0.5} onChange={(v) => set('frame.strokeWidth', v)} />
+            </Field>
+            <Field label="Corner radius" onReset={reset('frame.radius')}>
+              <Slider value={t.frame.radius} min={0} max={20} step={0.25} format={(v) => `${v}%`} onChange={(v) => set('frame.radius', v)} />
+            </Field>
+          </>
+        )}
+        <Field label="Shadow" onReset={reset('frame.shadow')}>
+          <Slider value={t.frame.shadow} min={0} max={0.8} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => set('frame.shadow', v)} />
         </Field>
-        <Field label="Shadow">
-          <Slider value={t.frame.shadow} min={0} max={0.8} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => theme({ frame: { shadow: v } })} />
+      </Group>
+
+      <Group title="Callouts">
+        <p className="group-desc">How a marked part of a screenshot is lifted out. Mark it on a slide in the Slide tab.</p>
+        <Field label="Size" onReset={reset('callout.scale')}>
+          <Slider value={t.callout.scale} min={1} max={1.5} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => set('callout.scale', v)} />
+        </Field>
+        <Field label="Shadow" onReset={reset('callout.shadow')}>
+          <Slider value={t.callout.shadow} min={0} max={0.8} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => set('callout.shadow', v)} />
+        </Field>
+        <Field label="Corner radius" onReset={reset('callout.radius')}>
+          <Slider value={t.callout.radius} min={0} max={80} onChange={(v) => set('callout.radius', v)} />
+        </Field>
+      </Group>
+
+      <Group title="Background effects">
+        <Field group label="Panorama" onReset={reset('panorama')} hint="One background running across every slide; swiping through the set reads as one picture.">
+          <label className="check">
+            <input type="checkbox" checked={t.panorama} onChange={(e) => set('panorama', e.target.checked)} />
+            Continue the background across slides
+          </label>
+        </Field>
+        <Field group label="Texture" onReset={reset('texture.kind')}>
+          <Segmented<TextureKind>
+            value={t.texture.kind}
+            options={[
+              { value: 'none', label: 'None' },
+              { value: 'grain', label: 'Grain' },
+              { value: 'dots', label: 'Dots' },
+              { value: 'grid', label: 'Grid' },
+              { value: 'lines', label: 'Lines' },
+            ]}
+            onChange={(v) => set('texture.kind', v)}
+          />
+        </Field>
+        {t.texture.kind !== 'none' && (
+          <>
+            <Field label="Texture strength" onReset={reset('texture.opacity')}>
+              <Slider value={t.texture.opacity} min={0.02} max={0.6} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => set('texture.opacity', v)} />
+            </Field>
+            {t.texture.kind !== 'grain' && (
+              <Field label="Spacing" onReset={reset('texture.size')}>
+                <Slider value={t.texture.size} min={8} max={120} onChange={(v) => set('texture.size', v)} />
+              </Field>
+            )}
+          </>
+        )}
+        <Field label="Vignette" onReset={reset('vignette')}>
+          <Slider value={t.vignette} min={0} max={1} step={0.05} format={(v) => (v ? `${Math.round(v * 100)}%` : 'Off')} onChange={(v) => set('vignette', v)} />
+        </Field>
+        <Field label="Glow behind screenshot" onReset={reset('glow.strength')}>
+          <Slider value={t.glow.strength} min={0} max={1} step={0.05} format={(v) => (v ? `${Math.round(v * 100)}%` : 'Off')} onChange={(v) => set('glow.strength', v)} />
+        </Field>
+        {t.glow.strength > 0 && (
+          <>
+            <Field label="Glow size" onReset={reset('glow.size')}>
+              <Slider value={t.glow.size} min={0.6} max={2.5} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => set('glow.size', v)} />
+            </Field>
+            <label className="check">
+              <input type="checkbox" checked={!t.glow.color} onChange={(e) => set('glow.color', e.target.checked ? '' : t.palettes.primary.accentColor)} />
+              Use the highlight color
+            </label>
+            {t.glow.color && <ColorField label="Glow color" value={t.glow.color} onChange={(v) => set('glow.color', v)} onReset={reset('glow.color')} />}
+          </>
+        )}
+      </Group>
+
+      <Group
+        title="Decorations"
+        aside={
+          t.decor.kind !== 'none' ? (
+            <button className="btn small ghost" onClick={() => set('decor.seed', ((t.decor.seed || 1) % 997) + 1)}>
+              Shuffle
+            </button>
+          ) : undefined
+        }
+      >
+        <p className="group-desc">Generated shapes in your colors, behind the screenshot. With Panorama they flow across slides.</p>
+        <Field group label="Shapes" onReset={reset('decor.kind')}>
+          <Segmented<DecorKind>
+            value={t.decor.kind}
+            options={[
+              { value: 'none', label: 'None' },
+              { value: 'blobs', label: 'Blobs' },
+              { value: 'waves', label: 'Waves' },
+              { value: 'rings', label: 'Rings' },
+              { value: 'sparkles', label: 'Sparkles' },
+              { value: 'confetti', label: 'Confetti' },
+              { value: 'bokeh', label: 'Bokeh' },
+            ]}
+            onChange={(v) => set('decor.kind', v)}
+          />
+        </Field>
+        {t.decor.kind !== 'none' && (
+          <>
+            <Field label="Amount" onReset={reset('decor.density')}>
+              <Slider value={t.decor.density} min={0.25} max={3} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => set('decor.density', v)} />
+            </Field>
+            <Field label="Size" onReset={reset('decor.scale')}>
+              <Slider value={t.decor.scale} min={0.4} max={2.5} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => set('decor.scale', v)} />
+            </Field>
+            <Field label="Opacity" onReset={reset('decor.opacity')}>
+              <Slider value={t.decor.opacity} min={0.05} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => set('decor.opacity', v)} />
+            </Field>
+            <label className="check">
+              <input type="checkbox" checked={!t.decor.color} onChange={(e) => set('decor.color', e.target.checked ? '' : t.palettes.primary.accentColor)} />
+              Use the highlight and brand colors
+            </label>
+            {t.decor.color && <ColorField label="Shape color" value={t.decor.color} onChange={(v) => set('decor.color', v)} onReset={reset('decor.color')} />}
+          </>
+        )}
+      </Group>
+
+      <Group title="Stickers">
+        <p className="group-desc">Add emoji and doodles on a slide in its Slide tab.</p>
+        <Field label="Sticker shadow" onReset={reset('stickerShadow')}>
+          <Slider value={t.stickerShadow} min={0} max={0.8} step={0.05} format={(v) => (v ? `${Math.round(v * 100)}%` : 'Off')} onChange={(v) => set('stickerShadow', v)} />
         </Field>
       </Group>
     </>
+  );
+}
+
+/** Badge, logo lockup and tilt for hero slides. Shared by every hero slide, so it lives on the app. */
+function HeroSettings({ app, actions }: { app: App; actions: EditorActions }) {
+  const h = app.theme.hero;
+  const hero = (p: Partial<typeof h>) => actions.patchApp({ theme: { hero: p } });
+  return (
+    <Group title="Hero design">
+      <p className="group-desc">Shared by every hero slide. Only show a rating or download count the App Store really shows.</p>
+      <Field group label="Badge">
+        <Segmented<BadgeKind>
+          value={h.badge}
+          options={[
+            { value: 'none', label: 'None' },
+            { value: 'rating', label: 'Rating' },
+            { value: 'downloads', label: 'Downloads' },
+            { value: 'custom', label: 'Custom' },
+          ]}
+          onChange={(v) => hero({ badge: v })}
+        />
+      </Field>
+      {h.badge !== 'none' && (
+        <>
+          <Field label="Badge text">
+            <TextInput
+              value={h.badgeTitle}
+              placeholder={h.badge === 'rating' ? '4.9 Stars' : h.badge === 'downloads' ? '1M+ Downloads' : 'Editors’ favorite'}
+              onChange={(v) => hero({ badgeTitle: v })}
+            />
+          </Field>
+          <Field label="Caption">
+            <TextInput
+              value={h.badgeCaption}
+              placeholder={h.badge === 'rating' ? 'From 62k+ ratings' : h.badge === 'downloads' ? 'Worldwide' : 'Optional'}
+              onChange={(v) => hero({ badgeCaption: v })}
+            />
+          </Field>
+        </>
+      )}
+      <label className="check">
+        <input type="checkbox" checked={h.lockup} onChange={(e) => hero({ lockup: e.target.checked })} />
+        Show the app icon and name
+      </label>
+      <Field label="Device tilt">
+        <Slider value={h.tilt} min={-15} max={15} step={0.5} format={(v) => `${v}°`} onChange={(v) => hero({ tilt: v })} />
+      </Field>
+    </Group>
   );
 }
 
@@ -435,37 +857,66 @@ function AppInfoPanel({ app, actions }: { app: App; actions: EditorActions }) {
   );
 }
 
-function PaletteEditor({ app, k, actions }: { app: App; k: PaletteKey; actions: EditorActions }) {
-  const p = app.theme.palettes[k];
-  const set = (patch: Partial<Palette> | { background: Partial<Background> }) => actions.patchApp({ theme: { palettes: { [k]: patch } } });
+function PaletteEditor({ scope, k, title }: { scope: StyleScope; k: PaletteKey; title: string }) {
+  const p = scope.t.palettes[k];
+  const path = (sub: string) => `palettes.${k}.${sub}`;
+  const set = (sub: string, v: unknown) => scope.set(path(sub), v);
   const bg = p.background;
   return (
-    <Group title={k === 'primary' ? (app.theme.alternate ? 'Colors — odd slides' : 'Colors') : 'Colors — even slides'}>
-      <Field label="Background">
+    <Group title={title}>
+      <Field group label="Background" onReset={scope.reset(path('background'))}>
         <Segmented
           value={bg.type}
           options={[
             { value: 'solid', label: 'Solid' },
             { value: 'linear', label: 'Gradient' },
             { value: 'radial', label: 'Glow' },
+            { value: 'mesh', label: 'Mesh', title: 'Soft blobs of three colors' },
             { value: 'image', label: 'Photo' },
+            { value: 'screenshot', label: 'Frosted', title: 'The slide’s own screenshot, blurred' },
           ]}
-          onChange={(v) => set({ background: { type: v } })}
+          onChange={(v) => {
+            // A gradient, glow or mesh of one color shows nothing: start it from the highlight and brand colors.
+            const same = (a: string, b?: string) => !b || a.toLowerCase() === b.toLowerCase();
+            if ((v === 'linear' || v === 'radial' || v === 'mesh') && same(bg.color, bg.color2)) {
+              const extra = scope.brand.find((c) => !same(c, bg.color) && !same(c, p.accentColor)) ?? p.subtitleColor;
+              set('background', { type: v, color2: p.accentColor, color3: extra });
+            } else set('background.type', v);
+          }}
         />
       </Field>
-      <ColorField label={bg.type === 'solid' || bg.type === 'image' ? 'Color' : 'From'} value={bg.color} onChange={(v) => set({ background: { color: v } })} />
-      {(bg.type === 'linear' || bg.type === 'radial') && (
-        <ColorField label="To" value={bg.color2} onChange={(v) => set({ background: { color2: v } })} />
+      <ColorField
+        label={bg.type === 'linear' || bg.type === 'radial' ? 'From' : bg.type === 'mesh' ? 'Base' : 'Color'}
+        value={bg.color}
+        onChange={(v) => set('background.color', v)}
+      />
+      {(bg.type === 'linear' || bg.type === 'radial' || bg.type === 'mesh') && (
+        <ColorField label={bg.type === 'mesh' ? 'Blob' : 'To'} value={bg.color2} onChange={(v) => set('background.color2', v)} />
+      )}
+      {bg.type === 'mesh' && (
+        <>
+          <ColorField label="Blob 2" value={bg.color3 || bg.color2} onChange={(v) => set('background.color3', v)} />
+          <button className="btn small" onClick={() => set('background.seed', ((bg.seed || 1) % 997) + 1)}>
+            Shuffle blobs
+          </button>
+        </>
+      )}
+      {bg.type === 'screenshot' && (
+        <Field label="Darken">
+          <Slider value={bg.overlay} min={0} max={0.9} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => set('background.overlay', v)} />
+        </Field>
       )}
       {bg.type === 'linear' && (
         <Field label="Angle">
-          <Slider value={bg.angle} min={0} max={360} step={5} format={(v) => `${v}°`} onChange={(v) => set({ background: { angle: v } })} />
+          <Slider value={bg.angle} min={0} max={360} step={5} format={(v) => `${v}°`} onChange={(v) => set('background.angle', v)} />
         </Field>
       )}
-      {bg.type === 'image' && <BackgroundImage app={app} bg={bg} actions={actions} onChange={(b) => set({ background: b })} />}
-      <ColorField label="Headline" value={p.textColor} onChange={(v) => set({ textColor: v })} />
-      <ColorField label="Highlight" value={p.accentColor} onChange={(v) => set({ accentColor: v })} />
-      <ColorField label="Subtitle" value={p.subtitleColor} onChange={(v) => set({ subtitleColor: v })} />
+      {bg.type === 'image' && (
+        <BackgroundImage appId={scope.appId} bg={bg} upload={scope.uploadBackground} onChange={(b) => set('background', b)} />
+      )}
+      <ColorField label="Headline" value={p.textColor} onChange={(v) => set('textColor', v)} onReset={scope.reset(path('textColor'))} />
+      <ColorField label="Highlight" value={p.accentColor} onChange={(v) => set('accentColor', v)} onReset={scope.reset(path('accentColor'))} />
+      <ColorField label="Subtitle" value={p.subtitleColor} onChange={(v) => set('subtitleColor', v)} onReset={scope.reset(path('subtitleColor'))} />
     </Group>
   );
 }

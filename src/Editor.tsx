@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { App, AppSummary, DeviceId, Slide } from './shared/types';
+import type { App, AppSummary, CreativeId, DeviceId, Slide } from './shared/types';
 import { applyPreset, deepMerge } from './shared/presets';
 import { DEVICES } from './shared/devices';
 import { api, CLIENT_ID } from './api';
 import { AppRail } from './components/AppRail';
 import { Topbar } from './components/Topbar';
-import { Pasteboard } from './components/Pasteboard';
+import { SetsBoard } from './components/SetsBoard';
+import { PRIMARY_SET, setList, setView } from './shared/sets';
+import { CreativesBoard } from './components/CreativesBoard';
 import { Inspector, type InspectorTab } from './components/Inspector';
 import { ExportDialog } from './components/ExportDialog';
 import { Welcome } from './components/Welcome';
+import { useUiScale } from './theme';
 
 export interface EditorActions {
   patchApp: (patch: unknown) => void;
@@ -26,7 +29,14 @@ export interface EditorActions {
 
 const readParams = () => {
   const p = new URLSearchParams(location.search);
-  return { app: p.get('app'), device: p.get('device') as DeviceId | null };
+  const device = p.get('device');
+  // device=product-page opens the Product page view (header and search results assets).
+  return {
+    app: p.get('app'),
+    device: device === 'product-page' ? null : (device as DeviceId | null),
+    productPage: device === 'product-page',
+    set: p.get('set') ?? PRIMARY_SET,
+  };
 };
 
 export function Editor() {
@@ -35,10 +45,40 @@ export function Editor() {
   const [app, setApp] = useState<App | null>(null);
   const [device, setDevice] = useState<DeviceId>(() => readParams().device ?? 'iphone');
   const [selected, setSelected] = useState<string | null>(null);
+  const [productPage, setProductPage] = useState(() => readParams().productPage);
+  const [creative, setCreative] = useState<CreativeId | null>(null);
+  // The screenshot set being edited; Slide and Style tabs work on it.
+  const [activeSet, setActiveSet] = useState<string>(() => readParams().set);
   const [tab, setTab] = useState<InspectorTab>('slide');
   const [exporting, setExporting] = useState(false);
   const [toast, setToast] = useState<{ msg: string; key: number } | null>(null);
   const [zoom, setZoom] = useState(() => Number(localStorage.getItem('appshot.zoom')) || 520);
+  const ui = useUiScale();
+  // Canvas frames scale with the interface size too, so 100% zoom looks the same on any display.
+  const canvasZoom = Math.round(zoom * ui[2]);
+  // Floating side panels; ⌘/Ctrl + \ hides or shows both, like a design tool's "show UI".
+  const [panels, setPanels] = useState<{ left: boolean; right: boolean }>(() => {
+    try {
+      return { left: true, right: true, ...JSON.parse(localStorage.getItem('appshot.panels') ?? '{}') };
+    } catch {
+      return { left: true, right: true };
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('appshot.panels', JSON.stringify(panels));
+    } catch {}
+  }, [panels]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
+        e.preventDefault();
+        setPanels((p) => (p.left || p.right ? { left: false, right: false } : { left: true, right: true }));
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const pending = useRef(new Map<string, unknown>());
   const flushTimer = useRef<number | undefined>(undefined);
@@ -82,9 +122,16 @@ export function Editor() {
   useEffect(() => {
     const url = new URL(location.href);
     if (appId) url.searchParams.set('app', appId);
-    url.searchParams.set('device', device);
+    url.searchParams.set('device', productPage ? 'product-page' : device);
+    if (activeSet === PRIMARY_SET) url.searchParams.delete('set');
+    else url.searchParams.set('set', activeSet);
     history.replaceState(null, '', url);
-  }, [appId, device]);
+  }, [appId, device, productPage, activeSet]);
+
+  // Fall back to the primary set when the active one is gone (deleted, or another app).
+  useEffect(() => {
+    if (app && !setList(app).some((x) => x.id === activeSet)) setActiveSet(PRIMARY_SET);
+  }, [app, activeSet]);
 
   useEffect(() => {
     if (app && !app.devices.includes(device)) setDevice(app.devices[0] ?? 'iphone');
@@ -113,14 +160,15 @@ export function Editor() {
     pending.current.clear();
     if (!id) return;
     for (const [key, patch] of entries) {
+      // Keys: "app|<set>" for app/style patches, "slide|<set>|<slide id>" for slides.
+      const [kind, set, slideId] = key.split('|');
       try {
-        if (key === '__app') {
-          const saved = await api.updateApp(id, patch);
+        if (kind === 'app') {
+          const saved = await api.updateApp(id, patch, set);
           // Adopt the server's theme so both sides agree (e.g. after a preset).
-          if ((patch as { preset?: string }).preset) setApp((a) => a && { ...a, theme: saved.theme });
+          if ((patch as { preset?: string }).preset) setApp((a) => a && withSet(a, set, () => ({ theme: saved.theme })));
         } else {
-          const s = await api.updateSlide(id, key, patch);
-          void s;
+          await api.updateSlide(id, slideId, patch, set);
         }
       } catch (e) {
         notify(`Couldn't save: ${(e as Error).message}`);
@@ -159,48 +207,54 @@ export function Editor() {
     [flush, refreshApp, notify],
   );
 
-  const actions: EditorActions = {
+  /** Actions on one screenshot set; every row of the canvas and the inspector get their set's. */
+  const actionsFor = (setId: string): EditorActions => ({
     notify,
     patchApp: (patch) => {
-      // A preset is resolved into a full theme here too, so the board updates instantly.
-      const { preset, ...rest } = patch as { preset?: string };
+      // Theme and creatives belong to the set; everything else (name, profile, devices…) is shared.
+      const { preset, theme, creatives, ...shared } = patch as { preset?: string; theme?: unknown; creatives?: unknown };
       setApp((a) => {
         if (!a) return a;
-        const next = deepMerge(a, rest);
-        return preset ? { ...next, theme: applyPreset(next.theme, preset) } : next;
+        return withSet(deepMerge(a, shared), setId, (p) => {
+          let t = preset ? applyPreset(p.theme, preset) : p.theme;
+          if (theme) t = deepMerge(t, theme);
+          return { theme: t, creatives: creatives ? deepMerge(p.creatives, creatives) : p.creatives };
+        });
       });
-      queue('__app', patch);
+      queue(`app|${setId}`, patch);
     },
     patchSlide: (slideId, patch) => {
-      setApp((a) => a && { ...a, slides: a.slides.map((s) => (s.id === slideId ? deepMerge(s, patch) : s)) });
-      queue(slideId, patch);
+      setApp((a) => a && withSet(a, setId, (p) => ({ slides: p.slides.map((s) => (s.id === slideId ? deepMerge(s, patch) : s)) })));
+      queue(`slide|${setId}|${slideId}`, patch);
     },
     addSlide: (partial = {}, index) =>
       run(async () => {
-        const s = await api.addSlide(app!.id, { ...partial, index });
+        const s = await api.addSlide(app!.id, { ...partial, index }, setId);
+        setActiveSet(setId);
         setSelected(s.id);
         setTab('slide');
       }),
     duplicateSlide: (slideId) =>
       run(async () => {
-        const i = app!.slides.findIndex((s) => s.id === slideId);
-        const { id: _id, ...rest } = app!.slides[i];
-        const s = await api.addSlide(app!.id, { ...rest, index: i + 1 });
+        const slides = setView(app!, setId === PRIMARY_SET ? null : setId).slides;
+        const i = slides.findIndex((s) => s.id === slideId);
+        const { id: _id, ...rest } = slides[i];
+        const s = await api.addSlide(app!.id, { ...rest, index: i + 1 }, setId);
         setSelected(s.id);
       }, 'Slide duplicated'),
     deleteSlide: (slideId) =>
       run(async () => {
-        await api.deleteSlide(app!.id, slideId);
+        await api.deleteSlide(app!.id, slideId, setId);
         setSelected(null);
       }, 'Slide deleted'),
     ingest: (files) =>
       run(async () => {
-        const r = await api.ingest(app!.id, files, undefined);
+        const r = await api.ingest(app!.id, files, undefined, setId);
         const placed = r.placed.length;
         if (r.skipped.length) notify(`Added ${placed}. Skipped ${r.skipped.map((s) => `${s.name}: ${s.reason}`).join('; ')}`);
         else notify(`Added ${placed} screenshot${placed === 1 ? '' : 's'}`);
       }),
-    setShot: (slideId, files) => run(() => api.setShot(app!.id, slideId, device, files[0]), 'Screenshot replaced'),
+    setShot: (slideId, files) => run(() => api.setShot(app!.id, slideId, device, files[0], setId), 'Screenshot replaced'),
     setIcon: (file) => run(() => api.setIcon(app!.id, file), 'Icon updated'),
     uploadBackground: async (file) => {
       try {
@@ -212,9 +266,36 @@ export function Editor() {
       }
     },
     reorder: async (order) => {
-      setApp((a) => a && { ...a, slides: order.map((id) => a.slides.find((s) => s.id === id)!).filter(Boolean) });
-      await run(() => api.reorder(app!.id, order));
+      setApp((a) => a && withSet(a, setId, (p) => ({ slides: order.map((id) => p.slides.find((s) => s.id === id)!).filter(Boolean) })));
+      await run(() => api.reorder(app!.id, order, setId));
     },
+  });
+  const actions = actionsFor(activeSet);
+
+  const setActions = {
+    create: (from: string | null, blank?: boolean) =>
+      run(async () => {
+        const s = await api.createSet(app!.id, { from: from ?? undefined, blank });
+        // Load it first, or the "active set no longer exists" fallback would switch back to the primary.
+        await refreshApp();
+        setActiveSet(s.id);
+        setSelected(null);
+      }, 'Set created'),
+    rename: (setId: string, name: string) => {
+      setApp((a) => a && (setId === PRIMARY_SET ? { ...a, primarySetName: name } : { ...a, sets: a.sets.map((s) => (s.id === setId ? { ...s, name } : s)) }));
+      api.renameSet(app!.id, setId, name).catch((e) => notify((e as Error).message));
+    },
+    remove: (setId: string) =>
+      run(async () => {
+        await api.deleteSet(app!.id, setId);
+        if (setId === activeSet) setActiveSet(PRIMARY_SET);
+      }, 'Set deleted'),
+    makePrimary: (setId: string) =>
+      run(async () => {
+        await api.makePrimary(app!.id, setId);
+        setActiveSet(PRIMARY_SET);
+        setSelected(null);
+      }, 'Set is now primary'),
   };
 
   // Paste an image to replace the selected slide's screenshot (or add a new slide).
@@ -250,21 +331,57 @@ export function Editor() {
     refreshApps();
   };
 
-  const selectedSlide = app?.slides.find((s) => s.id === selected) ?? null;
+  // The app as the active set sees it.
+  const view = app ? setView(app, setList(app).some((x) => x.id === activeSet) && activeSet !== PRIMARY_SET ? activeSet : null) : null;
+  const selectedSlide = view?.slides.find((s) => s.id === selected) ?? null;
 
   return (
-    <div className="shell">
-      <AppRail apps={apps ?? []} current={appId} onSelect={setAppId} onCreate={createApp} onDelete={deleteApp} />
+    <div className="shell" data-left={panels.left ? 'open' : 'closed'} data-right={panels.right && app ? 'open' : 'closed'}>
+      {panels.left && (
+      <AppRail
+        onClose={() => setPanels((p) => ({ ...p, left: false }))}
+        ui={ui}
+        apps={apps ?? []}
+        current={appId}
+        onSelect={setAppId}
+        onCreate={createApp}
+        onDelete={deleteApp}
+        layers={
+          app && !productPage
+            ? {
+                app,
+                activeSet,
+                selected,
+                onSelect: (setId, id) => {
+                  setActiveSet(setId);
+                  setSelected(id);
+                  if (id) setTab('slide');
+                },
+              }
+            : null
+        }
+      />
+      )}
       {app ? (
         <>
           <main className="workspace">
             <Topbar
-              app={app}
+              app={view!}
               device={device}
-              onDevice={setDevice}
+              onDevice={(d) => {
+                setDevice(d);
+                setProductPage(false);
+              }}
+              productPage={productPage}
+              onProductPage={() => setProductPage(true)}
               zoom={zoom}
               onZoom={setZoom}
               onExport={() => setExporting(true)}
+              panels={{
+                ...panels,
+                openLeft: () => setPanels((p) => ({ ...p, left: true })),
+                openRight: () => setPanels((p) => ({ ...p, right: true })),
+              }}
               onToggleDevice={(d) => {
                 const devices = app.devices.includes(d) ? app.devices.filter((x) => x !== d) : [...app.devices, d];
                 if (!devices.length) return;
@@ -272,20 +389,51 @@ export function Editor() {
                 if (!app.devices.includes(d)) setDevice(d);
               }}
             />
-            <Pasteboard
-              app={app}
-              device={device}
-              zoom={zoom}
-              selected={selected}
-              onSelect={(id) => {
-                setSelected(id);
-                if (id) setTab('slide');
-              }}
-              actions={actions}
-            />
+            {productPage ? (
+              <CreativesBoard
+                app={view!}
+                onSet={(id) => {
+                  setActiveSet(id);
+                  setCreative(null);
+                }}
+                zoom={canvasZoom}
+                selected={creative}
+                onSelect={(id) => {
+                  setCreative(id);
+                  if (id) setTab('slide');
+                }}
+              />
+            ) : (
+              <SetsBoard
+                app={app}
+                device={device}
+                zoom={canvasZoom}
+                activeSet={activeSet}
+                selected={selected}
+                onSelect={(setId, id) => {
+                  setActiveSet(setId);
+                  setSelected(id);
+                  if (id) setTab('slide');
+                }}
+                actionsFor={actionsFor}
+                sets={setActions}
+              />
+            )}
           </main>
-          <Inspector app={app} device={device} slide={selectedSlide} tab={tab} onTab={setTab} actions={actions} />
-          {exporting && <ExportDialog app={app} device={device} onClose={() => setExporting(false)} />}
+          {panels.right && (
+          <Inspector
+            onClose={() => setPanels((p) => ({ ...p, right: false }))}
+            app={view!}
+            device={device}
+            slide={selectedSlide}
+            productPage={productPage}
+            creative={creative}
+            tab={tab}
+            onTab={setTab}
+            actions={actions}
+          />
+          )}
+          {exporting && <ExportDialog app={view!} device={device} onClose={() => setExporting(false)} />}
         </>
       ) : (
         <Welcome hasApps={!!apps?.length} onCreate={createApp} loading={apps === null} />
@@ -297,6 +445,12 @@ export function Editor() {
       )}
     </div>
   );
+}
+
+/** Replace one set's theme/slides/creatives in the whole-app document. */
+function withSet(a: App, setId: string, fn: (p: Pick<App, 'theme' | 'slides' | 'creatives'>) => Partial<Pick<App, 'theme' | 'slides' | 'creatives'>>): App {
+  if (setId === PRIMARY_SET) return { ...a, ...fn(a) };
+  return { ...a, sets: a.sets.map((s) => (s.id === setId ? { ...s, ...fn(s) } : s)) };
 }
 
 export const deviceLabel = (d: DeviceId) => DEVICES[d].label;

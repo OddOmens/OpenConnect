@@ -1,10 +1,13 @@
-import type { App, AppProfile, Background, DeviceId, Palette, Slide, Theme } from './types';
+import type { App, AppProfile, Background, DeviceId, Palette, Slide, StyleOverride, Theme } from './types';
 import { DEVICES } from './devices';
+import { newCreative } from './creatives';
 
 const bg = (b: Partial<Background>): Background => ({
   type: 'solid',
   color: '#000000',
   color2: '#000000',
+  color3: b.color2 ?? '#000000',
+  seed: 1,
   angle: 180,
   imageAssetId: null,
   overlay: 0.35,
@@ -18,12 +21,21 @@ const palette = (p: Partial<Palette> & { background: Background }): Palette => (
   ...p,
 });
 
-const baseTheme = (palettes: Theme['palettes'], extra: Partial<Theme> = {}): Theme => ({
+type ThemeExtra = Omit<Partial<Theme>, 'frame'> & { frame?: Partial<Theme['frame']> };
+const baseTheme = (palettes: Theme['palettes'], extra: ThemeExtra = {}): Theme => ({
   layout: 'top',
   palettes,
   alternate: false,
   shotScale: 1,
   shotOffsetY: 0,
+  textOffsetY: 0,
+  panorama: false,
+  texture: { kind: 'none', opacity: 0.14, size: 28 },
+  vignette: 0,
+  glow: { strength: 0, color: '', size: 1.2 },
+  decor: { kind: 'none', density: 1, scale: 1, opacity: 0.5, color: '', seed: 1 },
+  annotation: { kind: 'none', color: '', width: 6, roughness: 1.4, padding: 14, recolor: true },
+  stickerShadow: 0.25,
   fontFamily: 'Outfit Variable',
   headlineWeight: 500,
   headlineSize: 88,
@@ -31,8 +43,10 @@ const baseTheme = (palettes: Theme['palettes'], extra: Partial<Theme> = {}): The
   letterSpacing: -0.01,
   lineHeight: 1.08,
   align: 'center',
-  frame: { strokeColor: '#ffffff', strokeWidth: 7, radius: 9, shadow: 0.35 },
   ...extra,
+  frame: { kind: 'outline', deviceColor: '#1c1c1e', strokeColor: '#ffffff', strokeWidth: 7, radius: 9, shadow: 0.35, ...extra.frame },
+  callout: { scale: 1.12, shadow: 0.35, radius: 28 },
+  hero: { badge: 'none', badgeTitle: '', badgeCaption: '', lockup: true, tilt: -6 },
 });
 
 export interface Preset {
@@ -78,7 +92,7 @@ function shadcnColor(c: {
   };
 }
 
-const shadcnType = (extra: Partial<Theme> = {}): Partial<Theme> => ({
+const shadcnType = (extra: ThemeExtra = {}): ThemeExtra => ({
   fontFamily: 'Geist Variable',
   headlineWeight: 600,
   headlineSize: 86,
@@ -174,6 +188,19 @@ export const FONTS = [
   'Space Grotesk Variable',
   'Fraunces Variable',
   'Poppins',
+  'Figtree Variable',
+  'Onest Variable',
+  'Lexend Variable',
+  'Rubik Variable',
+  'Nunito Variable',
+  'Fredoka Variable',
+  'Bricolage Grotesque Variable',
+  'Unbounded Variable',
+  'Playfair Display Variable',
+  'DM Serif Display',
+  'Instrument Serif',
+  'Bebas Neue',
+  'Caveat Variable',
   '-apple-system',
 ];
 
@@ -184,7 +211,7 @@ export function presetTheme(id: string): Theme {
 
 /**
  * Switch an app to a theme preset. A theme sets colors and type; the user's layout, alignment,
- * screenshot size/position and background photos stay as they were.
+ * screenshot size/position, frame kind, callout and hero settings and background photos stay as they were.
  */
 export function applyPreset(current: Theme, id: string): Theme {
   const t = presetTheme(id);
@@ -192,6 +219,20 @@ export function applyPreset(current: Theme, id: string): Theme {
   t.align = current.align;
   t.shotScale = current.shotScale;
   t.shotOffsetY = current.shotOffsetY;
+  t.textOffsetY = current.textOffsetY;
+  // Background effects are layout choices too; a theme only swaps the colors under them.
+  t.panorama = current.panorama;
+  t.texture = { ...current.texture };
+  t.vignette = current.vignette;
+  t.glow = { ...current.glow };
+  t.decor = { ...current.decor };
+  t.annotation = { ...current.annotation };
+  t.stickerShadow = current.stickerShadow;
+  // Frame kind, callouts and the hero design aren't part of a theme's colors and type.
+  t.frame.kind = current.frame.kind;
+  t.frame.deviceColor = current.frame.deviceColor;
+  t.callout = { ...current.callout };
+  t.hero = { ...current.hero };
   for (const k of ['primary', 'alt'] as const) {
     const img = current.palettes[k]?.background.imageAssetId;
     if (img) t.palettes[k].background.imageAssetId = img;
@@ -206,6 +247,9 @@ export function newSlide(id: string, partial: Partial<Slide> = {}): Slide {
     subtitle: '',
     shots: {},
     screen: { name: '', notes: '' },
+    role: 'standard',
+    callouts: {},
+    stickers: [],
     ...partial,
   };
 }
@@ -240,6 +284,9 @@ export function newApp(id: string, partial: Partial<App> & { preset?: string } =
     profile: newProfile(),
     theme: presetTheme(preset ?? 'neutral'),
     slides: [],
+    creatives: { header: newCreative('header'), search: newCreative('search') },
+    primarySetName: 'Primary',
+    sets: [],
     assets: {},
     createdAt: now,
     updatedAt: now,
@@ -261,6 +308,38 @@ export function deepMerge<T>(target: T, patch: unknown): T {
     }
   }
   return out as T;
+}
+
+/** Merge an override onto a base, skipping null/undefined (an unset override key means "use the base"). */
+function mergeSet<T>(base: T, over: unknown): T {
+  if (over === null || over === undefined) return base;
+  if (typeof over !== 'object' || Array.isArray(over)) return over as T;
+  const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
+  for (const [k, v] of Object.entries(over as Record<string, unknown>)) {
+    if (v === null || v === undefined) continue;
+    const cur = out[k];
+    out[k] = v && typeof v === 'object' && !Array.isArray(v) && cur && typeof cur === 'object' ? mergeSet(cur, v) : v;
+  }
+  return out as T;
+}
+
+/** The theme one slide is drawn with: the app's theme plus anything the slide overrides. */
+export function slideTheme(app: App, slide: Pick<Slide, 'style'>): Theme {
+  return slide.style ? mergeSet(app.theme, slide.style) : app.theme;
+}
+
+/** Drop null leaves and empty objects from an override, so "reset" really removes the key. */
+export function pruneOverride(o: unknown): StyleOverride | null {
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(o as Record<string, unknown>)) {
+    if (v === null || v === undefined) continue;
+    if (typeof v === 'object' && !Array.isArray(v)) {
+      const inner = pruneOverride(v);
+      if (inner) out[k] = inner;
+    } else out[k] = v;
+  }
+  return Object.keys(out).length ? (out as StyleOverride) : null;
 }
 
 /** Colors for the slide at `index` (0-based): the primary palette, or every other slide alternate. */

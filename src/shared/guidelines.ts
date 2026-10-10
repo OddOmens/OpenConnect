@@ -1,4 +1,4 @@
-import type { App, DeviceId, Slide } from './types';
+import type { App, Creative, DeviceId, Slide } from './types';
 import { slideInDevice } from './devices';
 
 // Checks drawn from Apple's App Store asset best practices and screenshot specifications:
@@ -46,6 +46,16 @@ export function checkSlide(slide: Slide): Issue[] {
   if (words > 9) issues.push({ level: 'warn', message: `Headline is ${words} words. Apple suggests a short phrase; aim for 7 or fewer.` });
   const lines = plain(slide.headline).split('\n').length;
   if (lines > 3) issues.push({ level: 'warn', message: 'More than three headline lines will crowd the screenshot.' });
+  return issues;
+}
+
+/** Product page header / search results: the same text rules, and one short phrase. */
+export function checkCreative(c: Creative): Issue[] {
+  const issues: Issue[] = [];
+  const text = `${plain(c.headline)}\n${plain(c.subtitle)}`;
+  for (const r of RULES) if (r.test.test(text)) issues.push({ level: r.level, message: r.message });
+  const words = plain(c.headline).split(/\s+/).filter(Boolean).length;
+  if (words > 7) issues.push({ level: 'warn', message: `Headline is ${words} words. Apple asks for one short phrase on creative assets.` });
   return issues;
 }
 

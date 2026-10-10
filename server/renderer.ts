@@ -3,7 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { chromium, type Browser } from 'playwright';
 import { ZipArchive } from 'archiver';
-import type { App, DeviceId } from '../src/shared/types.ts';
+import type { App, CreativeId, DeviceId } from '../src/shared/types.ts';
+import { CREATIVE_IDS } from '../src/shared/types.ts';
+import { CREATIVES } from '../src/shared/creatives.ts';
+import { setName } from '../src/shared/sets.ts';
 import { canvasSize, DEVICES, exportSizes, slideInDevice } from '../src/shared/devices.ts';
 import { slugify } from '../src/shared/presets.ts';
 import { DATA_DIR, HttpError } from './store.ts';
@@ -95,7 +98,8 @@ export async function renderSlides(
   const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 1 });
   try {
     const size = (opts.sizeKey ? `&size=${encodeURIComponent(opts.sizeKey)}` : '') + (scale !== 1 ? `&scale=${scale}` : '');
-    const url = `${baseUrl}/render?app=${app.id}&device=${device}${size}&slides=${slides.map(({ s }) => s.id).join(',')}`;
+    const set = app.activeSet ? `&set=${app.activeSet}` : '';
+    const url = `${baseUrl}/render?app=${app.id}${set}&device=${device}${size}&slides=${slides.map(({ s }) => s.id).join(',')}`;
     await page.goto(url, { waitUntil: 'networkidle' });
     await page.waitForFunction(
       () => {
@@ -127,10 +131,41 @@ export async function renderSlides(
   }
 }
 
+/** Render a product page header or search results asset to PNG at an App Store size. */
+export async function renderCreative(baseUrl: string, app: App, id: CreativeId, opts: { sizeKey?: string; scale?: number } = {}) {
+  const spec = CREATIVES[id];
+  const sizeKey = opts.sizeKey && spec.sizes[opts.sizeKey] ? opts.sizeKey : spec.defaultSize;
+  const scale = opts.scale ?? 1;
+  const [w, h] = spec.sizes[sizeKey].map((v) => Math.round(v * scale));
+  const browser = await getBrowser();
+  const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 1 });
+  try {
+    const q = `creative=${id}&size=${encodeURIComponent(sizeKey)}${scale !== 1 ? `&scale=${scale}` : ''}`;
+    const set = app.activeSet ? `&set=${app.activeSet}` : '';
+    await page.goto(`${baseUrl}/render?app=${app.id}${set}&${q}`, { waitUntil: 'networkidle' });
+    await page.waitForFunction(
+      () => {
+        const w = window as unknown as { __appshotReady?: boolean; __appshotError?: string };
+        return w.__appshotReady === true || !!w.__appshotError;
+      },
+      null,
+      { timeout: 30_000 },
+    );
+    const renderError = await page.evaluate(() => (window as unknown as { __appshotError?: string }).__appshotError);
+    if (renderError) throw new HttpError(500, renderError);
+    const png = await page.locator(`[data-render-creative="${id}"]`).screenshot({ type: 'png', animations: 'disabled' });
+    return { png, sizeKey, size: spec.sizes[sizeKey] };
+  } finally {
+    await page.close();
+  }
+}
+
 export interface ExportResult {
   dir: string;
   zip: string;
   files: { device: DeviceId; size: string; slideId: string; path: string }[];
+  /** product page header / search results PNGs */
+  creatives: { creative: CreativeId; size: string; path: string }[];
   skipped: { device: DeviceId; slideId: string; reason: string }[];
 }
 
@@ -138,11 +173,13 @@ export interface ExportResult {
 export async function exportApp(
   baseUrl: string,
   app: App,
-  opts: { devices?: DeviceId[]; sizes?: Partial<Record<DeviceId, string[]>>; outDir?: string },
+  opts: { devices?: DeviceId[]; sizes?: Partial<Record<DeviceId, string[]>>; outDir?: string; creatives?: CreativeId[] },
 ): Promise<ExportResult> {
   const devices = (opts.devices?.length ? opts.devices : app.devices).filter((d) => app.devices.includes(d));
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const dir = opts.outDir ? path.resolve(opts.outDir) : path.join(DATA_DIR, 'exports', `${slugify(app.name)}-${stamp}`);
+  // Exports of a non-primary set are named after it too.
+  const label = app.activeSet ? `${slugify(app.name)}-${slugify(setName(app))}` : slugify(app.name);
+  const dir = opts.outDir ? path.resolve(opts.outDir) : path.join(DATA_DIR, 'exports', `${label}-${stamp}`);
   fs.mkdirSync(dir, { recursive: true });
 
   const files: ExportResult['files'] = [];
@@ -164,6 +201,17 @@ export async function exportApp(
     }
   }
 
+  // Creative assets: the enabled ones unless the caller picks.
+  const creatives: ExportResult['creatives'] = [];
+  for (const id of (opts.creatives ?? CREATIVE_IDS.filter((c) => app.creatives[c].enabled)).filter((c) => CREATIVE_IDS.includes(c))) {
+    const { png, size } = await renderCreative(baseUrl, app, id);
+    const cdir = path.join(dir, 'product-page');
+    fs.mkdirSync(cdir, { recursive: true });
+    const p = path.join(cdir, `${id === 'header' ? 'header' : 'search-results'}-${size[0]}x${size[1]}.png`);
+    fs.writeFileSync(p, png);
+    creatives.push({ creative: id, size: `${size[0]} × ${size[1]}`, path: p });
+  }
+
   const zip = dir.replace(/\/$/, '') + '.zip';
   await new Promise<void>((resolve, reject) => {
     const output = fs.createWriteStream(zip);
@@ -174,5 +222,5 @@ export async function exportApp(
     archive.directory(dir, false);
     archive.finalize();
   });
-  return { dir, zip, files, skipped };
+  return { dir, zip, files, skipped, creatives };
 }

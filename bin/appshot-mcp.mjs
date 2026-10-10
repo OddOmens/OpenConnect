@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import { fetchExport, isLocalUrl, serverIsLocal } from './remote.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BASE = (process.env.APPSHOT_URL ?? 'http://127.0.0.1:4317').replace(/\/$/, '');
@@ -33,6 +34,8 @@ let starting = null;
 /** Start the studio server in the background if it isn't running. */
 async function ensureServer() {
   if (await healthy()) return;
+  // A server on another machine (e.g. Docker) can't be started from here.
+  if (!isLocalUrl(BASE)) throw new Error(`Can't reach the OpenAppShot server at ${BASE}. Is it running?`);
   starting ??= (async () => {
     const dataDir = process.env.APPSHOT_DATA ?? path.join(os.homedir(), '.openappshot');
     fs.mkdirSync(dataDir, { recursive: true });
@@ -136,6 +139,9 @@ const server = new McpServer(
 );
 
 const appArg = z.string().describe('App id, exact name, or bundle id');
+const setArg = z.string().optional().describe('Screenshot set (id or name, e.g. "Test A"); default the primary set. See manage_sets');
+/** Add ?set= for a tool call's screenshot set. */
+const inSet = (url, a) => (a?.set ? `${url}${url.includes('?') ? '&' : '?'}set=${encodeURIComponent(a.set)}` : url);
 const slideArg = z.string().describe('Slide id or 1-based position');
 const deviceEnum = z.enum(['iphone', 'duo', 'ipad', 'mac']);
 const layoutEnum = z.enum(['top', 'bottom', 'side']);
@@ -145,6 +151,12 @@ const slideFields = {
   subtitle: z.string().optional(),
   screen_name: z.string().optional().describe('Which app screen this slide shows, e.g. "Stats tab"'),
   screen_notes: z.string().optional().describe('How to reach the screen to re-capture it'),
+  hero: z.boolean().optional().describe("Use the app's hero design: badge, app icon and name, leaning device. Usually slide 1 only"),
+  style: z
+    .record(z.string(), z.any())
+    .optional()
+    .describe('Override the app style on this slide only (same shape as the theme), e.g. {frame:{kind:"device"}} or {palettes:{primary:{background:{color:"#fafafa"}}}}. Set a key to null to use the app style again'),
+  reset_style: z.boolean().optional().describe('Drop all of this slide\'s style overrides'),
 };
 
 function slidePatch(a) {
@@ -156,6 +168,9 @@ function slidePatch(a) {
     if (a.screen_name !== undefined) p.screen.name = a.screen_name;
     if (a.screen_notes !== undefined) p.screen.notes = a.screen_notes;
   }
+  if (a.hero !== undefined) p.role = a.hero ? 'hero' : 'standard';
+  if (a.style) p.style = a.style;
+  if (a.reset_style) p.style = null;
   return p;
 }
 
@@ -175,11 +190,11 @@ server.registerTool(
     title: 'Get app data',
     description:
       'Full record for one app: remembered profile, app-wide style, devices (sizes, screenshot counts, issues) and every slide with its headline, subtitle, screen, and screenshot details per device.',
-    inputSchema: { app: appArg },
+    inputSchema: { app: appArg, set: setArg },
     annotations: { readOnlyHint: true },
   },
-  wrap(async ({ app }) => {
-    const data = await http('GET', `/api/apps/${enc(await appId(app))}/data`);
+  wrap(async ({ app, set }) => {
+    const data = await http('GET', inSet(`/api/apps/${enc(await appId(app))}/data`, { set }));
     return json(overview(data), data);
   }),
 );
@@ -229,15 +244,17 @@ server.registerTool(
   {
     title: 'Update app and style',
     description:
-      'Change the app (name, subtitle, icon, devices, export sizes) or its style. Style is app-wide: layout, colors, font, alignment, headline size, screenshot size/position and frame apply to every slide.',
+      'Change the app (name, subtitle, icon, devices, export sizes) or its style. Style is app-wide: layout, colors, font, alignment, headline size, screenshot size/position, frame (outline or drawn device), callout look and the hero design apply to every slide.',
     inputSchema: {
       app: appArg,
+      set: setArg,
       layout: layoutEnum.optional(),
       alternate_colors: z.boolean().optional().describe('Use the second color scheme on every other slide'),
       align: z.enum(['left', 'center']).optional(),
       headline_size: z.number().optional(),
       screenshot_scale: z.number().optional().describe('1 = default size'),
       screenshot_offset: z.number().optional().describe('Move screenshots down (+) or up (-)'),
+      text_offset: z.number().optional().describe('Move the headline and subtitle down (+) or up (-), units of 1/1000 of the short side'),
       name: z.string().optional(),
       subtitle: z.string().optional(),
       icon_path: z.string().optional(),
@@ -247,6 +264,30 @@ server.registerTool(
       stroke_color: z.string().optional(),
       stroke_width: z.number().optional(),
       corner_radius: z.number().optional().describe('Percent of the screenshot width'),
+      frame: z.enum(['outline', 'device']).optional().describe('outline: rounded screenshot with a stroke; device: drawn iPhone/iPad/Mac hardware'),
+      device_color: z.string().optional().describe('Hardware color for frame=device, e.g. #2b2b2e black, #d9dadc silver'),
+      callout_scale: z.number().optional().describe('How much larger callouts are drawn, 1–1.5 (default 1.12)'),
+      callout_shadow: z.number().optional().describe('0–1'),
+      hero_badge: z.enum(['none', 'rating', 'downloads', 'custom']).optional().describe('Hero badge kind: rating adds five stars, downloads a download mark'),
+      hero_badge_title: z.string().optional().describe('Badge text, e.g. "4.9 Stars" or "1M+ Downloads". Only real App Store numbers'),
+      hero_badge_caption: z.string().optional().describe('Small line under the badge, e.g. "From 62k+ users"'),
+      hero_lockup: z.boolean().optional().describe('Show app icon and name on hero slides'),
+      hero_tilt: z.number().optional().describe('Hero device rotation in degrees, e.g. -6'),
+      background: z.enum(['solid', 'gradient', 'glow', 'mesh', 'photo', 'frosted']).optional().describe('Fill of the main colors: mesh = soft blobs of 3 colors; frosted = the slide screenshot blurred'),
+      mesh_colors: z.array(z.string()).min(2).max(3).optional().describe('Mesh base, blob and second blob colors'),
+      panorama: z.boolean().optional().describe('Run one background across all slides (each slide shows its slice)'),
+      texture: z.enum(['none', 'grain', 'dots', 'grid', 'lines']).optional(),
+      texture_strength: z.number().optional().describe('0–0.6'),
+      vignette: z.number().optional().describe('0–1'),
+      glow: z.number().optional().describe('Light behind the screenshot, 0 (off) – 1'),
+      glow_color: z.string().optional().describe('Glow color; "" uses the highlight color'),
+      decor: z.enum(['none', 'blobs', 'waves', 'rings', 'sparkles', 'confetti', 'bokeh']).optional().describe('Generated shapes behind the screenshot'),
+      decor_amount: z.number().optional().describe('0.25–3'),
+      decor_size: z.number().optional().describe('0.4–2.5'),
+      decor_opacity: z.number().optional().describe('0–1'),
+      headline_mark: z.enum(['none', 'underline', 'double', 'circle', 'box', 'marker', 'strike', 'brackets', 'squiggle']).optional().describe('Hand-drawn mark on the *highlighted* headline words'),
+      headline_mark_color: z.string().optional().describe('"" uses the highlight color'),
+      sticker_shadow: z.number().optional().describe('0–1'),
       export_sizes: z.record(z.string(), z.array(z.string())).optional().describe('Size labels per device, as shown in get_app'),
       theme: z.record(z.string(), z.any()).optional().describe('Raw deep-merge into the theme, e.g. {palettes:{primary:{accentColor:"#fde68a"}}}'),
     },
@@ -264,15 +305,51 @@ server.registerTool(
     if (a.headline_size !== undefined) theme.headlineSize = a.headline_size;
     if (a.screenshot_scale !== undefined) theme.shotScale = a.screenshot_scale;
     if (a.screenshot_offset !== undefined) theme.shotOffsetY = a.screenshot_offset;
+    if (a.text_offset !== undefined) theme.textOffsetY = a.text_offset;
     const frame = {};
     if (a.stroke_color) frame.strokeColor = a.stroke_color;
     if (a.stroke_width !== undefined) frame.strokeWidth = a.stroke_width;
     if (a.corner_radius !== undefined) frame.radius = a.corner_radius;
+    if (a.frame) frame.kind = a.frame;
+    if (a.device_color) frame.deviceColor = a.device_color;
     if (Object.keys(frame).length) theme.frame = { ...(theme.frame ?? {}), ...frame };
+    const callout = {};
+    if (a.callout_scale !== undefined) callout.scale = a.callout_scale;
+    if (a.callout_shadow !== undefined) callout.shadow = a.callout_shadow;
+    if (Object.keys(callout).length) theme.callout = { ...(theme.callout ?? {}), ...callout };
+    const hero = {};
+    if (a.hero_badge !== undefined) hero.badge = a.hero_badge;
+    if (a.hero_badge_title !== undefined) hero.badgeTitle = a.hero_badge_title;
+    if (a.hero_badge_caption !== undefined) hero.badgeCaption = a.hero_badge_caption;
+    if (a.hero_lockup !== undefined) hero.lockup = a.hero_lockup;
+    if (a.hero_tilt !== undefined) hero.tilt = a.hero_tilt;
+    if (Object.keys(hero).length) theme.hero = { ...(theme.hero ?? {}), ...hero };
+    const types = { solid: 'solid', gradient: 'linear', glow: 'radial', mesh: 'mesh', photo: 'image', frosted: 'screenshot' };
+    const fill = {};
+    if (a.background) fill.type = types[a.background];
+    if (a.mesh_colors) Object.assign(fill, { color: a.mesh_colors[0], color2: a.mesh_colors[1], color3: a.mesh_colors[2] ?? a.mesh_colors[1] });
+    if (Object.keys(fill).length) theme.palettes = { ...(theme.palettes ?? {}), primary: { ...(theme.palettes?.primary ?? {}), background: { ...(theme.palettes?.primary?.background ?? {}), ...fill } } };
+    if (a.panorama !== undefined) theme.panorama = a.panorama;
+    if (a.texture !== undefined || a.texture_strength !== undefined) theme.texture = { ...(theme.texture ?? {}), ...(a.texture ? { kind: a.texture } : {}), ...(a.texture_strength !== undefined ? { opacity: a.texture_strength } : {}) };
+    if (a.vignette !== undefined) theme.vignette = a.vignette;
+    if (a.decor !== undefined || a.decor_amount !== undefined || a.decor_size !== undefined || a.decor_opacity !== undefined) {
+      theme.decor = {
+        ...(theme.decor ?? {}),
+        ...(a.decor ? { kind: a.decor } : {}),
+        ...(a.decor_amount !== undefined ? { density: a.decor_amount } : {}),
+        ...(a.decor_size !== undefined ? { scale: a.decor_size } : {}),
+        ...(a.decor_opacity !== undefined ? { opacity: a.decor_opacity } : {}),
+      };
+    }
+    if (a.headline_mark !== undefined || a.headline_mark_color !== undefined) {
+      theme.annotation = { ...(theme.annotation ?? {}), ...(a.headline_mark ? { kind: a.headline_mark } : {}), ...(a.headline_mark_color !== undefined ? { color: a.headline_mark_color } : {}) };
+    }
+    if (a.sticker_shadow !== undefined) theme.stickerShadow = a.sticker_shadow;
+    if (a.glow !== undefined || a.glow_color !== undefined) theme.glow = { ...(theme.glow ?? {}), ...(a.glow !== undefined ? { strength: a.glow } : {}), ...(a.glow_color !== undefined ? { color: a.glow_color } : {}) };
     if (Object.keys(theme).length) patch.theme = theme;
-    if (Object.keys(patch).length) await http('PATCH', `/api/apps/${id}`, patch);
-    if (a.icon_path) await http('POST', `/api/apps/${id}/icon`, await form('file', [a.icon_path]));
-    const data = await http('GET', `/api/apps/${id}/data`);
+    if (Object.keys(patch).length) await http('PATCH', inSet(`/api/apps/${id}`, a), patch);
+    if (a.icon_path) await http('POST', inSet(`/api/apps/${id}/icon`, a), await form('file', [a.icon_path]));
+    const data = await http('GET', inSet(`/api/apps/${id}/data`, a));
     return text(`Updated.\n${overview(data)}`);
   }),
 );
@@ -300,7 +377,7 @@ server.registerTool(
   },
   wrap(async (a) => {
     const id = await appId(a.app);
-    const current = await http('GET', `/api/apps/${id}`);
+    const current = await http('GET', inSet(`/api/apps/${id}`, a));
     const map = { bundle_id: 'bundleId', app_store_url: 'appStoreUrl', category: 'category', description: 'description', audience: 'audience', keywords: 'keywords', brand_colors: 'brandColors', screens: 'screens', notes: 'notes' };
     const profile = {};
     for (const [k, key] of Object.entries(map)) if (a[k] !== undefined) profile[key] = a[k];
@@ -309,7 +386,7 @@ server.registerTool(
       const stamp = new Date().toISOString().slice(0, 10);
       profile.notes = [profile.notes ?? current.profile?.notes, `${stamp}: ${a.add_note}`].filter(Boolean).join('\n');
     }
-    const next = await http('PATCH', `/api/apps/${id}`, { profile });
+    const next = await http('PATCH', inSet(`/api/apps/${id}`, a), { profile });
     return json(`Saved profile for ${next.name}.`, next.profile);
   }),
 );
@@ -322,6 +399,7 @@ server.registerTool(
       'Add image files from this Mac. Each fills the next slide missing a screenshot for its device (auto-detected from pixel size), then new slides are created.',
     inputSchema: {
       app: appArg,
+      set: setArg,
       paths: z.array(z.string()).min(1),
       device: deviceEnum.optional(),
       headlines: z.array(z.string()).optional().describe('One per file, in order'),
@@ -335,7 +413,7 @@ server.registerTool(
       `/api/apps/${id}/screenshots`,
       await form('files', a.paths, { device: a.device, headlines: a.headlines, screens: a.screens, source: { kind: 'file' } }),
     );
-    const data = await http('GET', `/api/apps/${id}/data`);
+    const data = await http('GET', inSet(`/api/apps/${id}/data`, a));
     const pos = (sid) => data.slides.find((s) => s.id === sid)?.position;
     const lines = r.placed.map((p) => `${p.created ? 'New' : 'Filled'} slide ${pos(p.slideId)} (${p.device})`);
     r.skipped.forEach((s) => lines.push(`Skipped ${s.name}: ${s.reason}`));
@@ -350,6 +428,7 @@ server.registerTool(
     description: "Screenshot the booted iOS Simulator into the app (new slide, or replace a slide's screenshot).",
     inputSchema: {
       app: appArg,
+      set: setArg,
       slide: z.string().optional().describe('Replace this slide instead of adding'),
       headline: z.string().optional(),
       screen: z.string().optional().describe('Name of the screen being captured'),
@@ -365,6 +444,7 @@ server.registerTool(
     if (a.screen) args.push('--screen', a.screen);
     if (a.clean_status_bar) args.push('--clean-status-bar');
     if (a.udid) args.push('--udid', a.udid);
+    if (a.set) args.push('--in', a.set);
     const out = await new Promise((resolve, reject) =>
       execFile(process.execPath, args, { env: { ...process.env, APPSHOT_URL: BASE } }, (err, stdout, stderr) =>
         err ? reject(new Error(stderr.trim() || err.message)) : resolve(stdout.trim()),
@@ -376,10 +456,10 @@ server.registerTool(
 
 server.registerTool(
   'update_slide',
-  { title: 'Update slide', description: "Edit a slide's words or screen info. For look and layout use update_app.", inputSchema: { app: appArg, slide: slideArg, ...slideFields } },
+  { title: 'Update slide', description: "Edit a slide's words, screen info or hero role, or override the app style on this slide only (style). For the look of every slide use update_app.", inputSchema: { app: appArg, set: setArg, slide: slideArg, ...slideFields } },
   wrap(async (a) => {
     const id = await appId(a.app);
-    const s = await http('PATCH', `/api/apps/${id}/slides/${enc(a.slide)}`, slidePatch(a));
+    const s = await http('PATCH', inSet(`/api/apps/${id}/slides/${enc(a.slide)}`, a), slidePatch(a));
     return text(`Updated slide ${a.slide}: ${s.headline.replace(/\n/g, ' / ')}`);
   }),
 );
@@ -389,38 +469,234 @@ server.registerTool(
   {
     title: 'Add slide',
     description: 'Add a slide. Add its screenshot with set_screenshot or add_screenshots.',
-    inputSchema: { app: appArg, position: z.number().int().optional().describe('1-based; default end'), ...slideFields },
+    inputSchema: { app: appArg, set: setArg, position: z.number().int().optional().describe('1-based; default end'), ...slideFields },
   },
   wrap(async (a) => {
     const id = await appId(a.app);
     const body = slidePatch(a);
     if (a.position) body.index = a.position - 1;
-    const s = await http('POST', `/api/apps/${id}/slides`, body);
+    const s = await http('POST', inSet(`/api/apps/${id}/slides`, a), body);
     return text(`Added slide (id ${s.id}).`);
   }),
 );
 
 server.registerTool(
   'delete_slide',
-  { title: 'Delete slide', description: 'Delete a slide.', inputSchema: { app: appArg, slide: slideArg }, annotations: { destructiveHint: true } },
+  { title: 'Delete slide', description: 'Delete a slide.', inputSchema: { app: appArg, set: setArg, slide: slideArg }, annotations: { destructiveHint: true } },
   wrap(async (a) => {
-    await http('DELETE', `/api/apps/${await appId(a.app)}/slides/${enc(a.slide)}`);
+    await http('DELETE', inSet(`/api/apps/${await appId(a.app)}/slides/${enc(a.slide)}`, a));
     return text(`Deleted slide ${a.slide}.`);
   }),
 );
 
 server.registerTool(
   'move_slide',
-  { title: 'Move slide', description: 'Move a slide to a new 1-based position.', inputSchema: { app: appArg, slide: slideArg, to: z.number().int().min(1) } },
+  { title: 'Move slide', description: 'Move a slide to a new 1-based position.', inputSchema: { app: appArg, set: setArg, slide: slideArg, to: z.number().int().min(1) } },
   wrap(async (a) => {
     const id = await appId(a.app);
-    const app = await http('GET', `/api/apps/${id}`);
+    const app = await http('GET', inSet(`/api/apps/${id}`, a));
     const s = app.slides.find((x) => x.id === a.slide) ?? app.slides[Number(a.slide) - 1];
     if (!s) throw new Error(`Slide ${a.slide} not found`);
     const order = app.slides.map((x) => x.id).filter((x) => x !== s.id);
     order.splice(Math.min(order.length, a.to - 1), 0, s.id);
-    await http('PUT', `/api/apps/${id}/order`, { order });
+    await http('PUT', inSet(`/api/apps/${id}/order`, a), { order });
     return text(`Moved to position ${a.to}.`);
+  }),
+);
+
+server.registerTool(
+  'manage_sets',
+  {
+    title: 'Screenshot sets',
+    description:
+      'An app has a primary screenshot set plus any test sets (mockups being tried). Each set has its own slides, style and product page assets; name, icon, devices and profile are shared. Every slide/style/creative/preview/export tool takes `set`. List, create (copy of a set or blank), rename, delete, or make a set primary.',
+    inputSchema: {
+      app: appArg,
+      action: z.enum(['list', 'create', 'rename', 'delete', 'make_primary']),
+      set: z.string().optional().describe('The set to rename, delete or make primary; for create, the set to copy (default primary)'),
+      name: z.string().optional().describe('Name for create or rename'),
+      blank: z.boolean().optional().describe('create: start with no slides (keeps the style)'),
+    },
+  },
+  wrap(async (a) => {
+    const id = await appId(a.app);
+    const list = (l) => l.map((x) => `${x.primary ? '* ' : '  '}${x.name} (${x.slides} slides) id ${x.id}`).join('\n');
+    if (a.action === 'create') {
+      const s = await http('POST', `/api/apps/${id}/sets`, { name: a.name, from: a.set, blank: a.blank });
+      return text(`Created set "${s.name}" with ${s.slides.length} slides. Pass set: "${s.name}" to work on it.`);
+    }
+    if (a.action !== 'list' && !a.set) throw new Error('Pass set');
+    if (a.action === 'rename') return text(list(await http('PATCH', `/api/apps/${id}/sets/${enc(a.set)}`, { name: a.name ?? '' })));
+    if (a.action === 'delete') return text(list(await http('DELETE', `/api/apps/${id}/sets/${enc(a.set)}`)));
+    if (a.action === 'make_primary') return text(list(await http('POST', `/api/apps/${id}/sets/${enc(a.set)}/primary`)));
+    return text(list(await http('GET', `/api/apps/${id}/sets`)));
+  }),
+);
+
+server.registerTool(
+  'search_emoji',
+  {
+    title: 'Search emoji stickers',
+    description: 'Find bundled 3D emoji (Fluent Emoji) by words, for stickers. Returns slugs to pass to stickers.',
+    inputSchema: { query: z.string() },
+    annotations: { readOnlyHint: true },
+  },
+  wrap(async (a) => {
+    const r = await http('GET', `/api/emoji?q=${enc(a.query)}&limit=30`);
+    if (!r.available) throw new Error('Emoji are not downloaded on the server; run "npm run setup:emoji" in OpenAppShot.');
+    return text(r.emoji.map((e) => `${e.glyph} ${e.slug} (${e.group})`).join('\n') || 'No emoji found.');
+  }),
+);
+
+server.registerTool(
+  'stickers',
+  {
+    title: 'Slide stickers',
+    description:
+      'List, add, update or remove stickers on a slide: 3D emoji (slug from search_emoji) or hand-drawn doodles (arrow-curve, arrow-down, arrow-loop, arrow-straight, underline, squiggle, circle, star, star-filled, sparkle, burst, heart, heart-filled, spiral, check, cross, exclaim, lightning, crown, scribble, bracket). Position x/y is the center as 0–1 fractions of the slide; size is in 1/1000 of the short side (emoji ~200, doodles ~260). Check with preview_slide.',
+    inputSchema: {
+      app: appArg,
+      set: setArg,
+      slide: slideArg,
+      action: z.enum(['list', 'add', 'update', 'remove']),
+      index: z.number().int().min(1).optional().describe('Sticker number for update/remove (1-based, from list)'),
+      kind: z.enum(['emoji', 'doodle']).optional(),
+      ref: z.string().optional().describe('Emoji slug or doodle name (add)'),
+      style: z.enum(['3d', 'color', 'flat']).optional().describe('Emoji look'),
+      x: z.number().min(0).max(1).optional(),
+      y: z.number().min(0).max(1).optional(),
+      size: z.number().optional(),
+      rotation: z.number().optional(),
+      layer: z.enum(['front', 'back']).optional().describe('In front of or behind the screenshot'),
+      color: z.string().optional().describe('Doodle color; "" uses the highlight color'),
+      opacity: z.number().min(0).max(1).optional(),
+      flip: z.boolean().optional(),
+    },
+  },
+  wrap(async (a) => {
+    const id = await appId(a.app);
+    const app = await http('GET', inSet(`/api/apps/${id}`, a));
+    const slide = app.slides.find((s) => s.id === a.slide) ?? app.slides[Number(a.slide) - 1];
+    if (!slide) throw new Error(`No slide ${a.slide}`);
+    let list = [...(slide.stickers ?? [])];
+    const pick = (s) => {
+      for (const k of ['style', 'x', 'y', 'size', 'rotation', 'layer', 'color', 'opacity', 'flip']) if (a[k] !== undefined) s[k] = a[k];
+      return s;
+    };
+    const describe = (s, i) => `${i + 1}. ${s.kind} ${s.ref} at ${s.x},${s.y} size ${s.size} ${s.rotation}° ${s.layer}`;
+    if (a.action === 'list') return text(list.map(describe).join('\n') || 'No stickers on this slide.');
+    if (a.action === 'add') {
+      if (!a.ref) throw new Error('Pass ref');
+      const kind = a.kind ?? 'emoji';
+      list.push(pick({ id: Math.random().toString(36).slice(2, 10), kind, ref: a.ref, style: '3d', x: 0.82, y: 0.16, size: kind === 'doodle' ? 260 : 200, rotation: -8, layer: 'front', color: '', flip: false, opacity: 1 }));
+    } else {
+      const i = (a.index ?? 0) - 1;
+      if (!list[i]) throw new Error(`No sticker ${a.index}`);
+      if (a.action === 'update') list[i] = pick({ ...list[i] });
+      else list = list.filter((_, j) => j !== i);
+    }
+    const s = await http('PATCH', inSet(`/api/apps/${id}/slides/${slide.id}`, a), { stickers: list });
+    return text(s.stickers.map(describe).join('\n') || 'No stickers on this slide.');
+  }),
+);
+
+server.registerTool(
+  'update_creative',
+  {
+    title: 'Update product page asset',
+    description:
+      "Edit the app's product page header (3840×1646, safe area 1646×661) or search results asset (3840×2560, safe area 2168×1030), shown on iOS 27+. They use the app's colors, type and frame. One short phrase; for search, make what the app does obvious. Check with preview_creative.",
+    inputSchema: {
+      app: appArg,
+      set: setArg,
+      creative: z.enum(['header', 'search']),
+      include_in_export: z.boolean().optional(),
+      headline: z.string().optional().describe('*highlight* and \\n like slides'),
+      subtitle: z.string().optional(),
+      lockup: z.boolean().optional().describe('App icon and name above the headline'),
+      text_position: z.enum(['left', 'center', 'none']).optional(),
+      screenshots: z
+        .array(z.object({ slide: z.union([z.string(), z.number()]), device: deviceEnum.optional() }))
+        .max(4)
+        .optional()
+        .describe('Slides (position or id) whose screenshots to show, iPhone unless device given; [] = first slides automatically'),
+      shot_scale: z.number().optional().describe('Screenshot height vs the safe area height, e.g. 1.1'),
+    },
+  },
+  wrap(async (a) => {
+    const id = await appId(a.app);
+    const app = await http('GET', inSet(`/api/apps/${id}`, a));
+    const p = {};
+    if (a.include_in_export !== undefined) p.enabled = a.include_in_export;
+    for (const [k, key] of [['headline', 'headline'], ['subtitle', 'subtitle'], ['lockup', 'lockup'], ['text_position', 'textPosition'], ['shot_scale', 'shotScale']]) {
+      if (a[k] !== undefined) p[key] = a[k];
+    }
+    if (a.screenshots) {
+      p.shots = a.screenshots.map((s) => {
+        const slide = app.slides.find((x) => x.id === String(s.slide)) ?? app.slides[Number(s.slide) - 1];
+        const device = s.device ?? 'iphone';
+        if (!slide?.shots[device]) throw new Error(`Slide ${s.slide} has no ${device} screenshot.`);
+        return { slideId: slide.id, device };
+      });
+    }
+    await http('PATCH', inSet(`/api/apps/${id}`, a), { creatives: { [a.creative]: p } });
+    return text(`Updated the ${a.creative === 'header' ? 'product page header' : 'search results asset'}. Check it with preview_creative.`);
+  }),
+);
+
+server.registerTool(
+  'preview_creative',
+  {
+    title: 'Preview product page asset',
+    description: 'Render the product page header or search results asset and return it as an image. The safe area is the centered 1646×661 (header) or 2168×1030 (search) region.',
+    inputSchema: { app: appArg, set: setArg, creative: z.enum(['header', 'search']) },
+    annotations: { readOnlyHint: true },
+  },
+  wrap(async (a) => {
+    const id = await appId(a.app);
+    const png = await http('GET', inSet(`/api/apps/${id}/creatives/${a.creative}/render.png?scale=0.3`, a));
+    return { content: [{ type: 'image', data: png.toString('base64'), mimeType: 'image/png' }, { type: 'text', text: `${a.creative} asset.` }] };
+  }),
+);
+
+server.registerTool(
+  'set_callout',
+  {
+    title: 'Set callout',
+    description:
+      "Mark part of a slide's screenshot (a card, row or button) to lift out, drawn larger with a shadow above the screen. Give the box in that screenshot's pixels (see get_app for its size; preview_slide to check), or clear it. Per device.",
+    inputSchema: {
+      app: appArg,
+      set: setArg,
+      slide: slideArg,
+      device: deviceEnum.optional().describe('Default: the first device this slide has a screenshot for'),
+      x: z.number().min(0).optional(),
+      y: z.number().min(0).optional(),
+      width: z.number().positive().optional(),
+      height: z.number().positive().optional(),
+      clear: z.boolean().optional(),
+    },
+  },
+  wrap(async (a) => {
+    const id = await appId(a.app);
+    const app = await http('GET', inSet(`/api/apps/${id}`, a));
+    const slide = app.slides.find((s) => s.id === a.slide) ?? app.slides[Number(a.slide) - 1];
+    if (!slide) throw new Error(`No slide ${a.slide}`);
+    const device = a.device ?? app.devices.find((d) => slide.shots[d]);
+    if (!device) throw new Error('This slide has no screenshot yet.');
+    if (a.clear) {
+      await http('PATCH', inSet(`/api/apps/${id}/slides/${slide.id}`, a), { callouts: { [device]: null } });
+      return text(`Removed the ${device} callout from slide ${a.slide}.`);
+    }
+    const asset = app.assets[slide.shots[device]];
+    if (!asset) throw new Error(`Slide ${a.slide} has no ${device} screenshot.`);
+    if ([a.x, a.y, a.width, a.height].some((v) => v === undefined)) throw new Error('Give x, y, width and height, or clear: true.');
+    const c = (v) => Math.max(0, Math.min(1, v));
+    const rect = { x: c(a.x / asset.width), y: c(a.y / asset.height) };
+    rect.w = c(Math.min(a.width / asset.width, 1 - rect.x));
+    rect.h = c(Math.min(a.height / asset.height, 1 - rect.y));
+    await http('PATCH', inSet(`/api/apps/${id}/slides/${slide.id}`, a), { callouts: { [device]: rect } });
+    return text(`Callout set on slide ${a.slide} (${device}). Check it with preview_slide.`);
   }),
 );
 
@@ -429,7 +705,7 @@ server.registerTool(
   {
     title: 'Replace screenshot',
     description: "Replace one slide's screenshot for a device with an image file on this Mac.",
-    inputSchema: { app: appArg, slide: slideArg, path: z.string(), device: deviceEnum },
+    inputSchema: { app: appArg, set: setArg, slide: slideArg, path: z.string(), device: deviceEnum },
   },
   wrap(async (a) => {
     const id = await appId(a.app);
@@ -447,14 +723,14 @@ server.registerTool(
   {
     title: 'Preview slide',
     description: 'Render a slide and return it as an image so you can check the result.',
-    inputSchema: { app: appArg, slide: slideArg, device: deviceEnum.optional(), scale: z.number().min(0.1).max(1).optional().describe('Default 0.3') },
+    inputSchema: { app: appArg, set: setArg, slide: slideArg, device: deviceEnum.optional(), scale: z.number().min(0.1).max(1).optional().describe('Default 0.3') },
     annotations: { readOnlyHint: true },
   },
   wrap(async (a) => {
     const id = await appId(a.app);
-    const app = await http('GET', `/api/apps/${id}`);
+    const app = await http('GET', inSet(`/api/apps/${id}`, a));
     const device = a.device ?? app.devices[0];
-    const png = await http('GET', `/api/apps/${id}/slides/${enc(a.slide)}/render/${device}.png?scale=${a.scale ?? 0.3}`);
+    const png = await http('GET', inSet(`/api/apps/${id}/slides/${enc(a.slide)}/render/${device}.png?scale=${a.scale ?? 0.3}`, a));
     return {
       content: [
         { type: 'image', data: png.toString('base64'), mimeType: 'image/png' },
@@ -471,16 +747,18 @@ server.registerTool(
     description: 'Render every chosen App Store size to PNG files and a zip on this Mac.',
     inputSchema: {
       app: appArg,
+      set: setArg,
       devices: z.array(deviceEnum).optional(),
       out_dir: z.string().optional(),
     },
   },
   wrap(async (a) => {
     const id = await appId(a.app);
-    const r = await http('POST', `/api/apps/${id}/export`, {
-      devices: a.devices,
-      outDir: a.out_dir ? expand(a.out_dir) : undefined,
-    });
+    const local = await serverIsLocal(BASE);
+    const outDir = a.out_dir ? expand(a.out_dir) : undefined;
+    let r = await http('POST', inSet(`/api/apps/${id}/export`, a), { devices: a.devices, outDir: local ? outDir : undefined });
+    // Server on another machine: download the zip and unpack it on this Mac.
+    if (!local) r = await fetchExport(BASE, r, outDir);
     const counts = {};
     r.files.forEach((f) => (counts[`${f.device} ${f.size}`] = (counts[`${f.device} ${f.size}`] ?? 0) + 1));
     const lines = [`Exported ${r.files.length} PNGs to ${r.dir}`, ...Object.entries(counts).map(([k, n]) => `  ${k}: ${n}`), `Zip: ${r.zip}`];

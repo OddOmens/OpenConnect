@@ -38,7 +38,7 @@ const BASE_DOTS = MAP.getPoints()
 const ZOOM = 1.8
 const HOVER_RADIUS = 4 // in map units: how close the pointer must be to pick a country up
 
-type MapPoint = { code: string; value: number; label: string; color: string; weight: number }
+export type MapPoint = { code: string; value: number; label: string; color: string; weight: number }
 
 const EASE = 0.18 // share of the remaining distance covered per frame
 
@@ -57,7 +57,7 @@ function baseDotColor() {
  * that stops when idle. Zooming around the pointer keeps whatever is under it in place, so
  * moving between countries never makes the map jump.
  */
-function InteractiveMap({ points, focus, onFocus, renderTooltip }: {
+export function InteractiveMap({ points, focus, onFocus, renderTooltip }: {
   points: MapPoint[]
   focus: string | null
   onFocus: (code: string | null) => void
@@ -275,7 +275,8 @@ function CountryTooltip({ code, metric, currency, sales, store, totalDownloads }
   store?: StoreCountry
   totalDownloads: number
 }) {
-  const downloads = sales ? sales.first_time + sales.redownloads : 0
+  // The map counts first-time downloads (new customers); redownloads are listed for context.
+  const downloads = sales ? sales.first_time : 0
   const ranks = Object.entries(store?.ranks || {}).sort((a, b) => a[1].rank - b[1].rank)
   const chartName = (key: string) => {
     const [chart, scope] = key.split(":")
@@ -284,9 +285,9 @@ function CountryTooltip({ code, metric, currency, sales, store, totalDownloads }
   }
   const rows: { label: string; value: string; on?: boolean }[] = []
   if (sales) {
-    rows.push({ label: "Downloads", value: fmtNumber(downloads), on: metric === "downloads" })
-    rows.push({ label: "First-time", value: fmtNumber(sales.first_time) })
-    if (totalDownloads) rows.push({ label: "Share of downloads", value: `${((downloads / totalDownloads) * 100).toFixed(1)}%` })
+    rows.push({ label: "First-time downloads", value: fmtNumber(downloads), on: metric === "downloads" })
+    if (sales.redownloads > 0) rows.push({ label: "Redownloads", value: fmtNumber(sales.redownloads) })
+    if (totalDownloads) rows.push({ label: "Share of first-time", value: `${((downloads / totalDownloads) * 100).toFixed(1)}%` })
     if (sales.proceeds > 0 || metric === "proceeds") rows.push({ label: "Proceeds", value: fmtMoney(sales.proceeds, currency), on: metric === "proceeds" })
     if (sales.iap > 0) rows.push({ label: "In-app purchases", value: fmtNumber(sales.iap) })
   }
@@ -340,7 +341,7 @@ export function WorldMap({ sales, store, metric: picked, currency, onMetric, hid
     if (metric === "downloads" || metric === "proceeds") {
       const vals = sales.map((t) => ({
         code: t.country_code,
-        value: metric === "downloads" ? t.first_time + t.redownloads : t.proceeds,
+        value: metric === "downloads" ? t.first_time : t.proceeds,
       }))
       const max = Math.max(1, ...vals.map((v) => v.value))
       for (const v of vals) {
@@ -370,7 +371,7 @@ export function WorldMap({ sales, store, metric: picked, currency, onMetric, hid
 
   const salesByCode = React.useMemo(() => new Map(sales.map((t) => [t.country_code, t])), [sales])
   const storeByCode = React.useMemo(() => new Map(store.map((c) => [c.country_code, c])), [store])
-  const totalDownloads = React.useMemo(() => sales.reduce((n, t) => n + t.first_time + t.redownloads, 0), [sales])
+  const totalDownloads = React.useMemo(() => sales.reduce((n, t) => n + t.first_time, 0), [sales])
   const [focus, setFocus] = React.useState<string | null>(null)
 
   return (

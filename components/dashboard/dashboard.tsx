@@ -11,6 +11,7 @@ import type { CoarseHistory, HistoryPoint } from '@/components/dashboard/history
 import type { StoreData } from '@/components/dashboard/store-table'
 import type { SubscriptionData } from '@/components/dashboard/subscription-panel'
 import type { BreakdownData } from '@/components/dashboard/breakdowns'
+import type { ReachData } from '@/components/dashboard/reach-panel'
 import { SyncStatusButton, useSyncStatus } from '@/components/dashboard/sync-status'
 import type { ServerSettings } from '@/components/settings/settings-view'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -29,6 +30,7 @@ const TerritoryTable = dynamic(() => import('@/components/dashboard/territory-ta
 const StoreTable = dynamic(() => import('@/components/dashboard/store-table').then((m) => m.StoreTable), { ssr: false, loading: panel(420) })
 const SubscriptionPanel = dynamic(() => import('@/components/dashboard/subscription-panel').then((m) => m.SubscriptionPanel), { ssr: false, loading: panel(300) })
 const Breakdowns = dynamic(() => import('@/components/dashboard/breakdowns').then((m) => m.Breakdowns), { ssr: false, loading: panel(360) })
+const ReachPanel = dynamic(() => import('@/components/dashboard/reach-panel').then((m) => m.ReachPanel), { ssr: false, loading: panel(420) })
 const ReviewsPanel = dynamic(() => import('@/components/dashboard/reviews-panel').then((m) => m.ReviewsPanel), { ssr: false, loading: panel(360) })
 
 export interface DashboardData {
@@ -41,6 +43,7 @@ export interface DashboardData {
   territories: SalesTerritory[]
   breakdowns: BreakdownData
   subscriptions: SubscriptionData
+  reach: ReachData
 }
 
 
@@ -171,6 +174,8 @@ export function Dashboard({ initial }: { initial: InitialData }) {
               activeSubs: dash?.subscriptions.active?.total ?? null,
               engagementPending: !!dash?.engagementPending,
               store: store?.summary ?? null,
+              reach: dash?.reach ? (selectedAppId ? dash.reach.apps[selectedAppId] ?? { count: 0, newInRange: 0 } : dash.reach.all) : null,
+              reachTotal: dash?.reach?.total ?? 175,
             }}
             currency={prefs.currency}
             hidden={prefs.hiddenKpis}
@@ -200,6 +205,18 @@ export function Dashboard({ initial }: { initial: InitialData }) {
             onMetric={(mapMetric) => updatePrefs({ mapMetric })}
             hidden={prefs.hiddenMapItems}
             onHide={() => hide('map')}
+          />
+        )
+      case 'reach':
+        return (
+          <ReachPanel
+            data={dash?.reach ?? null}
+            apps={apps}
+            selectedAppId={selectedAppId}
+            onSelectApp={setSelectedAppId}
+            range={dash?.range ?? {}}
+            hidden={prefs.hiddenReachItems}
+            onHide={() => hide('reach')}
           />
         )
       case 'territories':

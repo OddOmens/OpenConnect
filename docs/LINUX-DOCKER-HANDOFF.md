@@ -1,7 +1,8 @@
 # Handoff: run OpenAppShot in Docker on a Linux server
 
-Status (October 2026): the app runs locally on a Mac (`npm run dev`, port 4317, data in `~/.openappshot`).
-Next step is hosting the server in Docker on a Linux box and using it from the Mac's browser.
+Status (October 2026): done — items 1–4 are implemented (`Dockerfile`, `docker-compose*.yml`, `bin/remote.mjs`).
+Access control (5) is left to the network: LAN/tailnet only, or the Tailscale HTTPS sidecar. Data moves (6)
+with the rsync line in the README.
 Read `CLAUDE.md` and `README.md` first.
 
 ## Target setup

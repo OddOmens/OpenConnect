@@ -73,10 +73,13 @@ adding 5 iPad screenshots to an app with 5 iPhone slides pairs them up slide by 
 
 ## How it's organized
 
-- **Slides are content only**: headline, subtitle, one screenshot per device, and which screen it shows.
-- **Style is app-wide**: layout, colors, font, alignment, headline size, screenshot size and position, and
-  the screenshot frame live on the app and apply to every slide. There is no per-slide styling and no
-  approval step.
+- **Slides are content**: headline, subtitle, one screenshot per device, which screen it shows, which part
+  of each screenshot to call out, and whether it's the hero slide.
+- **Style is global, slides can override it**: layout, colors, font, alignment, headline size, screenshot
+  size and position, the frame (outline or drawn device) and how callouts look live on the app and apply to
+  every slide. A slide can change any of these for itself (`--style`), and `--reset-style` goes back to the
+  app style. Prefer app-wide changes; override a slide only when it should deliberately differ (e.g. one
+  light slide in a dark set). The hero design is shared by all hero slides. No approval step.
 
 ## Writing slides
 
@@ -98,13 +101,86 @@ appshot rm-slide . 4
   the center so nothing important is clipped.
 - A slide is exported for every device it has a screenshot for.
 
+### Screenshot sets (testing alternatives)
+
+An app has a **primary** set and any number of test sets. Each set has its own slides, style and product page
+assets; profile, icon, devices and sizes are shared. Add `--in "<set>"` to any command to work on a set.
+
+```bash
+appshot sets .                                   # list (* = primary)
+appshot set-new . "Bold blue"                    # copy of the primary; --from <set> to copy another, --blank for none
+appshot update . --in "Bold blue" --preset blue  # style changes stay in that set
+appshot slide . 1 --in "Bold blue" --headline "Talk, *don't type*"
+appshot preview . --in "Bold blue" --slide 1
+appshot export . --in "Bold blue"
+appshot set-primary . "Bold blue"                # the winner becomes primary; the old one stays as a set
+appshot set-rename . "Bold blue" "Blue"; appshot set-rm . "Blue"
+```
+
+Never change the primary set when the user asked to try something — make a set for it. MCP tools take `set`;
+`manage_sets` lists/creates/renames/deletes/promotes.
+
+## Hero slide and callouts
+
+```bash
+appshot slide . 1 --hero on                          # badge, app icon + name, leaning device
+appshot update . --badge rating --badge-title "4.9 Stars" --badge-caption "From 62k+ ratings"
+appshot update . --badge downloads --badge-title "1M+ Downloads" --badge-caption "Worldwide"
+appshot update . --badge none --lockup on --tilt -6
+appshot slide . 3 --callout 40,820,1240,360          # box in that screenshot's pixels (x,y,w,h)
+appshot slide . 3 --callout 0.03,0.28,0.94,0.12 --device ipad   # or 0–1 fractions, per device
+appshot slide . 3 --callout off
+appshot update . --callout-scale 1.15 --callout-shadow 0.4 --callout-radius 28
+```
+
+- Make slide 1 the hero; keep the others standard. Badge kinds: `rating` (five stars), `downloads` (download
+  mark), `custom` (text only), `none`. Only show a rating or download count the App Store really shows —
+  otherwise use `custom` with a true short claim ("Free", "No account needed") or `none`.
+- A callout lifts one element (a card, a row, a key button) out of the screenshot, larger and with a shadow.
+  Use it on 1–3 slides where one element *is* the point of the headline. Mark the whole element with a little
+  margin, pick boxes from the screenshot's real pixels (`appshot data .` gives each size), and check with
+  `appshot preview . --slide n`. iPhone and iPad screenshots differ, so mark each device separately.
+
 ## Styling (applies to every slide)
+
+Backgrounds and effects:
+
+```bash
+appshot update . --background mesh --mesh-colors "#0b080f,#f66767,#5b21b6" --shuffle   # soft aurora blobs
+appshot update . --panorama on              # one background across all slides (gradients, mesh, photos, textures)
+appshot update . --texture grain --texture-strength 0.2    # or dots / grid / lines (--texture-spacing 28)
+appshot update . --vignette 0.4 --glow 0.6 --glow-color highlight    # darker edges; light behind the screenshot
+appshot update . --background frosted --set theme.palettes.primary.background.overlay=0.35  # blurred own screenshot
+```
+
+Panorama + mesh or a wide gradient is the strongest look; keep textures subtle (0.1–0.25). Mesh and gradient colors
+come from the brand colors in the profile. Frosted suits colorful UIs; on dark UIs prefer mesh with a glow.
+
+Stickers, headline marks and decorations:
+
+```bash
+appshot emoji rocket                         # find emoji slugs
+appshot sticker . 1 add rocket --x 0.84 --y 0.13 --size 220 --rotate 12          # 3D emoji (--style color|flat)
+appshot sticker . 1 add arrow-curve --doodle --x 0.2 --y 0.2 --rotate 150 --color "#ffffff"
+appshot sticker . 1 list; appshot sticker . 1 set 2 --layer back; appshot sticker . 1 rm 1
+appshot update . --mark circle --mark-width 7          # hand-drawn marks on *highlighted* words
+appshot update . --decor waves --panorama on --decor-opacity 0.6 --shuffle-decor
+```
+
+Use stickers sparingly: one or two per slide, near the corners, never covering the headline or the key UI. Pick
+emoji that match the slide's point (🔒 privacy, ⚡ speed, 🎙️ voice). Arrows work best pointing from the headline
+toward a callout. Keep decorations behind and subtle; one decoration style per set.
+
+One slide can differ: `appshot slide . 4 --style palettes.primary.background.color=#fafafa --style
+palettes.primary.textColor=#0a0a0a` (any theme path); `appshot slide . 4 --reset-style frame.kind` or
+`--reset-style` alone to go back to the app style. `appshot status` lists each slide's own style.
 
 ```bash
 appshot update . --preset green
 appshot update . --layout top|bottom|side --align left|center --alternate on|off
-appshot update . --font "Geist Variable" --size 96 --scale 1.1 --offset -120
+appshot update . --font "Geist Variable" --size 96 --scale 1.1 --offset -120 --text-offset 40
 appshot update . --stroke-color "#bbf7d0" --stroke-width 5 --radius 9 --shadow 0.2
+appshot update . --frame device --device-color "#2b2b2e"   # drawn iPhone/iPad/Mac; --frame outline to go back
 appshot update . --set theme.palettes.primary.background.color=#14532D --set theme.palettes.primary.accentColor=#FDE68A
 appshot update . --devices iphone,duo,ipad,mac
 appshot update . --set exportSizes.iphone='["Large 1320 × 2868","Medium 1206 × 2622"]'
@@ -115,12 +191,35 @@ appshot update . --set exportSizes.iphone='["Large 1320 × 2868","Medium 1206 ×
 - `--alternate on` uses the second color scheme (`theme.palettes.alt`) on every other slide, like the
   dark-green / cream fitness style (the `forest` preset turns this on).
 - There is one style per app, shared by iPhone, iPhone Duo, iPad and Mac; only sizing adapts to each canvas.
-- A preset changes colors and type only; layout, alignment, screenshot size/position and background photos stay.
+- A preset changes colors and type only; layout, alignment, screenshot size/position, frame kind, callout and
+  hero settings and background photos stay.
+- `--frame device` draws the hardware: iPhone with Dynamic Island and side buttons, iPad, or a Mac laptop.
+  Device colors: `#2b2b2e` black, `#d9dadc` silver, `#bdb6aa` natural, `#c9a98a` desert, `#3d4a5c` blue.
+  Screenshots should include a clean status bar (`capture --clean-status-bar`) so the device looks real.
 - Themes are built on the shadcn/ui palette: `neutral` (default), `zinc`, `blue`, `green`, `rose`, `orange`,
   `violet`, `yellow`, plus `forest`. Pick the one closest to the brand colors in the profile, then adjust.
 - Fonts: Geist Variable, Outfit Variable, Inter Variable, Plus Jakarta Sans Variable, DM Sans Variable,
   Manrope Variable, Sora Variable, Urbanist Variable, Space Grotesk Variable, Fraunces Variable, Poppins,
   -apple-system. Match the app's brand colors (asset catalog AccentColor / color sets) when no preset fits.
+
+## Product page header and search results (iOS 27+)
+
+One header and one search results asset per app. They use the app's Style and screenshots from the slides.
+
+```bash
+appshot creative . header --headline "Speak. *It writes.*" --subtitle "Private dictation" --text center --include on
+appshot creative . search --headline "Voice notes that\n*organize themselves*" --text left --shots 1,3,2 --include on
+appshot creative . search --shots 2:ipad,4 --shot-scale 1.2      # slide positions, iPhone unless :device
+appshot preview . --creative header                              # look at it before exporting
+```
+
+- Header: 3840×1646, safe area 1646×661. Search: 3840×2560, safe area 2168×1030. Text and screenshots are
+  kept inside the safe area automatically; screenshots shrink to fit.
+- Apple: one short phrase, one clear focal point. The header sets the tone for a first-time visitor; the
+  search asset must make what the app does obvious, so show the real interface (`--text left` with 2–3
+  screenshots works well). Same text rules as screenshots (no prices, URLs, other platforms).
+- `--include on` adds it to `appshot export` (files land in `product-page/`). `appshot data .` shows both
+  under `creatives`.
 
 ## Bulk: apply a spec
 

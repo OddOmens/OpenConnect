@@ -4,7 +4,7 @@
 import { cached } from './cache';
 import { credentialSources, getCredentials, getSyncConfig, getUiPrefs } from './config';
 import { resolveRange } from './dates';
-import { availableMonths, dashboard, dataBounds, HistoryGranularity, listApps, storePresence } from './queries';
+import { availableMonths, dashboard, dataBounds, HistoryGranularity, listApps, reach, storePresence } from './queries';
 
 export function settingsResponse() {
   const creds = getCredentials();
@@ -45,7 +45,9 @@ export function dashboardResponse(p: DashboardParams) {
   return cached(key, () => {
     const { start, end } = resolveRange(p.range, p.start, p.end);
     const data = dashboard({ appId, start, end }, granularity, currency, p.compare, p.range);
-    return { range: { start, end }, bounds: dataBounds(appId), ...data };
+    // Reach covers every app (the section compares them); it only depends on the range.
+    const reachData = cached(`reach|${start}|${end}`, () => reach({ start, end }));
+    return { range: { start, end }, bounds: dataBounds(appId), ...data, reach: reachData };
   });
 }
 

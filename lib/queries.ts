@@ -1,5 +1,6 @@
 import { getDb } from './db';
 import { addDays, daysBetween, pacificToday, previousRange } from './dates';
+import { TERRITORIES } from './territories';
 
 export interface Filter {
   appId?: string;   // undefined = all visible apps
@@ -310,6 +311,49 @@ export function dashboard(f: Filter, granularity: HistoryGranularity, currency: 
     territories: territories(f, rate),
     breakdowns: breakdowns(f, rate),
     subscriptions: subscriptions(f, rate),
+  };
+}
+
+export interface ReachEntry {
+  /** Storefront code → first day it had a download (Jan 1 of the year for yearly-only history). */
+  countries: Record<string, string>;
+  count: number;
+  /** Reached for the first time inside the selected range. */
+  newInRange: number;
+}
+
+/**
+ * Global reach: in how many of the App Store's storefronts each visible app (and all of them
+ * together) has ever been downloaded. Lifetime, not limited to the range; the range only
+ * decides which countries count as newly reached.
+ */
+export function reach(f: { start?: string; end?: string }): { total: number; all: ReachEntry; apps: Record<string, ReachEntry> } {
+  const known = new Set(TERRITORIES.map((t) => t.code));
+  const rows = getDb()
+    .prepare(`
+      SELECT apple_id, country_code AS code, MIN(date) AS first
+      FROM sales
+      WHERE category IN ('download', 'redownload') AND units > 0
+        AND apple_id IN (SELECT apple_id FROM apps WHERE hidden = 0)
+      GROUP BY apple_id, country_code`)
+    .all() as { apple_id: string; code: string; first: string }[];
+
+  const isNew = (first: string) => !!f.start && first >= f.start && (!f.end || first <= f.end);
+  const entry = (countries: Record<string, string>): ReachEntry => {
+    const firsts = Object.values(countries);
+    return { countries, count: firsts.length, newInRange: firsts.filter(isNew).length };
+  };
+  const perApp: Record<string, Record<string, string>> = {};
+  const union: Record<string, string> = {};
+  for (const r of rows) {
+    if (!known.has(r.code)) continue;
+    (perApp[r.apple_id] ??= {})[r.code] = r.first;
+    if (!union[r.code] || r.first < union[r.code]) union[r.code] = r.first;
+  }
+  return {
+    total: TERRITORIES.length,
+    all: entry(union),
+    apps: Object.fromEntries(Object.entries(perApp).map(([id, c]) => [id, entry(c)])),
   };
 }
 

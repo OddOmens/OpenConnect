@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Download, Loader2, Maximize2 } from 'lucide-react'
+import { ArrowLeft, Download, Globe, LayoutDashboard, Loader2, Map as MapIcon, Maximize2, MessageSquareQuote, RefreshCw, Star, Trophy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Segmented, Toggle } from '@/components/dashboard/section'
-import { DEFAULT_PREFS, SHARE_HEROES, SHARE_STATS, ShareHeroId, ShareStatId, UiPrefs, monthRangeLabel } from '@/lib/prefs'
+import { DEFAULT_PREFS, SHARE_HEROES, SHARE_STATS, SHARE_TEMPLATES, ShareHeroId, ShareStatId, ShareTemplateId, UiPrefs, monthRangeLabel } from '@/lib/prefs'
 import type { App } from '@/components/dashboard/app-selector'
 import { cn } from '@/lib/utils'
 
@@ -20,6 +20,24 @@ const RANGES = {
 type Range = UiPrefs['share']['range']
 type Theme = 'dark' | 'light'
 type Format = '4x5' | '9x16'
+
+const TEMPLATE_ICONS: Record<ShareTemplateId, React.ElementType> = {
+  overview: LayoutDashboard,
+  reach: Globe,
+  map: MapIcon,
+  rating: Star,
+  review: MessageSquareQuote,
+  milestone: Trophy,
+}
+
+const TEMPLATE_NOTES: Record<ShareTemplateId, string> = {
+  overview: '',
+  reach: 'How many of the 175 App Store storefronts each app has been downloaded in, all time. The range decides what counts as newly reached.',
+  map: 'Where first-time downloads came from in the chosen range, with the top markets.',
+  rating: 'The App Store rating with its stars, the breakdown of written reviews and the storefronts with the most ratings.',
+  review: 'One of the best recent 5★ written reviews as a quote. Use “Another review” on a card to pick a different one.',
+  milestone: 'Lifetime first-time downloads rounded to a milestone, with countries reached and the rating.',
+}
 
 const selectCls =
   'h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring'
@@ -107,9 +125,14 @@ export function ShareStudio() {
   }, [])
 
   const cards = [{ id: 'all', name: 'All Apps' }, ...apps.map((a) => ({ id: a.apple_id, name: a.name.split(':')[0] }))]
+  const template = share.template
+  // Which review each card shows on the Review template ("Another review" steps through them).
+  const [picks, setPicks] = useState<Record<string, number>>({})
+  const usesRange = template === 'overview' || template === 'reach' || template === 'map'
   const url = (id: string) =>
-    `/api/share?app=${id}&range=${range}&format=${format}&theme=${theme}&hero=${share.hero}&stats=${share.stats.join(',')}&list=${share.showList ? 1 : 0}`
-  const fileName = (name: string) => `${slug(name)}-${range.replace('m:', '')}-${format === '4x5' ? '1080x1350' : '1080x1920'}.png`
+    `/api/share?app=${id}&t=${template}&range=${range}&format=${format}&theme=${theme}&hero=${share.hero}&stats=${share.stats.join(',')}&list=${share.showList ? 1 : 0}&pick=${picks[id] ?? 0}`
+  const fileName = (name: string) =>
+    `${slug(name)}-${template}${usesRange ? `-${range.replace('m:', '')}` : ''}-${format === '4x5' ? '1080x1350' : '1080x1920'}.png`
 
   // The previews already rendered these, so downloads come straight from the server's cache.
   const download = async (id: string, name: string) => {
@@ -163,21 +186,43 @@ export function ShareStudio() {
                 { value: 'light', label: 'Light' },
               ]}
             />
-            <select value={range} onChange={(e) => setRange(e.target.value as Range)} className={selectCls} aria-label="Date range">
+            {usesRange && <select value={range} onChange={(e) => setRange(e.target.value as Range)} className={selectCls} aria-label="Date range">
               {(Object.keys(RANGES) as (keyof typeof RANGES)[]).map((r) => <option key={r} value={r}>{RANGES[r]}</option>)}
               {months.length > 0 && (
                 <optgroup label="Month">
                   {months.map((m) => <option key={m} value={`m:${m}`}>{monthRangeLabel(m)}</option>)}
                 </optgroup>
               )}
-            </select>
+            </select>}
             <Button size="sm" onClick={() => run('all-cards', async () => { for (const c of cards) await download(c.id, c.name) })} disabled={!!busy || !secure} title={secure ? undefined : 'Needs https://'} className="gap-2">
               {busy === 'all-cards' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               Download all
             </Button>
           </div>
         </div>
-        <div className="mx-auto flex max-w-screen-2xl flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-4 py-2.5 sm:px-6 lg:px-8">
+        <nav aria-label="Card design" className="mx-auto flex max-w-screen-2xl gap-1 overflow-x-auto border-t border-border px-4 py-2 sm:px-6 lg:px-8">
+          {(Object.keys(SHARE_TEMPLATES) as ShareTemplateId[]).map((t) => {
+            const Icon = TEMPLATE_ICONS[t]
+            return (
+              <button
+                key={t}
+                onClick={() => update({ template: t })}
+                aria-current={template === t ? 'page' : undefined}
+                className={cn(
+                  'flex shrink-0 items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors',
+                  template === t ? 'bg-accent font-medium text-foreground' : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {SHARE_TEMPLATES[t]}
+              </button>
+            )
+          })}
+        </nav>
+        {template !== 'overview' && (
+          <p className="mx-auto max-w-screen-2xl border-t border-border px-4 py-2.5 text-xs text-muted-foreground sm:px-6 lg:px-8">{TEMPLATE_NOTES[template]}</p>
+        )}
+        {template === 'overview' && <div className="mx-auto flex max-w-screen-2xl flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-4 py-2.5 sm:px-6 lg:px-8">
           <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
             Big number
             <select value={share.hero} onChange={(e) => update({ hero: e.target.value as ShareHeroId })} className={selectCls} aria-label="Big number">
@@ -203,7 +248,7 @@ export function ShareStudio() {
           <span className="text-[11px] text-muted-foreground">
             Tiles appear in the order you turn them on. 4:5 shows up to 4, 9:16 up to 6.
           </span>
-        </div>
+        </div>}
       </header>
 
       <main className="mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 lg:px-8">
@@ -223,10 +268,18 @@ export function ShareStudio() {
               <Preview src={url(c.id)} alt={`${c.name} share card`} format={format} onOpen={() => setOpen(c)} />
               <figcaption className="flex items-center justify-between gap-2">
                 <span className="truncate text-sm font-medium">{c.name}</span>
+                <span className="flex shrink-0 gap-1.5">
+                {template === 'review' && (
+                  <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setPicks((p) => ({ ...p, [c.id]: (p[c.id] ?? 0) + 1 }))}>
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Another review
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" className="gap-1.5" disabled={!!busy} onClick={() => run(c.id, () => download(c.id, c.name))}>
                   {busy === c.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
                   PNG
                 </Button>
+                </span>
               </figcaption>
             </figure>
           ))}

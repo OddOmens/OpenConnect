@@ -8,8 +8,8 @@ import { Segmented, Toggle } from "@/components/dashboard/section"
 import type { App } from "@/components/dashboard/app-selector"
 import { Panel } from "./panel"
 import {
-  BREAKDOWN_TABS, DEFAULT_PREFS, HISTORY_SERIES, KPIS, MAP_ITEMS, SECTIONS, STORE_COLUMNS, SUBSCRIPTION_ITEMS, TERRITORY_COLUMNS,
-  BreakdownTab, HistorySeries, KpiId, MapItem, SectionId, SectionWidth, StoreColumn, SubscriptionItem, TerritoryColumn, UiPrefs,
+  BREAKDOWN_TABS, DEFAULT_PREFS, REACH_ITEMS, HISTORY_SERIES, KPIS, MAP_ITEMS, SECTIONS, STORE_COLUMNS, SUBSCRIPTION_ITEMS, TERRITORY_COLUMNS,
+  BreakdownTab, HistorySeries, ReachItem, KpiId, MapItem, SectionId, SectionWidth, StoreColumn, SubscriptionItem, TerritoryColumn, UiPrefs,
 } from "@/lib/prefs"
 
 function toggleIn<T>(list: T[], item: T): T[] {
@@ -142,6 +142,9 @@ export function CustomizeSettings({ prefs, onPrefs, apps, onToggleApp, footer }:
         </Detail>
         <Detail title="World Map">
           <Chips<MapItem> all={MAP_ITEMS} hidden={prefs.hiddenMapItems} onChange={(hiddenMapItems) => onPrefs({ hiddenMapItems })} />
+        </Detail>
+        <Detail title="Global Reach">
+          <Chips<ReachItem> all={REACH_ITEMS} hidden={prefs.hiddenReachItems} onChange={(hiddenReachItems) => onPrefs({ hiddenReachItems })} />
         </Detail>
         <Detail title="Breakdowns">
           <Chips<BreakdownTab> all={BREAKDOWN_TABS} hidden={prefs.hiddenBreakdowns} onChange={(hiddenBreakdowns) => onPrefs({ hiddenBreakdowns })} />

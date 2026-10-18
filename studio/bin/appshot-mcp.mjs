@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { BASE, fetchExport, isLocalUrl, serverIsLocal } from './remote.mjs';
+import { BASE, fetchExport, isLocalUrl, moveExport, serverIsLocal } from './remote.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CLI = path.join(ROOT, 'bin', 'appshot.mjs');
@@ -793,9 +793,9 @@ server.registerTool(
     const id = await appId(a.app);
     const local = await serverIsLocal(BASE);
     const outDir = a.out_dir ? expand(a.out_dir) : undefined;
-    let r = await http('POST', inSet(`/api/apps/${id}/export`, a), { devices: a.devices, languages: a.languages, outDir: local ? outDir : undefined });
-    // Server on another machine: download the zip and unpack it on this Mac.
-    if (!local) r = await fetchExport(BASE, r, outDir);
+    let r = await http('POST', inSet(`/api/apps/${id}/export`, a), { devices: a.devices, languages: a.languages });
+    // Same disk: move it into out_dir. Another machine: download the zip and unpack it on this Mac.
+    r = local ? moveExport(r, outDir) : await fetchExport(BASE, r, outDir);
     const counts = {};
     r.files.forEach((f) => (counts[`${f.device} ${f.size}`] = (counts[`${f.device} ${f.size}`] ?? 0) + 1));
     const lines = [`Exported ${r.files.length} PNGs to ${r.dir}`, ...Object.entries(counts).map(([k, n]) => `  ${k}: ${n}`), `Zip: ${r.zip}`];

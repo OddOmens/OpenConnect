@@ -95,3 +95,24 @@ export async function fetchExport(base, r, destRoot) {
   const creatives = (r.creatives ?? []).map((c) => ({ ...c, path: local(c.path) }));
   return { ...r, dir: unpacked ? dir : root, zip, files, creatives, serverDir: r.dir, serverZip: r.zip };
 }
+
+/** Server on this disk: move its export (folder and zip) into `destRoot` and point the paths there. */
+export function moveExport(r, destRoot) {
+  if (!destRoot) return r;
+  fs.mkdirSync(destRoot, { recursive: true });
+  const dir = path.join(destRoot, path.basename(r.dir));
+  const zip = path.join(destRoot, path.basename(r.zip));
+  const move = (from, to) => {
+    try {
+      fs.renameSync(from, to);
+    } catch {
+      // Another volume: copy, then remove the original.
+      fs.cpSync(from, to, { recursive: true });
+      fs.rmSync(from, { recursive: true, force: true });
+    }
+  };
+  move(r.dir, dir);
+  move(r.zip, zip);
+  const local = (p) => path.join(dir, path.relative(r.dir, p));
+  return { ...r, dir, zip, files: r.files.map((f) => ({ ...f, path: local(f.path) })), creatives: (r.creatives ?? []).map((c) => ({ ...c, path: local(c.path) })) };
+}

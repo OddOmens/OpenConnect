@@ -57,6 +57,14 @@ const langOf = (req: Request): string | null => {
 /** The app as one set and one language see it (read-only). */
 const viewOf = (req: Request) => localize(store.getView(p(req, 'app'), setOf(req)), langOf(req));
 
+/** `root/name`, refusing any name that would land outside `root`. */
+function inside(root: string, name: string) {
+  const base = path.resolve(root);
+  const full = path.resolve(base, name);
+  if (!full.startsWith(base + path.sep)) throw new store.HttpError(400, 'Invalid folder name');
+  return full;
+}
+
 function parseDevice(v: unknown): DeviceId | undefined {
   if (v === undefined || v === '' || v === 'auto') return undefined;
   if (DEVICE_IDS.includes(v as DeviceId)) return v as DeviceId;
@@ -106,7 +114,7 @@ app.get('/api', (_req, res) =>
       'GET /api/apps/:app/slides/:slide/render/:device.png?scale=': 'PNG of one slide',
       'GET /api/apps/:app/creatives/:creative/render.png?scale=': 'PNG of the product page header or search results asset (:creative = header | search)',
       'POST /api/apps/:app/preview': 'Render previews to disk {device?, slides?, scale?}; each file is also served at its url',
-      'POST /api/apps/:app/export': 'Export PNGs + zip {devices?, sizes?, outDir?, creatives?, languages?}; enabled creative assets are included unless creatives is given; every language unless languages (or ?lang=a,b) is given; zipUrl downloads the zip',
+      'POST /api/apps/:app/export': 'Export PNGs + zip into the data folder {devices?, sizes?, creatives?, languages?}; enabled creative assets are included unless creatives is given; every language unless languages (or ?lang=a,b) is given; zipUrl downloads the zip',
       'GET /api/emoji?q=&group=&limit=': 'Search the emoji stickers (slug, name, glyph, group, keywords, styles; styles has "apple" when an emoji font is installed)',
       'GET /api/apps/:app/sets': 'Screenshot sets: the primary set and any others (e.g. mockups being tested)',
       'POST /api/apps/:app/sets': 'New set {name?, from? (set to copy, default primary), blank?}',
@@ -427,8 +435,8 @@ app.post(
   h(async (req, res) => {
     const a = viewOf(req);
     const devices: DeviceId[] = req.body?.device ? [parseDevice(req.body.device)!] : a.devices;
-    const folder = [a.id, a.activeSet, a.activeLang].filter(Boolean).join('-');
-    const dir = path.join(store.DATA_DIR, 'previews', folder);
+    const folder = [a.id, a.activeSet, a.activeLang].filter(Boolean).map((v) => String(v).replace(/[^\w-]/g, '_')).join('-');
+    const dir = inside(path.join(store.DATA_DIR, 'previews'), folder);
     fs.rmSync(dir, { recursive: true, force: true });
     const out: { device: DeviceId; slideId: string; path: string; url: string }[] = [];
     for (const d of devices) {
@@ -464,7 +472,6 @@ app.post(
     const result = await exportApp(BASE_URL, a, {
       devices: (req.body?.devices as string[] | undefined)?.map((d) => parseDevice(d)!),
       sizes: req.body?.sizes,
-      outDir: req.body?.outDir,
       creatives: req.body?.creatives,
       languages,
     });
@@ -485,7 +492,9 @@ if (isProd) {
   const dist = path.resolve('dist');
   // No "/studio" → "/studio/" redirect: Next.js (in front, at /studio) strips trailing slashes.
   app.use(express.static(dist, { redirect: false }));
-  app.get('/{*splat}', (_req, res) => res.sendFile(path.join(dist, 'index.html')));
+  // Every other path is the editor (client-side routes); read once, not per request.
+  const indexHtml = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
+  app.get('/{*splat}', (_req, res) => res.type('html').send(indexHtml));
 }
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {

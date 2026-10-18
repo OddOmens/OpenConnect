@@ -1,0 +1,39 @@
+# OpenAppShot
+
+OpenConnect's screenshot studio (formerly OpenAppShot). Express + Vite (single process on :4317), React editor, Playwright for PNG export. In OpenConnect it runs as its own container and the dashboard serves it at `/studio` behind its sign-in (`app/studio/[[...path]]/route.ts` in the repo root).
+
+- Run: `npm run dev` (serves API + editor with Vite middleware); `BASE_PATH=/studio npm run dev` to run it as OpenConnect serves it. `npm run typecheck` before finishing changes.
+- Base path: every route is on a router mounted at `BASE_PATH`, the Vite build uses it as `base`, and every URL the browser requests goes through `at()` (`src/base.ts`). API responses keep paths relative to the studio root (`/api/…`, `/previews/…`, `/exports/…`); clients join them to their base URL. Links that must be absolute (`editorUrl`, asset `url`) use `publicBase(req)` (OpenConnect's forwarded host).
+- To *use* the tool (make screenshots for an app), follow `.claude/skills/openappshot/SKILL.md` and the `appshot` CLI (`bin/appshot.mjs`).
+
+## Layout
+- `src/shared/` — data model (`types.ts`), device specs and App Store sizes (`devices.ts`), shadcn-based theme presets and merge helpers (`presets.ts`), Apple guideline checks (`guidelines.ts`). Shared by server, editor and render page.
+- `src/render/SlideView.tsx` — the one slide renderer. Used by the editor preview (scaled) and by `/render`, which Playwright screenshots at native size. Change visuals here only.
+- `src/components/` — editor UI. `src/Editor.tsx` holds state, debounced saves and the live-update SSE subscription.
+- `server/store.ts` — JSON-on-disk storage in `~/.openappshot/apps/<id>/app.json` + `assets/` (`APPSHOT_DATA` overrides). `profile.projectPath` links an app to its repo.
+- `server/renderer.ts` — headless Chromium export; falls back to any cached Playwright Chromium, then system Chrome.
+- `bin/appshot.mjs` — dependency-free CLI over the HTTP API.
+- `bin/appshot-mcp.mjs` — MCP server for the Claude desktop app (stdio; starts the HTTP server if needed when the server is local). Keep its tools in step with the CLI.
+- `bin/remote.mjs` — where the server is (`BASE`: `OPENCONNECT_URL` + `/studio` with `OPENCONNECT_TOKEN` sent as a Bearer token on every request; else `APPSHOT_URL`; else local) and, when the server's files aren't on this disk, downloads preview PNGs and export zips for the CLI and MCP.
+- `src/shared/summary.ts` — `buildAppData`, the clean per-app record behind `/api/apps/:app/data`, `appshot data` and the MCP `get_app` tool.
+
+## Conventions
+- Theme/slide sizes are in units of `min(canvasW, canvasH) / 1000` so one design works on iPhone, iPad and Mac.
+- New slide/theme fields need a default in `newSlide`/`newApp` (presets.ts); `migrate()` in the store backfills old files.
+- The app must never call the Claude API — Claude Code drives it via the CLI so it costs no API credits.
+- Editor chrome follows shadcn/ui tokens in `src/styles.css` (light + dark).
+- Slides hold content: headline, subtitle, shots, screen, `role` ('hero' or 'standard') and `callouts` (per device, a rect as 0–1 fractions of that screenshot), plus an optional `style` override.
+- Style is global with per-slide overrides: `app.theme` is the look of every slide; `slide.style` (a partial theme, `StyleOverride`) changes any of it for that slide only. Always render with `slideTheme(app, slide)`, never `app.theme` directly. A null leaf or `style: null` reverts to the app style (`pruneOverride` cleans it up). In the editor, `StyleControls` serves both the Style tab and a slide's "Style for this slide" section through a `StyleScope`.
+- The hero design (`theme.hero`: badge kind/text, logo lockup, tilt) is app-wide, shared by every hero slide, and edited in the Slide tab only when the slide is a hero. No approval workflow.
+- Screenshot sets: an app's own `theme`/`slides`/`creatives` are the primary set; `app.sets` holds the others (`ScreenshotSet`). Everything else on the app is shared. `setView(app, set)` (src/shared/sets.ts) returns an App-shaped view of one set, so renderers, checks and summaries work unchanged; render with a view, never mix. Store writes go through `open(app, set)` + `commit()`, which writes the set's parts back to the set and shared parts to the app; `save()` refuses a view. API routes take `?set=`, the CLI `--in`, MCP tools `set`. The editor canvas (`SetsBoard`) shows a row per set; `actionsFor(setId)` scopes edits.
+- Languages: `app.baseLanguage` is what slides are written in; `app.languages` are translations (app-wide, shared by every set). Translations live next to what they translate: `slide.locales[code]` (headline, subtitle, shots), `creative.locales`, `theme.hero.locales`; missing ones fall back to the base. `localize(app, code)` (src/shared/locales.ts) returns an App-shaped view in one language (`activeLang`), composing with `setView`; writes go through `localizeSlidePatch`/`localizeAppPatch`, so the store never sees a view. API routes take `?lang=`, the CLI `--lang`, MCP tools `lang`. `fontStack(family, lang)` adds bundled Noto faces for non-Latin scripts; always use it.
+- Backgrounds are drawn by `src/render/background.tsx` as layers under the slide content: fill (`fillCss`: solid, linear, radial, image, mesh), frosted screenshot, texture, vignette. With `theme.panorama` the fill and texture are laid out over a strip as wide as all slides and each slide shows its slice; a panorama always uses the primary palette's background. The glow is drawn by `Frame`.
+- Stickers (`slide.stickers`, content per slide): emoji from `vendor/fluent-emoji` (fetched by `scripts/fetch-emoji.sh`, gitignored, served at `/vendor/emoji`, searched via `/api/emoji`) or doodles from `DOODLES` in `src/render/rough.ts`, drawn by `StickerLayer` behind (z1) or in front of (z3) the slide content. The 'apple' emoji look is never bundled: `server/emojiFont.ts` cuts PNGs out of a color emoji font the user drops in `<data>/fonts` (sbix/CBDT, ligatures for ZWJ sequences) into `<data>/emoji/font`, served at `/emoji-font`. Headline marks (`theme.annotation`) are measured from the highlighted spans and drawn with rough.js in `Headline`; decorations (`theme.decor`) are seeded SVG shapes in `src/render/decor.tsx`, inside the background layers. rough.js shapes always use a fixed seed so editor and export match.
+- `app.creatives` holds the product page header and search results assets (iOS 27+). Specs and Apple's safe areas live in `src/shared/creatives.ts`; `src/render/CreativeView.tsx` draws them with the app theme and keeps text and screenshot fans inside the safe area; `renderCreative` in the renderer exports them; the editor shows them in the Product page tab (`CreativesBoard`, `CreativePanel`).
+- `theme.frame.kind` is 'outline' (stroke) or 'device' (hardware drawn in CSS in `SlideView.tsx`, `HARDWARE` per device).
+
+## Docker
+
+`Dockerfile` (Playwright image; keep its tag in step with the `playwright` version). Built with
+`BASE_PATH=/studio`, runs as uid 1001 like the dashboard so both share `data/`. It's the `studio` service in
+the root `docker-compose.yml`, with no published port. Background in `docs/LINUX-DOCKER-HANDOFF.md`.

@@ -56,6 +56,25 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # The screenshot studio, same version tags.
+      - id: meta-studio
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/openconnect-studio
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: studio
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-studio.outputs.tags }}
+          labels: ${{ steps.meta-studio.outputs.labels }}
+          cache-from: type=gha,scope=studio
+          cache-to: type=gha,mode=max,scope=studio
+
       - name: Release notes from CHANGELOG.md
         run: |
           version="${GITHUB_REF_NAME#v}"
@@ -67,7 +86,7 @@ jobs:
             echo
             echo "### Install or update"
             echo '```bash'
-            echo "docker pull ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/openconnect:$version"
+            echo "docker compose pull && docker compose up -d"
             echo '```'
             echo "See the [README](https://github.com/$GITHUB_REPOSITORY#quick-start) for setup."
           } >> notes.md

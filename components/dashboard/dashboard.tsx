@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, Settings, Share2, SlidersHorizontal } from 'lucide-react'
+import { AlertTriangle, Megaphone, Settings, SlidersHorizontal } from 'lucide-react'
 import { AppSelector, App } from '@/components/dashboard/app-selector'
 import { KPICards, KPI_COLUMNS } from '@/components/dashboard/kpi-cards'
 import dynamic from 'next/dynamic'
@@ -116,7 +116,7 @@ export function Dashboard({ initial }: { initial: InitialData }) {
 
   // Persist preference changes (debounced) so they survive reloads and live in the data volume.
   // Only the changed fields are sent, so this tab can't overwrite settings saved elsewhere
-  // (e.g. the share page's choices).
+  // (e.g. the marketing page's choices).
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const pendingPrefs = useRef<Partial<UiPrefs>>({})
   const updatePrefs = useCallback((patch: Partial<UiPrefs>) => {
@@ -290,9 +290,9 @@ export function Dashboard({ initial }: { initial: InitialData }) {
             </select>
             <SyncStatusButton sync={sync} />
             <Button asChild variant="outline" size="sm" className="gap-2">
-              <Link href="/share">
-                <Share2 className="h-4 w-4" />
-                <span className="hidden sm:inline">Share</span>
+              <Link href="/marketing">
+                <Megaphone className="h-4 w-4" />
+                <span className="hidden sm:inline">Marketing</span>
               </Link>
             </Button>
             <Button asChild variant="outline" size="sm" className="gap-2">

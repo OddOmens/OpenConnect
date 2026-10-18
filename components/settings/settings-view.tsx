@@ -39,7 +39,7 @@ export function SettingsView({ initial, apps: initialApps, version }: { initial:
   const [apps, setApps] = React.useState(initialApps)
 
   // One copy of the display prefs for General and Customize. Only changed fields are sent,
-  // so nothing saved elsewhere (another tab, the share page) gets overwritten.
+  // so nothing saved elsewhere (another tab, the marketing page) gets overwritten.
   const [prefs, setPrefs] = React.useState(initial.prefs)
   const [saved, setSaved] = React.useState<"saving" | "saved" | null>(null)
   const pending = React.useRef<Partial<UiPrefs>>({})

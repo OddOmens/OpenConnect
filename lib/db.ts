@@ -159,6 +159,17 @@ function initDb(): Database.Database {
       user_agent TEXT
     );
 
+    -- API tokens for scripts and Claude (the screenshot studio's CLI and MCP server).
+    -- Only a hash of each token is stored; the token itself is shown once.
+    CREATE TABLE IF NOT EXISTS api_tokens (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      hint TEXT,                          -- last 4 characters, to tell tokens apart
+      created_at TEXT,
+      last_used_at TEXT
+    );
+
     -- Report instances already imported, so each one is downloaded once.
     CREATE TABLE IF NOT EXISTS analytics_instances (
       id TEXT PRIMARY KEY,

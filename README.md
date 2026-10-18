@@ -28,6 +28,7 @@ App Store Connect spreads your numbers over several slow pages and only keeps da
 - **World map, device and territory breakdowns.**
 - **Sync report:** after every sync you get a popup that lists exactly what changed. It covers new and revised report dates, per-app deltas, new reviews, rating changes, and chart moves.
 - **Marketing:** render PNG stats cards to post anywhere, plus promo cards for one app (launch, what's new, screenshots, reviews, download) built from its App Store listing, in five styles, any accent colour and four sizes.
+- **Screenshot studio:** design, localize and export App Store screenshots for iPhone, iPad and Mac at `/studio` (formerly [OpenAppShot](studio/README.md)). Claude can drive it through its CLI and MCP server with an API token, from your Mac.
 - **Fully customizable:** show, hide or reorder every section, metric, column and chart series. Light, dark or system theme.
 - **Incremental sync:** a routine sync takes a handful of requests, not a 365-day backfill.
 - **Private by default:** one password protects everything, and the container runs read-only with no Linux capabilities.
@@ -177,6 +178,20 @@ docker logs openconnect-tailscale   # first start only: open the login link
 
 This needs MagicDNS and HTTPS certificates enabled for your tailnet (admin console → DNS). Set `TS_AUTHKEY` in `.env` to skip the login link.
 
+## Screenshot studio
+
+The studio (formerly OpenAppShot) runs as a second container, `openconnect-studio`, which includes headless Chromium for rendering. It has no port of its own: the dashboard serves it at **`/studio`**, behind the same sign-in. Its projects, uploads and exports live in `./data/studio`.
+
+**Claude on your Mac.** Create a token in **Settings → Security → API tokens**. A token only opens the studio, never your sales data or settings. Then set `OPENCONNECT_URL` (your OpenConnect address) and `OPENCONNECT_TOKEN` on the Mac and install the CLI, skill and MCP connector. The steps are in [studio/README.md](studio/README.md#use-it-from-claude-on-your-mac).
+
+**Coming from OpenAppShot?** Copy its data folder to `./data/studio`, owned by uid 1001 like the rest of `./data`, then restart:
+
+```bash
+docker run --rm --user 0 --entrypoint sh -v /path/to/OpenAppShot/data:/src:ro -v "$PWD/data":/dst \
+  ghcr.io/oddomens/openconnect-studio -c 'cp -a /src /dst/studio && chown -R 1001:1001 /dst/studio'
+docker compose up -d
+```
+
 ## Updating, backups and data
 
 ```bash
@@ -187,7 +202,7 @@ docker compose pull && docker compose up -d     # published image
 
 Releases and their notes are on the [Releases page](https://github.com/OddOmens/OpenConnect/releases).
 
-- All data lives in `./data/dashboard.db` (SQLite), which is mounted into the container. Rebuilds and upgrades keep it.
+- All data lives in `./data`: `dashboard.db` (SQLite) for the dashboard and `studio/` for the screenshot studio. It's mounted into the containers, so rebuilds and upgrades keep it.
 - **Back up** by copying `./data` while the container is stopped, or at any time with `docker exec openconnect node -e "require('better-sqlite3')('/app/data/dashboard.db').backup('/app/data/backup.db')"`.
 - **Start over** by stopping the container and deleting `./data`.
 - **Forgot the password?** If it is set with `OPENCONNECT_PASSWORD`, change it there and restart. Otherwise, run `docker exec openconnect node -e "require('better-sqlite3')('/app/data/dashboard.db').prepare(\"DELETE FROM settings WHERE key='auth_password'\").run()"` and restart. Then set a new password with a fresh setup code from `docker logs openconnect`.
@@ -217,7 +232,7 @@ Data goes to `./data` (or `DATA_DIR`). The setup code is printed in the terminal
 
 ## Tech
 
-Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS · Radix UI · Recharts · SQLite (better-sqlite3) · Satori + resvg for marketing cards.
+Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS · Radix UI · Recharts · SQLite (better-sqlite3) · Satori + resvg for marketing cards. The studio: Express, React + Vite, Playwright (headless Chromium) for rendering.
 
 ## Contributing
 

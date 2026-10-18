@@ -13,7 +13,7 @@ const config = [
       '@next/next/no-location-assign-relative-destination': 'off',
     },
   },
-  { ignores: ['.next/**', 'node_modules/**', 'next-env.d.ts', 'data/**', 'tailscale/**'] },
+  { ignores: ['.next/**', 'node_modules/**', 'next-env.d.ts', 'data/**', 'tailscale/**', 'studio/**'] },
 ]
 
 export default config

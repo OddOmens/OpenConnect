@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react';
-import { ImagePlus, Plus, Search, TriangleAlert } from 'lucide-react';
+import { untranslated } from '../shared/locales';
+import { ImagePlus, Maximize2, Plus, Search, TriangleAlert } from 'lucide-react';
 import type { App, DeviceId } from '../shared/types';
 import { canvasSize } from '../shared/devices';
 import type { EditorActions } from '../Editor';
 import { Scaled } from './Scaled';
+import { SlideViewer } from './SlideViewer';
 import { FilePick } from './controls';
 import { checkSlide, SEARCH_RESULT_SLOTS } from '../shared/guidelines';
 import { DEVICES, slideInDevice } from '../shared/devices';
@@ -18,7 +20,13 @@ export function Pasteboard({
   selected,
   onSelect,
   actions,
+  embedded,
+  active = true,
 }: {
+  /** a row inside the sets canvas (no own scrolling) */
+  embedded?: boolean;
+  /** the row whose set is being edited: it takes the arrow keys and the full-screen viewer */
+  active?: boolean;
   app: App;
   device: DeviceId;
   zoom: number;
@@ -31,6 +39,7 @@ export function Pasteboard({
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [boardDrop, setBoardDrop] = useState(false);
+  const [viewing, setViewing] = useState(false);
   const stripRef = useRef<HTMLDivElement>(null);
 
   const slides = app.slides;
@@ -39,6 +48,7 @@ export function Pasteboard({
 
   // Arrow keys move the selection; Delete removes nothing (too easy to slip) — use the inspector.
   useEffect(() => {
+    if (!active) return;
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
@@ -52,11 +62,11 @@ export function Pasteboard({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [slides, selected, onSelect]);
+  }, [slides, selected, onSelect, active]);
 
   return (
     <div
-      className={`pasteboard ${boardDrop ? 'drop' : ''}`}
+      className={`${embedded ? 'set-board' : 'pasteboard'} ${boardDrop ? 'drop' : ''}`}
       onClick={(e) => e.target === e.currentTarget && onSelect(null)}
       onDragOver={(e) => {
         if (hasFiles(e)) {
@@ -83,6 +93,10 @@ export function Pasteboard({
               className={`card ${s.id === selected ? 'selected' : ''} ${dropTarget === s.id ? 'drop' : ''} ${dragId === s.id ? 'dragging' : ''}`}
               draggable
               onClick={() => onSelect(s.id)}
+              onDoubleClick={() => {
+                onSelect(s.id);
+                setViewing(true);
+              }}
               onDragStart={(e) => {
                 e.dataTransfer.setData('text/x-slide', s.id);
                 e.dataTransfer.effectAllowed = 'move';
@@ -117,12 +131,30 @@ export function Pasteboard({
                 actions.reorder(order);
               }}
             >
-              <Scaled app={app} slide={s} device={device} height={height} editing />
-              <figcaption>
-                <span className="num">{index + 1}</span>
-                {!s.shots[device] && <span className="mark missing">No {DEVICES[device].label} screenshot</span>}
+              {/* Frame name above the frame, like a design tool. */}
+              <figcaption className="frame-label" style={{ width: Math.round((W / H) * height) }}>
+                <span className="frame-name">
+                  {index + 1}
+                  <span className="frame-title">{s.role === 'hero' ? 'Hero · ' : ''}{s.headline.replace(/\*/g, '').replace(/\n/g, ' ') || 'Untitled'}</span>
+                </span>
+                {!s.shots[device] && <span className="mark missing">No {DEVICES[device].label}</span>}
+                {app.activeLang && untranslated(s, app.activeLang).length > 0 && <span className="mark missing">Not translated</span>}
                 <SlideHints slide={s} position={exportOrder.indexOf(s.id)} />
               </figcaption>
+              <Scaled app={app} slide={s} device={device} height={height} editing />
+              <button
+                className="expand"
+                title="Full screen (double-click)"
+                aria-label={`Show slide ${index + 1} full screen`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelect(s.id);
+                  setViewing(true);
+                }}
+              >
+                <Maximize2 size={14} />
+              </button>
+
             </figure>
           );
         })}
@@ -138,6 +170,9 @@ export function Pasteboard({
           </button>
         </div>
       </div>
+      {viewing && active && selected && (
+        <SlideViewer app={app} device={device} slideId={selected} onSelect={onSelect} onClose={() => setViewing(false)} />
+      )}
     </div>
   );
 }
@@ -149,7 +184,7 @@ function SlideHints({ slide, position }: { slide: Parameters<typeof checkSlide>[
     <>
       {position >= 0 && position < SEARCH_RESULT_SLOTS && (
         <span className="search-hint" title="The first three screenshots can appear in App Store search results">
-          <Search size={12} style={{ verticalAlign: '-1px' }} /> Search
+          <Search size={11} aria-label="Can appear in search results" />
         </span>
       )}
       {issues.length > 0 && (

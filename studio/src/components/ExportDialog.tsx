@@ -7,6 +7,7 @@ import { setName } from '../shared/sets';
 import { DEVICES, exportSizes, slideInDevice } from '../shared/devices';
 import { api } from '../api';
 import { languageName, untranslated } from '../shared/locales';
+import { at } from '../base';
 
 export function ExportDialog({ app, device, onClose }: { app: App; device: DeviceId; onClose: () => void }) {
   const [devices, setDevices] = useState<DeviceId[]>([device]);
@@ -29,7 +30,7 @@ export function ExportDialog({ app, device, onClose }: { app: App; device: Devic
       setResult(r);
       if (r.zipUrl) {
         const a = document.createElement('a');
-        a.href = r.zipUrl;
+        a.href = at(r.zipUrl);
         a.download = '';
         a.click();
       }

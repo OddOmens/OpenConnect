@@ -1,41 +1,56 @@
-# OpenAppShot
+# OpenConnect Studio
 
-A local studio for App Store screenshots that Claude can drive. Drop in raw screenshots (or let Claude
-capture them from the Simulator), get styled slides with headline, rounded screenshot and stroke, style
-the whole set at once, and export pixel-exact PNGs for iPhone, iPhone Duo, iPad and Mac.
+The screenshot studio inside [OpenConnect](../README.md), formerly OpenAppShot. A studio for App Store
+screenshots that Claude can drive. Drop in raw screenshots (or let Claude capture them from the Simulator),
+get styled slides with headline, rounded screenshot and stroke, style the whole set at once, and export
+pixel-exact PNGs for iPhone, iPhone Duo, iPad and Mac.
 
-## Start
+It runs as its own container next to the dashboard (it needs headless Chromium to render), and the dashboard
+serves it at **`/studio`**, behind the same sign-in. The command-line tool is still `appshot` and the MCP
+server is still `openappshot`, so existing Claude setups and prompts keep working.
+
+**No API credits.** The studio never calls the Claude API and needs no API key. Claude (your subscription)
+drives it through the `appshot` CLI or the MCP server, and all rendering happens on your server.
+
+## Run it
+
+It starts with OpenConnect: `docker compose up -d` in the repo root runs the dashboard and the studio
+(see the [main README](../README.md)). Open `https://<your OpenConnect>/studio`.
+
+- Data lives in `data/studio/` next to the dashboard's data (projects, uploads, fonts, exports).
+- The studio has no port of its own; only the dashboard reaches it.
+
+## Use it from Claude on your Mac
+
+1. In OpenConnect, **Settings → Security → API tokens**, create a token (e.g. "Claude on my Mac"). A token
+   only opens the studio, never your sales data or settings, and can be revoked any time.
+2. On the Mac, in a checkout of this repo:
+
+   ```bash
+   cd studio && npm install
+   export OPENCONNECT_URL=https://openconnect.<tailnet>.ts.net   # your OpenConnect address
+   export OPENCONNECT_TOKEN=oc_…                                 # the token from step 1
+   npm run install:claude    # Claude Code: `appshot` on PATH + the skill in ~/.claude/skills
+   npm run install:desktop   # Claude desktop chat: adds the MCP connector (with the URL and token)
+   ```
+
+   Put the two `export` lines in `~/.zshrc` so Claude Code always has them.
+
+Capture still runs on the Mac (Simulator, `screencapture`) and uploads over HTTPS. `preview` downloads its
+PNGs to a temp folder and `export` downloads and unpacks the zip into `--out`
+(default `~/.openappshot/exports`).
+
+## Develop
 
 ```bash
 npm install
-npm run setup:emoji    # once: downloads Fluent Emoji (MIT) into vendor/ for stickers (~110 MB, offline after)
-npm run dev            # http://127.0.0.1:4317
-npm run install:claude # optional: `appshot` on PATH + Claude skill in ~/.claude/skills
+npm run setup:emoji    # once: downloads Fluent Emoji (MIT) into vendor/ for stickers (~110 MB)
+npm run dev            # standalone at http://127.0.0.1:4317 (data in ~/.openappshot)
+BASE_PATH=/studio npm run dev   # as OpenConnect serves it: http://127.0.0.1:4317/studio
 ```
 
-Export renders with headless Chromium. If it says no browser is available, run `npm run setup:browser` once.
-Apps, screenshots and exports are saved in `~/.openappshot`, outside the repo.
-
-**No API credits.** The app never calls the Claude API and needs no API key. Claude Code (your
-subscription) drives it through the `appshot` CLI, and all rendering happens locally.
-
-## Run in Docker (server on another machine)
-
-The studio can run on a Linux box and be used from the Mac's browser and CLI.
-
-```bash
-npm run setup:emoji         # once, before the first build: the image bundles vendor/ for stickers
-cp .env.example .env        # set BIND_ADDRESS=0.0.0.0 to reach it from your network
-docker compose up -d --build
-```
-
-- Editor: `http://<server>:4317`. There is no sign-in, so keep it on a trusted LAN or tailnet. For HTTPS on
-  the tailnet (`https://openappshot.<tailnet>.ts.net`) add `-f docker-compose.tailscale.yml` (see that file).
-- Data lives in `./data` next to the compose file. Move existing work with
-  `rsync -a ~/.openappshot/apps/ <server>:<OpenAppShot>/data/apps/` and restart the container.
-- On the Mac, point the CLI and MCP at it: `export APPSHOT_URL=http://<server>:4317`. Capture still runs on
-  the Mac (Simulator, `screencapture`) and uploads over HTTP. `preview` downloads its PNGs to a temp folder
-  and `export` downloads and unpacks the zip into `--out` (default `~/.openappshot/exports`).
+Without `OPENCONNECT_URL`, the CLI and MCP server talk to `APPSHOT_URL` or the local dev server (and the
+MCP server starts it if needed). If export says no browser is available, run `npm run setup:browser` once.
 
 ## In the editor
 
@@ -85,21 +100,22 @@ display scaling (common on Linux) and 100% where the OS already scales.
 
 ## With Claude
 
-Everything runs on your subscription. OpenAppShot has its own **local** API (your Mac talking to itself)
-and never calls Anthropic's API, so it uses no credits.
+Everything runs on your subscription. The studio has its own API (reached through OpenConnect with your
+token) and never calls Anthropic's API, so it uses no credits.
 
 There are two ways in:
 
-- **Claude Code** (terminal or the desktop app's Code tab): run `npm run install:claude` once. Claude uses the
+- **Claude Code** (terminal or the desktop app's Code tab): run `npm run install:claude` once (with
+  `OPENCONNECT_URL` and `OPENCONNECT_TOKEN` set, see above). Claude uses the
   `appshot` CLI and the skill in `.claude/skills/openappshot`. Best when Claude is also building and
   running your app in the Simulator.
-- **Claude desktop chat**: run `npm run install:desktop` once and restart the Claude app. It adds a local
+- **Claude desktop chat**: run `npm run install:desktop` once and restart the Claude app. It adds an
   MCP connector with tools to list apps, read an app's data, edit slides and app-wide style, add or
-  capture screenshots, preview a slide as an image, and export. It starts the studio server by itself.
+  capture screenshots, preview a slide as an image, and export.
 
 ### Per-app data
 
-Every app has one clean record — `GET http://127.0.0.1:4317/api/apps/<app>/data`, `appshot data <app>`,
+Every app has one clean record — `GET <OpenConnect>/studio/api/apps/<app>/data` (with the token), `appshot data <app>`,
 or the `get_app` tool:
 
 - **profile**: project folder, bundle id, what it does, audience, keywords, brand colors, screens to

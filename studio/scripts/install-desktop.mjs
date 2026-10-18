@@ -17,10 +17,15 @@ if (fs.existsSync(file)) {
   config = raw.trim() ? JSON.parse(raw) : {};
 }
 config.mcpServers ??= {};
+// The Claude app doesn't inherit your shell, so the OpenConnect address and token go in the config.
+const env = Object.fromEntries(['OPENCONNECT_URL', 'OPENCONNECT_TOKEN', 'APPSHOT_URL'].filter((k) => process.env[k]).map((k) => [k, process.env[k]]));
+if (!env.OPENCONNECT_URL) console.warn('! OPENCONNECT_URL is not set: the connector will look for a studio on this Mac.');
+else if (!env.OPENCONNECT_TOKEN) console.warn('! OPENCONNECT_TOKEN is not set: create one in OpenConnect under Settings → Security → API tokens.');
 config.mcpServers.openappshot = {
   // Absolute node path: the Claude app doesn't inherit your shell's PATH.
   command: process.execPath,
   args: [path.join(root, 'bin', 'appshot-mcp.mjs')],
+  ...(Object.keys(env).length ? { env } : {}),
 };
 fs.mkdirSync(path.dirname(file), { recursive: true });
 fs.writeFileSync(file, JSON.stringify(config, null, 2) + '\n');

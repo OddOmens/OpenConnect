@@ -13,21 +13,26 @@ import { fileURLToPath } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { fetchExport, isLocalUrl, serverIsLocal } from './remote.mjs';
+import { BASE, fetchExport, isLocalUrl, serverIsLocal } from './remote.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const BASE = (process.env.APPSHOT_URL ?? 'http://127.0.0.1:4317').replace(/\/$/, '');
 const CLI = path.join(ROOT, 'bin', 'appshot.mjs');
 const log = (...a) => console.error('[openappshot]', ...a);
 
 // ---------- local server ----------
 async function healthy() {
+  let r;
   try {
-    const r = await fetch(`${BASE}/api/health`, { signal: AbortSignal.timeout(1500) });
-    return r.ok;
+    r = await fetch(`${BASE}/api/health`, { signal: AbortSignal.timeout(1500) });
   } catch {
     return false;
   }
+  // Reached OpenConnect, but it turned the token down: say so instead of "can't reach".
+  if (r.status === 401) {
+    const { error } = await r.json().catch(() => ({}));
+    throw new Error(`${error ?? 'Not signed in.'} Set OPENCONNECT_TOKEN to a token from OpenConnect → Settings → API tokens.`);
+  }
+  return r.ok;
 }
 
 let starting = null;

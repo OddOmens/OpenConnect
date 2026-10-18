@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, Megaphone, Settings, SlidersHorizontal } from 'lucide-react'
+import { AlertTriangle, Images, Megaphone, Settings, SlidersHorizontal } from 'lucide-react'
 import { AppSelector, App } from '@/components/dashboard/app-selector'
 import { KPICards, KPI_COLUMNS } from '@/components/dashboard/kpi-cards'
 import dynamic from 'next/dynamic'
@@ -289,6 +289,14 @@ export function Dashboard({ initial }: { initial: InitialData }) {
               {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
             <SyncStatusButton sync={sync} />
+            <Button asChild variant="outline" size="sm" className="gap-2">
+              {/* The screenshot studio is its own app (studio/), so a full page load, not a client navigation. */}
+              {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+              <a href="/studio">
+                <Images className="h-4 w-4" />
+                <span className="hidden sm:inline">Studio</span>
+              </a>
+            </Button>
             <Button asChild variant="outline" size="sm" className="gap-2">
               <Link href="/marketing">
                 <Megaphone className="h-4 w-4" />

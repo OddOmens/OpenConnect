@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Added
+- **Screenshot studio**, formerly OpenAppShot, now part of OpenConnect at `/studio`, behind the same sign-in. Design, localize and export App Store screenshots for iPhone, iPhone Duo, iPad and Mac. It runs as a second container with headless Chromium (`openconnect-studio`), and its data lives in `./data/studio`.
+- **API tokens** (Settings → Security). Claude's `appshot` CLI and MCP server reach the studio with `OPENCONNECT_URL` and `OPENCONNECT_TOKEN`. A token only opens the studio, never your sales data or settings, and each one can be revoked.
 - **App promos.** The Marketing page has a second mode that makes promo cards for one app you pick, built from its live App Store listing: **Launch** (screenshots in phone frames), **What's New** (the current version's release notes), **Screenshots**, **Loved By** (rating and your best short 5★ reviews) and **Download** (call to action with rating, downloads, countries and price). Every template renders at once, so **Download all** gives you a full set.
 - Promo cards come in five styles (**Studio**, **Light**, **Gradient**, **Bold**, **Glow**), any accent colour, and four sizes: 1:1, 4:5, 9:16 and 16:9. You can override the headline, tagline, button text and release notes, and the text is kept per app. You can also hide the App Store button or the rating.
 

@@ -17,10 +17,22 @@ import { CREATIVE_IDS, type CreativeId } from '../src/shared/types.ts';
 
 const PORT = Number(process.env.PORT ?? 4317);
 const HOST = process.env.HOST ?? '127.0.0.1';
-const BASE_URL = `http://127.0.0.1:${PORT}`;
+// Served under a path prefix when it sits behind OpenConnect (BASE_PATH=/studio). Every route,
+// the editor and the render pages live under it; API paths in responses stay relative to it.
+const BASE_PATH = (process.env.BASE_PATH ?? '').replace(/\/+$/, '');
+/** This server as the renderer's browser reaches it. */
+const BASE_URL = `http://127.0.0.1:${PORT}${BASE_PATH}`;
 const isProd = process.env.NODE_ENV === 'production';
 
-const app = express();
+/** This server as the client sees it (through OpenConnect's proxy when there is one), for links. */
+const publicBase = (req: Request) => {
+  const host = req.header('x-forwarded-host') ?? req.header('host');
+  const proto = req.header('x-forwarded-proto') ?? req.protocol;
+  return host ? `${proto}://${host}${BASE_PATH}` : BASE_URL;
+};
+
+const server = express();
+const app = express.Router();
 app.use(express.json({ limit: '20mb' }));
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 60 * 1024 * 1024 } });
 
@@ -67,7 +79,7 @@ function files(req: Request) {
 }
 
 // ---------- meta ----------
-app.get('/api/health', (_req, res) => res.json({ ok: true, name: 'openappshot', url: BASE_URL, data: store.DATA_DIR }));
+app.get('/api/health', (req, res) => res.json({ ok: true, name: 'openappshot', url: publicBase(req), data: store.DATA_DIR }));
 app.get('/api/meta', (_req, res) => res.json({ presets: PRESETS, devices: DEVICES }));
 
 app.get('/api', (_req, res) =>
@@ -107,10 +119,10 @@ app.get('/api', (_req, res) =>
     },
   }),
 );
-app.get('/api/data', (_req, res) => res.json(store.listApps().map((a) => buildAppData(store.getApp(a.id), BASE_URL))));
+app.get('/api/data', (req, res) => res.json(store.listApps().map((a) => buildAppData(store.getApp(a.id), publicBase(req)))));
 app.get(
   '/api/apps/:app/data',
-  h((req, res) => res.json(buildAppData(viewOf(req), BASE_URL))),
+  h((req, res) => res.json(buildAppData(viewOf(req), publicBase(req)))),
 );
 
 // ---------- live updates ----------
@@ -471,12 +483,9 @@ app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
 // ---------- frontend ----------
 if (isProd) {
   const dist = path.resolve('dist');
-  app.use(express.static(dist));
+  // No "/studio" → "/studio/" redirect: Next.js (in front, at /studio) strips trailing slashes.
+  app.use(express.static(dist, { redirect: false }));
   app.get('/{*splat}', (_req, res) => res.sendFile(path.join(dist, 'index.html')));
-} else {
-  const { createServer } = await import('vite');
-  const vite = await createServer({ server: { middlewareMode: true, hmr: { port: PORT + 1 } }, appType: 'spa' });
-  app.use(vite.middlewares);
 }
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
@@ -487,6 +496,15 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   res.status(status).json({ error: (err as Error).message ?? String(err) });
 });
 
-app.listen(PORT, HOST, () => {
+server.use(BASE_PATH || '/', app);
+if (BASE_PATH) server.get('/', (_req, res) => res.redirect(`${BASE_PATH}/`));
+if (!isProd) {
+  // After the API, like the built files. Vite handles its own base, so it gets the full URL.
+  const { createServer } = await import('vite');
+  const vite = await createServer({ base: `${BASE_PATH}/`, server: { middlewareMode: true, hmr: { port: PORT + 1 } }, appType: 'spa' });
+  server.use(vite.middlewares);
+}
+
+server.listen(PORT, HOST, () => {
   console.log(`\n  OpenAppShot running at ${BASE_URL}\n`);
 });

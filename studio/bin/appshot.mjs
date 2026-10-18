@@ -6,13 +6,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { fetchExport, fetchPreviews, serverIsLocal } from './remote.mjs';
+import { BASE, fetchExport, fetchPreviews, serverIsLocal } from './remote.mjs';
 
-const BASE = (process.env.APPSHOT_URL ?? 'http://127.0.0.1:4317').replace(/\/$/, '');
 
 const HELP = `appshot — drive OpenAppShot from the terminal
 
-Server: ${BASE}  (start it with "npm run dev"; override with APPSHOT_URL, e.g. a Docker server)
+Server: ${BASE}  (OpenConnect: set OPENCONNECT_URL and OPENCONNECT_TOKEN; or APPSHOT_URL, or "npm run dev" here)
 <app> is an app id, exact name, bundle id, or "." for the app linked to the current folder.
 --in "<set>" works on any command: slides, style, creatives, preview and export of that screenshot set
 (id or name). Without it, commands use the primary set.

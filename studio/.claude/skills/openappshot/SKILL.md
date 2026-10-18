@@ -1,24 +1,26 @@
 ---
 name: openappshot
-description: Build, revise and export App Store screenshots with the local OpenAppShot studio. Use when the user asks to make, update or export App Store / Mac App Store screenshots, capture screenshots of their iOS/iPad/Mac app for the store, write screenshot headlines, or change the style of an app's screenshots in OpenAppShot.
+description: Build, revise and export App Store screenshots with the OpenConnect screenshot studio (formerly OpenAppShot). Use when the user asks to make, update or export App Store / Mac App Store screenshots, capture screenshots of their iOS/iPad/Mac app for the store, write screenshot headlines, or change the style of an app's screenshots in OpenAppShot.
 ---
 
 # OpenAppShot
 
-OpenAppShot is a local web studio (default `http://127.0.0.1:4317`) that turns raw app screenshots into
+OpenAppShot (now OpenConnect's screenshot studio, at `<OpenConnect>/studio`) is a web studio that turns raw app screenshots into
 App Store marketing slides: a colored background, a headline, and the screenshot with rounded corners and a
 thin stroke. The user edits in the browser; you drive it with the `appshot` CLI.
 
 ## Cost
 
-Nothing here calls the Claude API. OpenAppShot is a local app with no API key; *you* (Claude Code, on the
+Nothing here calls the Claude API. The studio needs no Anthropic API key; *you* (Claude Code, on the
 user's subscription) drive it through the `appshot` CLI. Keep it that way: don't add API calls to the app.
 
 ## Before anything
 
-1. Check the server: `appshot status`. If it can't connect, start it from the OpenAppShot folder
-   (`npm run dev`, as a background process) and retry. `appshot` is on PATH after `npm run install:claude`;
-   otherwise run `node <OpenAppShot>/bin/appshot.mjs`.
+1. Check the server: `appshot status`. It talks to OpenConnect at `$OPENCONNECT_URL/studio` with the API token
+   in `$OPENCONNECT_TOKEN`. If it says the token is invalid or missing, ask the user to create one in OpenConnect
+   (Settings → Security → API tokens) and set both variables; don't try to start a server yourself. Without
+   `OPENCONNECT_URL` it uses a local studio (`npm run dev` in `<OpenConnect>/studio`). `appshot` is on PATH after
+   `npm run install:claude`; otherwise run `node <OpenConnect>/studio/bin/appshot.mjs`.
 2. **Recall the app.** From inside the app's repo run `appshot here`. It prints the app linked to this folder
    with its remembered profile (bundle id, what it does, audience, brand colors, which screens to capture
    and how, past decisions), the app-wide style, every slide, and guideline issues. Read it before doing

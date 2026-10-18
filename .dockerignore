@@ -22,3 +22,6 @@ tailscale/
 docs/
 .github/
 *.md
+
+# The screenshot studio is its own image (studio/Dockerfile).
+studio/

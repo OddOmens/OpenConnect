@@ -6,8 +6,9 @@ import { StickerLayer } from './stickers';
 import { BackgroundLayers } from './background';
 import { DEVICES, canvasSize } from '../shared/devices';
 import { paletteFor, slideTheme } from '../shared/presets';
+import { at } from '../base';
 
-export const assetUrl = (appId: string, assetId: string) => `/api/apps/${appId}/assets/${assetId}`;
+export const assetUrl = (appId: string, assetId: string) => at(`/api/apps/${appId}/assets/${assetId}`);
 
 
 

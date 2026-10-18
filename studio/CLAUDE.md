@@ -1,8 +1,9 @@
 # OpenAppShot
 
-Local studio for App Store screenshots. Express + Vite (single process on :4317), React editor, Playwright for PNG export.
+OpenConnect's screenshot studio (formerly OpenAppShot). Express + Vite (single process on :4317), React editor, Playwright for PNG export. In OpenConnect it runs as its own container and the dashboard serves it at `/studio` behind its sign-in (`app/studio/[[...path]]/route.ts` in the repo root).
 
-- Run: `npm run dev` (serves API + editor with Vite middleware). `npm run typecheck` before finishing changes.
+- Run: `npm run dev` (serves API + editor with Vite middleware); `BASE_PATH=/studio npm run dev` to run it as OpenConnect serves it. `npm run typecheck` before finishing changes.
+- Base path: every route is on a router mounted at `BASE_PATH`, the Vite build uses it as `base`, and every URL the browser requests goes through `at()` (`src/base.ts`). API responses keep paths relative to the studio root (`/api/…`, `/previews/…`, `/exports/…`); clients join them to their base URL. Links that must be absolute (`editorUrl`, asset `url`) use `publicBase(req)` (OpenConnect's forwarded host).
 - To *use* the tool (make screenshots for an app), follow `.claude/skills/openappshot/SKILL.md` and the `appshot` CLI (`bin/appshot.mjs`).
 
 ## Layout
@@ -12,8 +13,8 @@ Local studio for App Store screenshots. Express + Vite (single process on :4317)
 - `server/store.ts` — JSON-on-disk storage in `~/.openappshot/apps/<id>/app.json` + `assets/` (`APPSHOT_DATA` overrides). `profile.projectPath` links an app to its repo.
 - `server/renderer.ts` — headless Chromium export; falls back to any cached Playwright Chromium, then system Chrome.
 - `bin/appshot.mjs` — dependency-free CLI over the HTTP API.
-- `bin/appshot-mcp.mjs` — MCP server for the Claude desktop app (stdio; starts the HTTP server if needed, unless `APPSHOT_URL` is remote). Keep its tools in step with the CLI.
-- `bin/remote.mjs` — when the server's files aren't on this disk (Docker on another box), downloads preview PNGs and export zips for the CLI and MCP.
+- `bin/appshot-mcp.mjs` — MCP server for the Claude desktop app (stdio; starts the HTTP server if needed when the server is local). Keep its tools in step with the CLI.
+- `bin/remote.mjs` — where the server is (`BASE`: `OPENCONNECT_URL` + `/studio` with `OPENCONNECT_TOKEN` sent as a Bearer token on every request; else `APPSHOT_URL`; else local) and, when the server's files aren't on this disk, downloads preview PNGs and export zips for the CLI and MCP.
 - `src/shared/summary.ts` — `buildAppData`, the clean per-app record behind `/api/apps/:app/data`, `appshot data` and the MCP `get_app` tool.
 
 ## Conventions
@@ -33,6 +34,6 @@ Local studio for App Store screenshots. Express + Vite (single process on :4317)
 
 ## Docker
 
-`Dockerfile` (Playwright image; keep its tag in step with the `playwright` version) + `docker-compose.yml`
-(port 4317, data in `./data`, runs as the host user) + optional `docker-compose.tailscale.yml` for HTTPS on
-the tailnet. Background in `docs/LINUX-DOCKER-HANDOFF.md`.
+`Dockerfile` (Playwright image; keep its tag in step with the `playwright` version). Built with
+`BASE_PATH=/studio`, runs as uid 1001 like the dashboard so both share `data/`. It's the `studio` service in
+the root `docker-compose.yml`, with no published port. Background in `docs/LINUX-DOCKER-HANDOFF.md`.

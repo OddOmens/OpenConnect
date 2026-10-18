@@ -13,6 +13,7 @@ import { Inspector, type InspectorTab } from './components/Inspector';
 import { ExportDialog } from './components/ExportDialog';
 import { Welcome } from './components/Welcome';
 import { useUiScale } from './theme';
+import { at } from './base';
 
 export interface EditorActions {
   patchApp: (patch: unknown) => void;
@@ -153,7 +154,7 @@ export function Editor() {
   // Live updates from the CLI / API (e.g. Claude uploading screenshots).
   useEffect(() => {
     let listTimer: number | undefined;
-    const es = new EventSource('/api/events');
+    const es = new EventSource(at('/api/events'));
     es.onmessage = (m) => {
       const e = JSON.parse(m.data) as { type: string; id: string; origin?: string };
       clearTimeout(listTimer);

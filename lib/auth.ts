@@ -180,6 +180,48 @@ export function deleteAllSessions() {
   getDb().prepare(`DELETE FROM sessions`).run();
 }
 
+// --- API tokens ----------------------------------------------------------------------
+//
+// For scripts and Claude: the studio's `appshot` CLI and MCP server send one as
+// "Authorization: Bearer oc_…". Tokens only open the screenshot studio (see guard's
+// `apiToken` option), never the sales data or settings, and can be revoked one by one.
+
+const TOKEN_PREFIX = 'oc_';
+
+export interface ApiToken { id: string; name: string; hint: string; created_at: string; last_used_at: string | null }
+
+/** A new token; the returned secret is shown once and only its hash is kept. */
+export function createApiToken(name: string): { token: string; info: ApiToken } {
+  const token = TOKEN_PREFIX + crypto.randomBytes(32).toString('base64url');
+  const info: ApiToken = { id: crypto.randomBytes(6).toString('hex'), name: name.trim().slice(0, 60) || 'API token', hint: token.slice(-4), created_at: new Date().toISOString(), last_used_at: null };
+  getDb().prepare(`INSERT INTO api_tokens (id, name, token_hash, hint, created_at) VALUES (?, ?, ?, ?, ?)`).run(info.id, info.name, tokenHash(token), info.hint, info.created_at);
+  return { token, info };
+}
+
+export function listApiTokens(): ApiToken[] {
+  return getDb().prepare(`SELECT id, name, hint, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC`).all() as ApiToken[];
+}
+
+export function deleteApiToken(id: string) {
+  getDb().prepare(`DELETE FROM api_tokens WHERE id = ?`).run(id);
+}
+
+/** True when the request carries a valid API token (and notes when it was last used). */
+function apiTokenValid(req: Request): boolean {
+  const header = req.headers.get('authorization') || '';
+  const token = header.match(/^Bearer\s+(\S+)$/i)?.[1];
+  if (!token || !token.startsWith(TOKEN_PREFIX) || token.length > 100) return false;
+  const db = getDb();
+  const row = db.prepare(`SELECT id, last_used_at FROM api_tokens WHERE token_hash = ?`).get(tokenHash(token)) as { id: string; last_used_at: string | null } | undefined;
+  if (!row) return false;
+  // Once a minute is plenty for "last used".
+  const now = new Date();
+  if (!row.last_used_at || now.getTime() - Date.parse(row.last_used_at) > 60_000) {
+    db.prepare(`UPDATE api_tokens SET last_used_at = ? WHERE id = ?`).run(now.toISOString(), row.id);
+  }
+  return true;
+}
+
 // --- Requests ----------------------------------------------------------------------
 
 export function tokenFromRequest(req: Request): string | null {
@@ -218,8 +260,16 @@ export function crossSite(req: Request): boolean {
   }
 }
 
-/** For API routes: a Response to return when the request isn't allowed, otherwise null. */
-export function guard(req: Request): Response | null {
+/**
+ * For API routes: a Response to return when the request isn't allowed, otherwise null.
+ * `apiToken`: an API token is accepted instead of a session (the screenshot studio only).
+ */
+export function guard(req: Request, opts: { apiToken?: boolean } = {}): Response | null {
+  // A browser can't attach an Authorization header from another site without CORS, which
+  // this server never grants, so token requests need no cross-site check.
+  if (opts.apiToken && authEnabled() && req.headers.has('authorization')) {
+    return apiTokenValid(req) ? null : Response.json({ error: 'Invalid or revoked API token.' }, { status: 401 });
+  }
   if (crossSite(req)) return Response.json({ error: 'Cross-site request refused.' }, { status: 403 });
   if (!authEnabled()) {
     if (!trustedHost(req.headers.get('host'))) return Response.json({ error: UNTRUSTED_HOST }, { status: 421 });

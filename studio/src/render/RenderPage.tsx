@@ -8,6 +8,7 @@ import { canvasSize } from '../shared/devices';
 import { slideTheme } from '../shared/presets';
 import { fontStack } from '../shared/locales';
 import type { Slide } from '../shared/types';
+import { at } from '../base';
 
 declare global {
   interface Window {
@@ -33,7 +34,7 @@ export function RenderPage() {
     // The server returns the app as this set and language see it.
     const q = new URLSearchParams();
     for (const k of ['set', 'lang']) if (params.get(k)) q.set(k, params.get(k)!);
-    fetch(`/api/apps/${appId}${q.size ? `?${q}` : ''}`)
+    fetch(at(`/api/apps/${appId}${q.size ? `?${q}` : ''}`))
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(setApp)
       .catch((e) => setError(String(e)));

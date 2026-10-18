@@ -1,0 +1,7 @@
+node_modules
+dist
+data
+tailscale
+.git
+.env
+.DS_Store

@@ -1,0 +1,31 @@
+# docker compose up -d --build   →   http://localhost:4317
+# Configure via a .env file next to this one (see .env.example).
+services:
+  openappshot:
+    build: .
+    image: openappshot:latest
+    container_name: openappshot
+    # Run as the owner of ./data (your user on the host), so you can copy files in and out of it.
+    user: "${PUID:-1000}:${PGID:-1000}"
+    ports:
+      # Only this computer by default. Set BIND_ADDRESS=0.0.0.0 to reach it from your network
+      # (or use docker-compose.tailscale.yml for HTTPS on your tailnet).
+      # There is no sign-in, so only open it to networks you trust.
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-4317}:4317"
+    environment:
+      HOME: /tmp
+    volumes:
+      # Apps, screenshots, previews and exports: survives rebuilds and upgrades.
+      - ./data:/data
+    # Hardening: nothing in the image can be changed at runtime except the data volume,
+    # no Linux capabilities, and no way to gain privileges. Chromium runs without its sandbox
+    # (Playwright's default), so it needs neither.
+    read_only: true
+    tmpfs:
+      - /tmp
+    shm_size: 512mb
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped

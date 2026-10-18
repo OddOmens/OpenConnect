@@ -1,9 +1,10 @@
-import { BookOpen, Download, Languages, Laptop, PanelLeftOpen, PanelRightOpen, PanelTop, Smartphone, Tablet, TriangleAlert, ZoomIn } from 'lucide-react';
+import { ArrowLeft, BookOpen, Download, Languages, Laptop, PanelLeftOpen, PanelRightOpen, PanelTop, Smartphone, Tablet, TriangleAlert, ZoomIn } from 'lucide-react';
 import type { App, DeviceId } from '../shared/types';
 import { DEVICE_IDS } from '../shared/types';
 import { DEVICES, slideInDevice } from '../shared/devices';
 import { checkDevice } from '../shared/guidelines';
 import { languageName, translationProgress } from '../shared/locales';
+import { BASE } from '../base';
 
 const ICONS = { iphone: Smartphone, duo: BookOpen, ipad: Tablet, mac: Laptop };
 
@@ -45,6 +46,12 @@ export function Topbar({
     <>
     <header className="topbar">
       <div className="topbar-left">
+      {/* Inside OpenConnect: back to the dashboard. */}
+      {BASE && (
+        <a className="icon-btn" href="/" title="Back to OpenConnect" aria-label="Back to OpenConnect">
+          <ArrowLeft size={15} />
+        </a>
+      )}
       {!panels.left && (
         <button className="icon-btn" title="Show layers (⌘/Ctrl + \)" aria-label="Show layers panel" onClick={panels.openLeft}>
           <PanelLeftOpen size={15} />

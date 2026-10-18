@@ -1,7 +1,11 @@
 node_modules
 dist
 data
-tailscale
-.git
 .env
+.env.*
+tailscale
 .DS_Store
+.claude
+docs
+*.md
+docker-compose*.yml

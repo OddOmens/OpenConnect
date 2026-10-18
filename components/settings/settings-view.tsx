@@ -10,6 +10,7 @@ import { CHARTS, CURRENCIES, ChartId, RANGES, RangeId, SyncConfig, ThemeId, UiPr
 import { applyTheme } from "@/lib/theme"
 import { cn } from "@/lib/utils"
 import { SecuritySection } from "./security-section"
+import { ApiTokensSection } from "./api-tokens-section"
 import { CustomizeSettings } from "./customize-settings"
 import { Panel, Row } from "./panel"
 import type { App } from "@/components/dashboard/app-selector"
@@ -119,9 +120,14 @@ export function SettingsView({ initial, apps: initialApps, version }: { initial:
           {section === "connect" && <ConnectSettings initial={initial} />}
           {section === "sync" && <SyncSettings initial={initial.sync} />}
           {section === "security" && (
-            <Panel title="Security" description="Who can open this dashboard.">
-              <SecuritySection />
-            </Panel>
+            <>
+              <Panel title="Security" description="Who can open this dashboard.">
+                <SecuritySection />
+              </Panel>
+              <Panel title="API tokens" description="For Claude and scripts that work with the screenshot studio.">
+                <ApiTokensSection />
+              </Panel>
+            </>
           )}
           {section === "about" && <About version={version} />}
         </main>

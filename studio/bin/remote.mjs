@@ -7,6 +7,31 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
+/**
+ * The studio server. Inside OpenConnect: OPENCONNECT_URL (e.g. https://openconnect.<tailnet>.ts.net)
+ * with OPENCONNECT_TOKEN, an API token from Settings → API tokens; the studio is at /studio.
+ * Otherwise APPSHOT_URL, or a studio running on this machine.
+ */
+const trim = (u) => u.trim().replace(/\/+$/, '');
+export const BASE = process.env.OPENCONNECT_URL
+  ? `${trim(process.env.OPENCONNECT_URL)}/studio`
+  : trim(process.env.APPSHOT_URL ?? 'http://127.0.0.1:4317');
+
+// OpenConnect keeps the studio behind its sign-in: every request to it carries the token.
+const TOKEN = process.env.OPENCONNECT_TOKEN?.trim();
+if (TOKEN) {
+  const plain = globalThis.fetch;
+  globalThis.fetch = (input, init = {}) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (!url.startsWith(BASE)) return plain(input, init);
+    const headers = new Headers(init.headers ?? (input instanceof Request ? input.headers : undefined));
+    headers.set('authorization', `Bearer ${TOKEN}`);
+    return plain(input, { ...init, headers });
+  };
+} else if (process.env.OPENCONNECT_URL) {
+  console.error('OPENCONNECT_URL is set without OPENCONNECT_TOKEN: create a token in OpenConnect under Settings → API tokens.');
+}
+
 /** True when the URL points at this machine. */
 export function isLocalUrl(base) {
   return ['127.0.0.1', 'localhost', '[::1]', '::1'].includes(new URL(base).hostname);

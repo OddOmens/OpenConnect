@@ -1,13 +1,14 @@
 import type { CSSProperties } from 'react';
 import type { App, Background, Theme } from '../shared/types';
 import { Decor } from './decor';
+import { at } from '../base';
 
 // Slide backgrounds, drawn as layers under the text and screenshot:
 //   fill (solid, gradient, glow, photo, mesh) · frosted screenshot · texture · vignette.
 // With `theme.panorama` the fill and texture are laid out across one strip as wide as all slides
 // together, and each slide shows its own slice, so swiping through the set reads as one picture.
 
-const assetUrl = (appId: string, assetId: string) => `/api/apps/${appId}/assets/${assetId}`;
+const assetUrl = (appId: string, assetId: string) => at(`/api/apps/${appId}/assets/${assetId}`);
 
 /** Small deterministic random generator, so a mesh looks the same on every render. */
 function rng(seed: number) {

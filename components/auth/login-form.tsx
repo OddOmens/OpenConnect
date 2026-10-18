@@ -9,11 +9,12 @@ const inputCls =
 
 interface Props {
   mode: 'setup' | 'login'
+  next?: string            // where to go after signing in (a path on this server)
   minLength: number
   passwordFromEnv: boolean
 }
 
-export function LoginForm({ mode, minLength, passwordFromEnv }: Props) {
+export function LoginForm({ mode, minLength, passwordFromEnv, next = '/' }: Props) {
   const [code, setCode] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -34,7 +35,7 @@ export function LoginForm({ mode, minLength, passwordFromEnv }: Props) {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Something went wrong.')
-      window.location.href = '/'
+      window.location.href = next
     } catch (err: any) {
       setError(err.message)
       setBusy(false)

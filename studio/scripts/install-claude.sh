@@ -16,4 +16,6 @@ else
   ln -sfn "$ROOT/.claude/skills/openappshot" "$DEST"
   echo "✓ Skill linked: $DEST"
 fi
-echo "Start the studio with: (cd \"$ROOT\" && npm run dev)"
+if [ -z "${OPENCONNECT_URL:-}" ] || [ -z "${OPENCONNECT_TOKEN:-}" ]; then
+  echo "! Set OPENCONNECT_URL and OPENCONNECT_TOKEN (Settings → Security → API tokens) in ~/.zshrc so Claude can reach the studio."
+fi

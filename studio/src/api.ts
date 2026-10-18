@@ -1,5 +1,6 @@
 import type { App, AppSummary, CreativeId, DeviceId, ScreenshotSet, Slide } from './shared/types';
 import { PRIMARY_SET } from './shared/sets';
+import { at } from './base';
 
 /** Identifies this tab so it can ignore its own change events. */
 export const CLIENT_ID = Math.random().toString(36).slice(2);
@@ -11,7 +12,7 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
     init.body = JSON.stringify(body);
     (init.headers as Record<string, string>)['content-type'] = 'application/json';
   }
-  const res = await fetch(url, init);
+  const res = await fetch(at(url), init);
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error ?? res.statusText);

@@ -1,10 +1,11 @@
 import type { Sticker } from '../shared/types';
 import { DOODLES, paths, seedOf } from './rough';
+import { at } from '../base';
 
 export const emojiUrl = (slug: string, style: Sticker['style']) =>
   style === 'apple'
-    ? `/emoji-font/${encodeURIComponent(slug)}.png`
-    : `/vendor/emoji/${encodeURIComponent(slug)}/${style === '3d' ? '3d.png' : `${style}.svg`}`;
+    ? at(`/emoji-font/${encodeURIComponent(slug)}.png`)
+    : at(`/vendor/emoji/${encodeURIComponent(slug)}/${style === '3d' ? '3d.png' : `${style}.svg`}`);
 
 /** One doodle as an inline SVG, `width` px wide, in `color`. */
 export function DoodleSvg({ name, width, color, seed, style }: { name: string; width: number; color: string; seed: number; style?: React.CSSProperties }) {

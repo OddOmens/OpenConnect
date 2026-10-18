@@ -7,6 +7,7 @@ import { canvasSize } from '../shared/devices';
 import type { EditorActions } from '../Editor';
 import { ColorField, Field, Group, Segmented, Slider } from './controls';
 import { Scaled } from './Scaled';
+import { at } from '../base';
 
 interface EmojiEntry {
   slug: string;
@@ -28,7 +29,7 @@ interface EmojiData {
 
 // The emoji index is fetched once per session; it's ~1,600 entries.
 let emojiCache: Promise<EmojiData> | null = null;
-const loadEmoji = () => (emojiCache ??= fetch('/api/emoji').then((r) => r.json() as Promise<EmojiData>));
+const loadEmoji = () => (emojiCache ??= fetch(at('/api/emoji')).then((r) => r.json() as Promise<EmojiData>));
 
 const LOOKS: { value: EmojiStyle; label: string; title?: string }[] = [
   { value: 'apple', label: 'Apple', title: 'From the Apple Color Emoji font you installed' },

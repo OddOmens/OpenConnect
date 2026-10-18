@@ -3,10 +3,11 @@ import { guard } from '@/lib/auth';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// The screenshot studio (studio/, its own container with headless Chromium) served at /studio,
-// behind the dashboard's sign-in. Browsers come in with their session; the studio's CLI and MCP
-// server (Claude) with an API token. Paths pass through unchanged: the studio itself runs
-// under /studio (BASE_PATH), so its pages, API, live updates and uploads all just work.
+// The screenshot studio's server (studio/, its own container with headless Chromium) behind the
+// dashboard's sign-in: its API (/studio/api/…), emoji, previews and exports. The editor itself is
+// a page of this app (app/(studio)/studio). Browsers come in with their session; the studio's CLI
+// and MCP server (Claude) with an API token. Paths pass through unchanged: the studio server runs
+// under /studio (BASE_PATH), so its API, live updates and uploads all just work.
 
 const STUDIO = (process.env.OPENCONNECT_STUDIO_URL || '').replace(/\/+$/, '');
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **App promos.** The Marketing page has a second mode that makes promo cards for one app you pick, built from its live App Store listing: **Launch** (screenshots in phone frames), **What's New** (the current version's release notes), **Screenshots**, **Loved By** (rating and your best short 5★ reviews) and **Download** (call to action with rating, downloads, countries and price). Every template renders at once, so **Download all** gives you a full set.
+- Promo cards come in five styles (**Studio**, **Light**, **Gradient**, **Bold**, **Glow**), any accent colour, and four sizes: 1:1, 4:5, 9:16 and 16:9. You can override the headline, tagline, button text and release notes, and the text is kept per app. You can also hide the App Store button or the rating.
+
+### Changed
+- **Share is now Marketing**, at `/marketing`. The old `/share` address redirects there.
+
 ## 1.2.0
 
 ### Added

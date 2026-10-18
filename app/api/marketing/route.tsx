@@ -5,23 +5,30 @@ import * as crypto from 'crypto';
 import {
   isShareRange, mapShare, milestoneShare, ratingShare, reachShare, reviewShare, SHARE_TEMPLATES, ShareData, ShareRange, ShareTemplate, shareData, shareDataVersion,
 } from '@/lib/share';
-import { FORMATS, Format, THEMES, Theme, inlineIcon, loadFonts } from '@/lib/share-render/kit';
+import { FORMATS, Format, THEMES, Theme, inlineIcon, inlineImage, inlineLargeIcon, loadFonts } from '@/lib/share-render/kit';
 import { OverviewCard } from '@/lib/share-render/overview';
 import { MapCard, MilestoneCard, RatingCard, ReachCard, ReviewCard } from '@/lib/share-render/templates';
-import { SHARE_HEROES, SHARE_STATS, ShareHeroId, ShareStatId } from '@/lib/prefs';
+import { PromoCard, PROMO_SIZES, PromoOptions } from '@/lib/share-render/promo';
+import { listing, promoData } from '@/lib/marketing';
+import {
+  PROMO_FORMATS, PROMO_STYLES, PROMO_TEMPLATES, PromoFormatId, PromoStyleId, PromoTemplateId, SHARE_HEROES, SHARE_STATS, ShareHeroId, ShareStatId,
+} from '@/lib/prefs';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Social share cards rendered to PNG, styled like the dashboard:
-//   /api/share?app=<id|all>&t=overview|reach|map|rating|review|milestone&range=30d&format=4x5&theme=dark
+// Marketing cards rendered to PNG. Stats cards, styled like the dashboard:
+//   /api/marketing?app=<id|all>&t=overview|reach|map|rating|review|milestone&range=30d&format=4x5&theme=dark
+// Promo cards for one app, from its App Store listing:
+//   /api/marketing?app=<id>&t=launch|update|screens|loved|download&format=1x1|4x5|9x16|16x9&style=gradient&accent=3b82f6
+//     &badge=1&rating=1&h=<headline>&sub=<tagline>&cta=<button text>&notes=<release notes>
 // Layout is done by satori and rasterised by native resvg (much cheaper than next/og's
 // WebAssembly build). Cards are still rendered one at a time and cached until the data
 // behind them changes (a sync, hiding an app, a new day).
 
 // --- Rendered PNG cache + one-at-a-time render queue -------------------------------
 
-const RENDER_VERSION = 20; // bump when the card design changes
+const RENDER_VERSION = 21; // bump when the card design changes
 const MAX_CACHED = 48;
 const pngCache = new Map<string, Buffer>();
 let queue: Promise<unknown> = Promise.resolve();
@@ -46,8 +53,8 @@ interface Picks {
   showList: boolean;
 }
 
-const svgToPng = async (node: React.ReactNode, format: Format) => {
-  const { width, height } = FORMATS[format];
+const svgToPng = async (node: React.ReactNode, format: Format | PromoFormatId) => {
+  const { width, height } = format in FORMATS ? FORMATS[format as Format] : PROMO_SIZES[format as PromoFormatId];
   const svg = await satori(node as React.ReactElement, { width, height, fonts: loadFonts() });
   return new Resvg(svg, { fitTo: { mode: 'original' } }).render().asPng();
 };
@@ -98,10 +105,64 @@ async function render(appId: string | undefined, range: ShareRange, format: Form
   return svgToPng(<OverviewCard data={withIcons} icons={icons.length ? icons : [null]} format={format} theme={theme} showList={picks.showList} />, format);
 }
 
+async function renderPromo(appId: string, o: PromoOptions): Promise<Buffer | null> {
+  const data = await promoData(appId);
+  if (!data) return null;
+  const [icon, shots] = await Promise.all([
+    inlineLargeIcon(data.icon),
+    Promise.all((data.listing?.screenshots ?? []).map(async (s) => ({ src: await inlineImage(s.url), ratio: s.ratio }))),
+  ]);
+  const screenshots = shots.filter((s): s is { src: string; ratio: number } => !!s.src);
+  return svgToPng(<PromoCard data={data} images={{ icon, screenshots }} o={o} />, o.format);
+}
+
+const text = (v: string | null, max: number) => (v == null ? undefined : v.slice(0, max));
+
+async function promoResponse(request: Request, q: URLSearchParams, template: PromoTemplateId) {
+  const appId = q.get('app');
+  if (!appId || appId === 'all') return new Response('Promo cards are for one app', { status: 400 });
+  const accent = `#${q.get('accent') ?? ''}`;
+  const o: PromoOptions = {
+    template,
+    format: (q.get('format') && q.get('format')! in PROMO_FORMATS ? q.get('format') : '4x5') as PromoFormatId,
+    style: (q.get('style') && q.get('style')! in PROMO_STYLES ? q.get('style') : 'gradient') as PromoStyleId,
+    accent: /^#[0-9a-f]{6}$/i.test(accent) ? accent.toLowerCase() : '#3b82f6',
+    showBadge: q.get('badge') !== '0',
+    showRating: q.get('rating') !== '0',
+    // Empty means "use the template's own wording".
+    headline: text(q.get('h'), 120) || undefined,
+    tagline: text(q.get('sub'), 240) || undefined,
+    cta: text(q.get('cta'), 40) || undefined,
+    notes: text(q.get('notes'), 1200) || undefined,
+  };
+  // The listing is part of the key, so a new App Store release re-renders the cards.
+  const l = await listing(appId);
+  const key = [RENDER_VERSION, 'promo', shareDataVersion(), l?.version, l?.versionDate, appId, ...Object.values(o)].join('|');
+  return respond(request, key, () => renderPromo(appId, o));
+}
+
+async function respond(request: Request, key: string, make: () => Promise<Buffer | null>) {
+  const etag = `"${crypto.createHash('sha1').update(key).digest('hex').slice(0, 20)}"`;
+  const headers = { 'Content-Type': 'image/png', ETag: etag, 'Cache-Control': 'private, no-cache' };
+  if (request.headers.get('if-none-match') === etag) return new Response(null, { status: 304, headers });
+
+  let png = pngCache.get(key);
+  if (!png) {
+    // Re-check inside the queue: an identical request may have rendered it while we waited.
+    const rendered = await serially(async () => pngCache.get(key) ?? make());
+    if (!rendered) return new Response('Unknown app', { status: 404 });
+    png = rendered;
+    remember(key, png);
+  }
+  return new Response(new Uint8Array(png), { headers });
+}
+
 export async function GET(request: Request) {
   const denied = guard(request);
   if (denied) return denied;
   const q = new URL(request.url).searchParams;
+  const t = q.get('t');
+  if (t && t in PROMO_TEMPLATES) return promoResponse(request, q, t as PromoTemplateId);
   const appParam = q.get('app');
   const appId = appParam && appParam !== 'all' ? appParam : undefined;
   const range: ShareRange = isShareRange(q.get('range')) ? (q.get('range') as ShareRange) : '30d';
@@ -118,17 +179,5 @@ export async function GET(request: Request) {
   };
 
   const key = [RENDER_VERSION, shareDataVersion(), appId || 'all', range, format, themeId, picks.template, picks.pick, picks.hero, picks.stats.join(','), picks.showList].join('|');
-  const etag = `"${crypto.createHash('sha1').update(key).digest('hex').slice(0, 20)}"`;
-  const headers = { 'Content-Type': 'image/png', ETag: etag, 'Cache-Control': 'private, no-cache' };
-  if (request.headers.get('if-none-match') === etag) return new Response(null, { status: 304, headers });
-
-  let png = pngCache.get(key);
-  if (!png) {
-    // Re-check inside the queue: an identical request may have rendered it while we waited.
-    const rendered = await serially(async () => pngCache.get(key) ?? render(appId, range, format, THEMES[themeId], picks));
-    if (!rendered) return new Response('Unknown app', { status: 404 });
-    png = rendered;
-    remember(key, png);
-  }
-  return new Response(new Uint8Array(png), { headers });
+  return respond(request, key, () => render(appId, range, format, THEMES[themeId], picks));
 }

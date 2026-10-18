@@ -165,8 +165,8 @@ export function CustomizeSettings({ prefs, onPrefs, apps, onToggleApp, footer }:
           variant="ghost"
           size="sm"
           onClick={() =>
-            // Only what this section controls; theme, defaults and share choices stay.
-            onPrefs({ ...DEFAULT_PREFS, share: prefs.share, theme: prefs.theme, currency: prefs.currency, range: prefs.range, compareToPrevious: prefs.compareToPrevious })
+            // Only what this section controls; theme, defaults and marketing choices stay.
+            onPrefs({ ...DEFAULT_PREFS, share: prefs.share, marketing: prefs.marketing, theme: prefs.theme, currency: prefs.currency, range: prefs.range, compareToPrevious: prefs.compareToPrevious })
           }
         >
           Reset layout to defaults

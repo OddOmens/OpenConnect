@@ -157,6 +157,35 @@ export const SHARE_HEROES = {
 } as const
 export type ShareHeroId = keyof typeof SHARE_HEROES
 
+// Marketing: promo cards for one app, built from its App Store listing.
+export const PROMO_TEMPLATES = {
+  launch: 'Launch',
+  update: "What's New",
+  screens: 'Screenshots',
+  loved: 'Loved By',
+  download: 'Download',
+} as const
+export type PromoTemplateId = keyof typeof PROMO_TEMPLATES
+
+export const PROMO_STYLES = {
+  studio: 'Studio',
+  light: 'Light',
+  gradient: 'Gradient',
+  bold: 'Bold',
+  glow: 'Glow',
+} as const
+export type PromoStyleId = keyof typeof PROMO_STYLES
+
+export const PROMO_FORMATS = {
+  '1x1': '1:1 · 1080×1080',
+  '4x5': '4:5 · 1080×1350',
+  '9x16': '9:16 · 1080×1920',
+  '16x9': '16:9 · 1920×1080',
+} as const
+export type PromoFormatId = keyof typeof PROMO_FORMATS
+
+export const PROMO_ACCENTS = ['#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#f97316', '#f59e0b', '#10b981', '#06b6d4'] as const
+
 export type ThemeId = 'system' | 'light' | 'dark'
 
 export interface UiPrefs {
@@ -189,6 +218,17 @@ export interface UiPrefs {
     hero: ShareHeroId            // the big number and its chart (Overview)
     stats: ShareStatId[]         // tiles to show, in this order
     showList: boolean            // Top Markets (one app) / Top Apps (All Apps)
+  }
+  marketing: {
+    mode: 'stats' | 'promo'
+    app: string                  // apple_id of the app the promo cards are about ('' = the top app)
+    style: PromoStyleId
+    accent: string               // #rrggbb
+    format: PromoFormatId
+    showBadge: boolean           // "Download on the App Store" button
+    showRating: boolean
+    // Text overrides per app; empty means the template's own wording.
+    copy: Record<string, { headline?: string; tagline?: string; cta?: string; notes?: string }>
   }
 }
 
@@ -223,11 +263,22 @@ export const DEFAULT_PREFS: UiPrefs = {
     stats: Object.keys(SHARE_STATS) as ShareStatId[],
     showList: true,
   },
+  marketing: {
+    mode: 'stats',
+    app: '',
+    style: 'gradient',
+    accent: PROMO_ACCENTS[0],
+    format: '4x5',
+    showBadge: true,
+    showRating: true,
+    copy: {},
+  },
 }
 
 export function mergePrefs(saved: Partial<UiPrefs> | null | undefined): UiPrefs {
   const p = { ...DEFAULT_PREFS, ...(saved || {}) }
   p.share = { ...DEFAULT_PREFS.share, ...(saved?.share || {}) }
+  p.marketing = { ...DEFAULT_PREFS.marketing, ...(saved?.marketing || {}) }
   // Keep order valid if sections were added or removed since the prefs were saved.
   const known = Object.keys(SECTIONS) as SectionId[]
   const order = p.sectionOrder.filter((s) => known.includes(s))
@@ -242,6 +293,9 @@ export function mergePrefs(saved: Partial<UiPrefs> | null | undefined): UiPrefs 
   p.kpiOrder = [...p.kpiOrder.filter((k) => kpis.includes(k)), ...kpis.filter((k) => !p.kpiOrder.includes(k))]
   if (!SHARE_HEROES[p.share.hero]) p.share.hero = DEFAULT_PREFS.share.hero
   if (!SHARE_TEMPLATES[p.share.template]) p.share.template = DEFAULT_PREFS.share.template
+  if (!PROMO_STYLES[p.marketing.style]) p.marketing.style = DEFAULT_PREFS.marketing.style
+  if (!PROMO_FORMATS[p.marketing.format]) p.marketing.format = DEFAULT_PREFS.marketing.format
+  if (!/^#[0-9a-f]{6}$/i.test(p.marketing.accent)) p.marketing.accent = DEFAULT_PREFS.marketing.accent
   return p
 }
 

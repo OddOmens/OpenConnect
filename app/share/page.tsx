@@ -1,9 +1,6 @@
-import { ShareStudio } from '@/components/share/share-studio'
-import { requireSignIn } from '@/lib/auth-page'
+import { redirect } from 'next/navigation'
 
-export const dynamic = 'force-dynamic'
-
-export default async function SharePage() {
-  await requireSignIn()
-  return <ShareStudio />
+// Share cards became the Marketing page.
+export default function SharePage() {
+  redirect('/marketing')
 }

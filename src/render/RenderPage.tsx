@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
 import type { App, DeviceId } from '../shared/types';
 import { SlideView } from './SlideView';
+import { CreativeView } from './CreativeView';
+import { CREATIVES } from '../shared/creatives';
+import type { CreativeId } from '../shared/types';
 import { canvasSize } from '../shared/devices';
+import { slideTheme } from '../shared/presets';
+import { fontStack } from '../shared/locales';
 import type { Slide } from '../shared/types';
 
 declare global {
@@ -18,13 +23,17 @@ export function RenderPage() {
   const device = (params.get('device') ?? 'iphone') as DeviceId;
   const ids = params.get('slides')?.split(',').filter(Boolean);
   const sizeKey = params.get('size') ?? undefined;
+  const creative = params.get('creative') as CreativeId | null;
   // Smaller previews (e.g. to show in a chat) render the same layout scaled down.
   const scale = Number(params.get('scale') ?? 1);
   const [app, setApp] = useState<App | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetch(`/api/apps/${appId}`)
+    // The server returns the app as this set and language see it.
+    const q = new URLSearchParams();
+    for (const k of ['set', 'lang']) if (params.get(k)) q.set(k, params.get(k)!);
+    fetch(`/api/apps/${appId}${q.size ? `?${q}` : ''}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(setApp)
       .catch((e) => setError(String(e)));
@@ -33,8 +42,22 @@ export function RenderPage() {
   useEffect(() => {
     if (!app) return;
     (async () => {
-      await document.fonts.load(`${app.theme.headlineWeight} 100px "${app.theme.fontFamily}"`).catch(() => {});
-      await document.fonts.load(`400 100px "${app.theme.fontFamily}"`).catch(() => {});
+      // Slides can override the typeface, so load every one in use.
+      const themes = [app.theme, ...app.slides.map((s) => slideTheme(app, s))];
+      for (const t of new Map(themes.map((t) => [`${t.headlineWeight} ${t.fontFamily}`, t])).values()) {
+        await document.fonts.load(`${t.headlineWeight} 100px "${t.fontFamily}"`).catch(() => {});
+        await document.fonts.load(`400 100px "${t.fontFamily}"`).catch(() => {});
+      }
+      // Translations can need the bundled Noto faces; load just the pieces the text uses.
+      const text = [...app.slides.flatMap((s) => [s.headline, s.subtitle]), app.creatives.header.headline, app.creatives.search.headline, app.theme.hero.badgeTitle]
+        .join(' ')
+        .replace(/[\x00-\x7f]/g, '');
+      if (text) {
+        for (const f of fontStack('x', app.activeLang).split(',').slice(1, 6)) {
+          await document.fonts.load(`${app.theme.headlineWeight} 100px ${f.trim()}`, text).catch(() => {});
+          await document.fonts.load(`400 100px ${f.trim()}`, text).catch(() => {});
+        }
+      }
       await document.fonts.ready;
       const failed: string[] = [];
       await Promise.all(
@@ -50,7 +73,7 @@ export function RenderPage() {
         return;
       }
       // Background images are CSS, so preload them explicitly.
-      const bgUrls = [...document.querySelectorAll<HTMLElement>('[data-render-slide] *, [data-render-slide]')]
+      const bgUrls = [...document.querySelectorAll<HTMLElement>('[data-render-slide] *, [data-render-slide], [data-render-creative] *, [data-render-creative]')]
         .map((el) => getComputedStyle(el).backgroundImage.match(/url\("?(.*?)"?\)/)?.[1])
         .filter((u): u is string => !!u);
       await Promise.all(bgUrls.map((u) => new Promise((r) => { const i = new Image(); i.onload = i.onerror = r; i.src = u; })));
@@ -60,6 +83,19 @@ export function RenderPage() {
 
   if (error) return <pre>{error}</pre>;
   if (!app) return null;
+  if (creative) {
+    const spec = CREATIVES[creative];
+    const [W, H] = spec.sizes[sizeKey ?? spec.defaultSize] ?? spec.sizes[spec.defaultSize];
+    return (
+      <div data-render-creative={creative} style={{ width: 'fit-content' }}>
+        <div style={{ width: Math.round(W * scale), height: Math.round(H * scale), overflow: 'hidden' }}>
+          <div style={{ width: W, height: H, transform: scale === 1 ? undefined : `scale(${scale})`, transformOrigin: '0 0' }}>
+            <CreativeView app={app} id={creative} sizeKey={sizeKey} />
+          </div>
+        </div>
+      </div>
+    );
+  }
   const slides = ids ? ids.map((id) => app.slides.find((s) => s.id === id)!).filter(Boolean) : app.slides;
   return (
     <div style={{ margin: 0 }}>

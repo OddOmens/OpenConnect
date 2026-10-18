@@ -445,10 +445,11 @@ app.post(
         slideIds: req.body?.slides,
         scale: req.body?.scale ? Math.min(1, Math.max(0.1, Number(req.body.scale))) : 1,
       });
-      fs.mkdirSync(path.join(dir, d), { recursive: true });
+      const ddir = inside(dir, d);
+      fs.mkdirSync(ddir, { recursive: true });
       for (const r of rendered) {
         // Name previews by their real slide position so "slide 3" is easy to find.
-        const file = path.join(dir, d, `${String(r.index + 1).padStart(2, '0')}${r.filename.slice(2)}`);
+        const file = inside(ddir, `${String(r.index + 1).padStart(2, '0')}${r.filename.slice(2)}`);
         fs.writeFileSync(file, r.png);
         out.push({ device: d, slideId: r.slideId, path: file, url: `/previews/${folder}/${d}/${path.basename(file)}` });
       }

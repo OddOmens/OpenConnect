@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { BASE, fetchExport, fetchPreviews, serverIsLocal } from './remote.mjs';
+import { BASE, fetchExport, fetchPreviews, moveExport, serverIsLocal } from './remote.mjs';
 
 
 const HELP = `appshot — drive OpenAppShot from the terminal
@@ -794,10 +794,10 @@ const commands = {
     let r = await http('POST', `/api/apps/${app.id}/export`, {
       devices: flags.device ? String(flags.device).split(',') : undefined,
       languages: flags.lang && flags.lang !== true ? String(flags.lang).split(',') : undefined,
-      outDir: local ? outDir : undefined,
     });
-    // Server on another machine: download the zip (into --out, or ~/.openappshot/exports) and unpack it.
-    if (!local) r = await fetchExport(BASE, r, outDir).catch((e) => die(e.message));
+    // Same disk: move it into --out. Another machine: download the zip (into --out, or
+    // ~/.openappshot/exports) and unpack it.
+    r = local ? moveExport(r, outDir) : await fetchExport(BASE, r, outDir).catch((e) => die(e.message));
     out(r, () => {
       const by = {};
       r.files.forEach((f) => {

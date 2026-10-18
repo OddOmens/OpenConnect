@@ -181,7 +181,7 @@ export interface ExportResult {
 export async function exportApp(
   baseUrl: string,
   app: App,
-  opts: { devices?: DeviceId[]; sizes?: Partial<Record<DeviceId, string[]>>; outDir?: string; creatives?: CreativeId[]; languages?: string[] },
+  opts: { devices?: DeviceId[]; sizes?: Partial<Record<DeviceId, string[]>>; creatives?: CreativeId[]; languages?: string[] },
 ): Promise<ExportResult> {
   const devices = (opts.devices?.length ? opts.devices : app.devices).filter((d) => app.devices.includes(d));
   const all = [app.baseLanguage, ...app.languages];
@@ -190,7 +190,11 @@ export async function exportApp(
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   // Exports of a non-primary set are named after it too.
   const label = app.activeSet ? `${slugify(app.name)}-${slugify(setName(app))}` : slugify(app.name);
-  const dir = opts.outDir ? path.resolve(opts.outDir) : path.join(DATA_DIR, 'exports', `${label}-${stamp}`);
+  // Always inside the data folder's exports; a client on the same disk moves it where it wants
+  // (bin/remote.mjs), so a request can never make the server write anywhere else.
+  const exportsRoot = path.resolve(DATA_DIR, 'exports');
+  const dir = path.resolve(exportsRoot, `${label}-${stamp}`.replace(/[^\w.-]/g, '_'));
+  if (!dir.startsWith(exportsRoot + path.sep)) throw new Error('Invalid export folder');
   fs.mkdirSync(dir, { recursive: true });
 
   const files: ExportResult['files'] = [];

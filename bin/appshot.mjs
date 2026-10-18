@@ -16,6 +16,8 @@ Server: ${BASE}  (start it with "npm run dev"; override with APPSHOT_URL, e.g. a
 <app> is an app id, exact name, bundle id, or "." for the app linked to the current folder.
 --in "<set>" works on any command: slides, style, creatives, preview and export of that screenshot set
 (id or name). Without it, commands use the primary set.
+--lang <code> works the same way for a translation language (e.g. de-DE): status/preview show that language,
+--headline/--subtitle and screenshots (shot, add, capture) go to its translation. Without it: the base language.
 <slide> is a slide id or 1-based position.
 
 Apps
@@ -47,6 +49,8 @@ Style (app-wide: every change applies to all slides)
                [--decor-opacity 0.5] [--decor-color c|auto] [--shuffle-decor]
                [--mark none|underline|double|circle|box|marker|strike|brackets|squiggle] [--mark-width 6]
                [--mark-roughness 1.4] [--mark-padding 14] [--mark-color c|highlight] [--mark-recolor on|off]
+               [--marker-opacity 0-100] [--marker-height 0.1-1.2] [--marker-position -0.3-0.6]
+               [--marker-round 0-1] [--marker-tilt -6-6]   (the highlighter; sizes are shares of the text size)
                [--sticker-shadow 0-1]
                [--font f]  fonts also include Figtree, Onest, Lexend, Rubik, Nunito, Fredoka, Bricolage Grotesque,
                            Unbounded, Playfair Display, DM Serif Display, Instrument Serif, Bebas Neue, Caveat (handwritten)
@@ -90,13 +94,22 @@ Screenshot sets (the primary set plus mockups you're testing; each has its own s
 Stickers (3D emoji and hand-drawn doodles on a slide)
   emoji <words>                        Find emoji slugs, e.g. appshot emoji rocket
   sticker <app> <slide> list
-  sticker <app> <slide> add <emoji-slug|doodle> [--doodle] [--style 3d|color|flat] [--x 0.8] [--y 0.2]
+  sticker <app> <slide> add <emoji-slug|doodle> [--doodle] [--style 3d|color|flat|apple] [--x 0.8] [--y 0.2]
                  [--size 200] [--rotate -8] [--layer front|back] [--color c] [--opacity 1] [--flip]
                                        x/y are the center as fractions of the slide; size in 1/1000 of the short side.
+                                       apple: Apple's emoji, once Apple Color Emoji.ttc is in the server's data/fonts.
                                        Doodles: arrow-curve arrow-down arrow-loop arrow-straight underline squiggle circle
                                        star star-filled sparkle burst heart heart-filled spiral check cross exclaim
                                        lightning crown scribble bracket
   sticker <app> <slide> set <n> [same flags]   ·   sticker <app> <slide> rm <n|all>
+
+Languages (slides are written in the base language; translations share the design)
+  languages <app> [--add de-DE,ja] [--rm fr-FR] [--base en-US]
+                                       Show or change the app's languages (App Store Connect codes)
+  translations <app> [lang]            Base text next to each translation, and what's still missing
+  translate <app> <lang> <file.json>   Set many translations at once. JSON: {"slides": [{"slide": 1, "headline": "…",
+                                       "subtitle": "…"}], "creatives": {"header": {"headline": "…"}}, "hero": {"badgeTitle": "…"}}
+                                       ("-" reads stdin). One slide: appshot slide <app> 2 --lang de-DE --headline "…"
 
 Product page (iOS 27+: one header and one search results asset per app)
   creative <app> header|search [--headline s] [--subtitle s] [--text left|center|none] [--lockup on|off]
@@ -109,8 +122,9 @@ Output
   preview <app> --creative header|search   Render the asset to a PNG and print its path
   preview <app> [--device d] [--slide n]   Render PNGs to disk and print their paths (to look at).
                                        With a remote server they're downloaded to a temp folder
-  export <app> [--device iphone,ipad] [--out dir]
-                                       Renders every export size chosen in the editor (App tab).
+  export <app> [--device iphone,ipad] [--lang de-DE,ja] [--out dir]
+                                       Renders every export size chosen in the editor (App tab), in every
+                                       language (a folder each) unless --lang picks some.
                                        With a remote server the zip is downloaded and unpacked into --out
                                        (default ~/.openappshot/exports)
   open <app>                           Open the editor in the browser
@@ -182,6 +196,10 @@ async function http(method, url, body) {
   // --in <set>: every app-scoped call goes to that screenshot set.
   if (flags.in && flags.in !== true && /^\/api\/apps\/[^/?]+/.test(url) && !/\/sets(\/|$|\?)/.test(url)) {
     url += `${url.includes('?') ? '&' : '?'}set=${encodeURIComponent(String(flags.in))}`;
+  }
+  // --lang <code>: the same calls in a translation language. (A list, for export, goes in the export body.)
+  if (flags.lang && flags.lang !== true && !String(flags.lang).includes(',') && /^\/api\/apps\/[^/?]+/.test(url) && !/\/(sets|translations|export)(\/|$|\?)/.test(url)) {
+    url += `${url.includes('?') ? '&' : '?'}lang=${encodeURIComponent(String(flags.lang))}`;
   }
   let res;
   try {
@@ -255,6 +273,9 @@ function describeApp(app, check) {
     `style (all slides): layout ${t.layout}, ${t.fontFamily}, align ${t.align}, colors ${t.palettes.primary.background.color}` +
       `${t.alternate ? ` alternating with ${t.palettes.alt.background.color}` : ''}, highlight ${t.palettes.primary.accentColor}`,
   );
+  if (app.languages?.length || app.activeLang) {
+    lines.push(`language: ${app.activeLang ?? app.baseLanguage}${app.activeLang ? '' : ' (base)'}   all: ${[app.baseLanguage, ...app.languages].join(', ')}  (pick with --lang)`);
+  }
   lines.push(`icon: ${app.iconAssetId ? 'set' : 'none'}   slides: ${app.slides.length}`);
   lines.push(...describeProfile(app));
   for (const [d, issues] of Object.entries(check?.devices ?? {})) for (const i of issues) lines.push(`! ${label[d]}: ${i.message}`);
@@ -557,6 +578,13 @@ const commands = {
     if (flags['mark-padding'] !== undefined) mark.padding = Number(flags['mark-padding']);
     if (flags['mark-color'] !== undefined) mark.color = ['highlight', true].includes(flags['mark-color']) ? '' : String(flags['mark-color']);
     if (flags['mark-recolor'] !== undefined) mark.recolor = ['on', 'true', true, 'yes'].includes(flags['mark-recolor']);
+    const marker = {};
+    if (flags['marker-opacity'] !== undefined) marker.opacity = Math.max(0, Math.min(100, Number(flags['marker-opacity']))) / 100;
+    if (flags['marker-height'] !== undefined) marker.height = Number(flags['marker-height']);
+    if (flags['marker-position'] !== undefined) marker.lift = Number(flags['marker-position']);
+    if (flags['marker-round'] !== undefined) marker.radius = Number(flags['marker-round']);
+    if (flags['marker-tilt'] !== undefined) marker.tilt = Number(flags['marker-tilt']);
+    if (Object.keys(marker).length) mark.marker = marker;
     if (Object.keys(mark).length) theme.annotation = mark;
     if (flags['sticker-shadow'] !== undefined) theme.stickerShadow = Number(flags['sticker-shadow']);
     if (Object.keys(theme).length) patch.theme = theme;
@@ -766,6 +794,7 @@ const commands = {
     const outDir = flags.out ? expandPath(flags.out) : undefined;
     let r = await http('POST', `/api/apps/${app.id}/export`, {
       devices: flags.device ? String(flags.device).split(',') : undefined,
+      languages: flags.lang && flags.lang !== true ? String(flags.lang).split(',') : undefined,
       outDir: local ? outDir : undefined,
     });
     // Server on another machine: download the zip (into --out, or ~/.openappshot/exports) and unpack it.
@@ -780,9 +809,74 @@ const commands = {
       for (const [k, n] of Object.entries(by)) lines.push(`  ${k}: ${n}`);
       if (r.skipped.length) lines.push(`Skipped ${r.skipped.length} slide(s) with no screenshot for that device`);
       for (const c of r.creatives ?? []) lines.push(`  ${c.creative === 'header' ? 'Product page header' : 'Search results'} ${c.size}: ${c.path}`);
+      if (r.languages?.length > 1) lines.push(`Languages: ${r.languages.join(', ')} (a folder each)`);
+      const todo = {};
+      for (const u of r.untranslated ?? []) (todo[u.language] ??= []).push(u.position);
+      for (const [l, list] of Object.entries(todo)) lines.push(`! ${l}: slide${list.length > 1 ? "s" : ""} ${list.join(', ')} used base-language text (not translated yet)`);
       lines.push(`Zip: ${r.zip}`);
       return lines.join('\n');
     });
+  },
+
+  async languages() {
+    const app = await getApp(pos[0] ?? die('usage: appshot languages <app> [--add codes] [--rm codes] [--base code]'));
+    const list = (v) => (v && v !== true ? String(v).split(',').map((x) => x.trim()).filter(Boolean) : []);
+    let languages = [...app.languages];
+    languages.push(...list(flags.add));
+    const rm = list(flags.rm).map((x) => x.toLowerCase());
+    languages = languages.filter((l) => !rm.includes(l.toLowerCase()));
+    const patch = {};
+    if (flags.add || flags.rm) patch.languages = languages;
+    if (flags.base && flags.base !== true) Object.assign(patch, { baseLanguage: String(flags.base), languages });
+    const next = Object.keys(patch).length ? await http('PATCH', `/api/apps/${app.id}`, patch) : app;
+    const report = next.languages.length ? await http('GET', `/api/apps/${next.id}/translations`) : { languages: [] };
+    out({ baseLanguage: next.baseLanguage, languages: report.languages.map(({ code, name, done, total }) => ({ code, name, done, total })) }, () =>
+      [
+        `${next.name}: written in ${next.baseLanguage}`,
+        ...report.languages.map((l) => `  ${l.code}  ${l.name}  ${l.done}/${l.total} slides translated`),
+        next.languages.length ? 'Translate with: appshot translations <app> <lang>, then appshot translate <app> <lang> file.json' : 'No translations. Add some with --add de-DE,ja',
+      ].join('\n'),
+    );
+  },
+
+  async translations() {
+    const app = await getApp(pos[0] ?? die('usage: appshot translations <app> [lang]'));
+    const r = await http('GET', `/api/apps/${app.id}/translations${pos[1] ? `?lang=${enc(pos[1])}` : ''}`);
+    if (!r.languages.length) return out(r, `${app.name} has no translations. Add some: appshot languages ${pos[0]} --add de-DE,ja`);
+    const one = (s) => s.replace(/\n/g, ' / ');
+    out(r, () =>
+      r.languages
+        .map((l) => {
+          const lines = [`${l.name} (${l.code}): ${l.done}/${l.total} slides translated`];
+          for (const s of l.slides) {
+            lines.push(`${String(s.position).padStart(2)}. ${one(s.base.headline)}`);
+            lines.push(`    ${l.code}: ${s.translation.headline ? one(s.translation.headline) : '— missing'}`);
+            if (s.base.subtitle) lines.push(`    subtitle: ${s.base.subtitle}\n    ${l.code}: ${s.translation.subtitle || '— missing'}`);
+            if (s.screenshots.length) lines.push(`    own screenshots: ${s.screenshots.map((d) => label[d] ?? d).join(', ')}`);
+          }
+          for (const c of l.creatives) lines.push(`${c.creative}: ${one(c.base.headline)}\n    ${l.code}: ${c.translation.headline ? one(c.translation.headline) : '— missing'}`);
+          if (l.hero) lines.push(`hero badge: ${l.hero.base.badgeTitle} ${l.hero.base.badgeCaption}\n    ${l.code}: ${[l.hero.translation.badgeTitle, l.hero.translation.badgeCaption].filter(Boolean).join(' ') || '— missing'}`);
+          return lines.join('\n');
+        })
+        .join('\n\n'),
+    );
+  },
+
+  async translate() {
+    const [ref, lang, file] = pos;
+    if (!ref || !lang || !file) die('usage: appshot translate <app> <lang> <file.json | ->');
+    const app = await getApp(ref);
+    let body;
+    try {
+      body = JSON.parse(file === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(path.resolve(file), 'utf8'));
+    } catch (e) {
+      die(`couldn't read ${file}: ${e.message}`);
+    }
+    if (Array.isArray(body)) body = { slides: body };
+    const r = await http('PUT', `/api/apps/${app.id}/translations/${enc(lang)}`, body);
+    const l = r.languages[0];
+    const missing = l.slides.filter((s) => s.missing.length).map((s) => s.position);
+    out(r, `${l.name}: ${l.done}/${l.total} slides translated${missing.length ? ` (missing: ${missing.join(', ')})` : ''}. Check with: appshot preview ${ref} --lang ${l.code}`);
   },
 
   async sets() {
@@ -829,7 +923,8 @@ const commands = {
     const q = pos.join(' ');
     const r = await http('GET', `/api/emoji?q=${enc(q)}&limit=40`);
     if (!r.available) die('emoji are not downloaded on the server; run "npm run setup:emoji" in OpenAppShot');
-    out(r, () => (r.emoji.length ? r.emoji.map((e) => `${e.glyph}  ${e.slug}  (${e.group})`).join('\n') + (r.total > 40 ? `\n… ${r.total - 40} more` : '') : 'No emoji found.'));
+    const head = r.font ? `Styles: 3d, color, flat, apple (${r.font.source})\n` : '';
+    out(r, () => (r.emoji.length ? head + r.emoji.map((e) => `${e.glyph}  ${e.slug}  (${e.group})`).join('\n') + (r.total > 40 ? `\n… ${r.total - 40} more` : '') : 'No emoji found.'));
   },
 
   async sticker() {

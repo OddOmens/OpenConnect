@@ -3,7 +3,8 @@ import type { ReactNode } from 'react';
 import type { AnnotationKind, App, AppProfile, Asset, Background, BadgeKind, DecorKind, DeviceId, FrameKind, Layout, PaletteKey, Slide, TextureKind, Theme } from '../shared/types';
 import { DEVICE_IDS } from '../shared/types';
 import { DEVICES, exportSizes } from '../shared/devices';
-import { checkSlide } from '../shared/guidelines';
+import { checkSlide, checkTranslation } from '../shared/guidelines';
+import { LANGUAGES, languageName, translationProgress } from '../shared/locales';
 import { FONTS, PRESETS, slideTheme } from '../shared/presets';
 import { setName } from '../shared/sets';
 import { assetUrl } from '../render/SlideView';
@@ -35,6 +36,7 @@ export function Inspector({
   app,
   device,
   slide,
+  baseSlide,
   productPage,
   creative,
   tab,
@@ -46,6 +48,8 @@ export function Inspector({
   app: App;
   device: DeviceId;
   slide: Slide | null;
+  /** while translating: the slide as written in the base language */
+  baseSlide: Slide | null;
   productPage: boolean;
   creative: CreativeId | null;
   tab: InspectorTab;
@@ -84,7 +88,7 @@ export function Inspector({
         {tab === 'slide' &&
           !productPage &&
           (slide ? (
-            <SlidePanel app={app} device={device} slide={slide} actions={actions} />
+            <SlidePanel app={app} device={device} slide={slide} base={baseSlide} actions={actions} />
           ) : (
             <p className="empty-note">Select a slide to edit its words and screenshot. Style sets the look of every slide; a slide can change any of it for itself here.</p>
           ))}
@@ -96,12 +100,16 @@ export function Inspector({
 }
 
 /** A slide's words, screenshot, callout and role, plus any style it changes for itself. */
-function SlidePanel({ app, device, slide, actions }: { app: App; device: DeviceId; slide: Slide; actions: EditorActions }) {
+function SlidePanel({ app, device, slide, base, actions }: { app: App; device: DeviceId; slide: Slide; base: Slide | null; actions: EditorActions }) {
   const patch = (p: unknown) => actions.patchSlide(slide.id, p);
   const shot = slide.shots[device] ? app.assets[slide.shots[device]!] : null;
   const index = app.slides.findIndex((s) => s.id === slide.id);
   const label = DEVICES[device].label;
-  const issues = checkSlide(slide);
+  // While translating, `slide` shows the translation (or the base text where there's none yet).
+  const lang = base ? (app.activeLang ?? null) : null;
+  const loc = lang ? slide.locales?.[lang] : undefined;
+  const ownShot = !lang || !!loc?.shots?.[device];
+  const issues = [...checkSlide(slide), ...checkTranslation(slide, lang)];
 
   return (
     <>
@@ -118,12 +126,26 @@ function SlidePanel({ app, device, slide, actions }: { app: App; device: DeviceI
           </div>
         }
       >
-        <Field label="Headline" hint="Wrap words in *asterisks* to color them. Press Return for a new line.">
-          <TextInput multiline rows={3} value={slide.headline} onChange={(v) => patch({ headline: v })} />
-        </Field>
-        <Field label="Subtitle">
-          <TextInput multiline rows={2} value={slide.subtitle} placeholder="Optional" onChange={(v) => patch({ subtitle: v })} />
-        </Field>
+        {lang && base ? (
+          <>
+            <Field label={`Headline · ${languageName(lang)}`} hint={<>{languageName(app.baseLanguage)}: {base.headline.replace(/\n/g, ' / ')}</>}>
+              <TextInput multiline rows={3} value={loc?.headline ?? ''} placeholder={base.headline} onChange={(v) => patch({ headline: v })} />
+            </Field>
+            <Field label={`Subtitle · ${languageName(lang)}`} hint={base.subtitle ? <>{languageName(app.baseLanguage)}: {base.subtitle}</> : undefined}>
+              <TextInput multiline rows={2} value={loc?.subtitle ?? ''} placeholder={base.subtitle || 'Optional'} onChange={(v) => patch({ subtitle: v })} />
+            </Field>
+            <p className="group-desc">Keep the *asterisks* around the words to highlight. Everything else on this slide is shared by every language.</p>
+          </>
+        ) : (
+          <>
+            <Field label="Headline" hint="Wrap words in *asterisks* to color them. Press Return for a new line.">
+              <TextInput multiline rows={3} value={slide.headline} onChange={(v) => patch({ headline: v })} />
+            </Field>
+            <Field label="Subtitle">
+              <TextInput multiline rows={2} value={slide.subtitle} placeholder="Optional" onChange={(v) => patch({ subtitle: v })} />
+            </Field>
+          </>
+        )}
         <label className="check">
           <input type="checkbox" checked={slide.role === 'hero'} onChange={(e) => patch({ role: e.target.checked ? 'hero' : 'standard' })} />
           Hero slide — badge, app icon and name, and a leaning device
@@ -142,11 +164,14 @@ function SlidePanel({ app, device, slide, actions }: { app: App; device: DeviceI
 
       {slide.role === 'hero' && <HeroSettings app={app} actions={actions} />}
 
-      <Group title={`${label} screenshot`}>
+      <Group title={lang ? `${label} screenshot · ${languageName(lang)}` : `${label} screenshot`}>
+        {lang && !ownShot && shot && (
+          <p className="group-desc">Showing the {languageName(app.baseLanguage)} screenshot. Drop one taken in {languageName(lang)} to use it for this language only.</p>
+        )}
         <ShotRow
           app={app}
-          asset={shot}
-          label="Screenshot"
+          asset={ownShot ? shot : null}
+          label={lang ? `${languageName(lang)} screenshot` : 'Screenshot'}
           onFiles={(f) => actions.setShot(slide.id, f)}
           onClear={() => patch({ shots: { [device]: null } })}
         />
@@ -475,7 +500,7 @@ function StyleControls({ scope, afterColors }: { scope: StyleScope; afterColors?
       </Group>
 
       <Group title="Headline marks">
-        <p className="group-desc">Hand-drawn marks on the *highlighted* words of each headline.</p>
+        <p className="group-desc">Marks on the *highlighted* words of each headline. Underlines and strikes are straight; circles, boxes, brackets and squiggles look hand-drawn.</p>
         <Field group label="Mark" onReset={reset('annotation.kind')}>
           <Segmented<AnnotationKind>
             value={t.annotation.kind}
@@ -495,15 +520,46 @@ function StyleControls({ scope, afterColors }: { scope: StyleScope; afterColors?
         </Field>
         {t.annotation.kind !== 'none' && (
           <>
-            <Field label="Thickness" onReset={reset('annotation.width')}>
-              <Slider value={t.annotation.width} min={1} max={20} step={0.5} onChange={(v) => set('annotation.width', v)} />
-            </Field>
-            <Field label="Sketchiness" onReset={reset('annotation.roughness')}>
-              <Slider value={t.annotation.roughness} min={0} max={3.5} step={0.1} format={(v) => (v < 0.3 ? 'Clean' : v.toFixed(1))} onChange={(v) => set('annotation.roughness', v)} />
-            </Field>
-            <Field label="Spacing" onReset={reset('annotation.padding')}>
-              <Slider value={t.annotation.padding} min={0} max={50} onChange={(v) => set('annotation.padding', v)} />
-            </Field>
+            {t.annotation.kind === 'marker' ? (
+              <>
+                <Field label="Opacity" onReset={reset('annotation.marker.opacity')}>
+                  <Slider value={t.annotation.marker.opacity} min={0} max={1} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => set('annotation.marker.opacity', v)} />
+                </Field>
+                <Field label="Height" hint="Thin stripe under the words, up to covering them." onReset={reset('annotation.marker.height')}>
+                  <Slider value={t.annotation.marker.height} min={0.1} max={1.2} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => set('annotation.marker.height', v)} />
+                </Field>
+                <Field label="Position" onReset={reset('annotation.marker.lift')}>
+                  <Slider value={t.annotation.marker.lift} min={-0.3} max={0.6} step={0.01} format={(v) => (Math.abs(v) < 0.005 ? 'Base' : `${v > 0 ? '+' : ''}${Math.round(v * 100)}%`)} onChange={(v) => set('annotation.marker.lift', v)} />
+                </Field>
+                <Field label="Round ends" onReset={reset('annotation.marker.radius')}>
+                  <Slider value={t.annotation.marker.radius} min={0} max={1} step={0.05} format={(v) => (v < 0.05 ? 'Square' : v > 0.95 ? 'Pill' : `${Math.round(v * 100)}%`)} onChange={(v) => set('annotation.marker.radius', v)} />
+                </Field>
+                <Field label="Tilt" onReset={reset('annotation.marker.tilt')}>
+                  <Slider value={t.annotation.marker.tilt} min={-6} max={6} step={0.5} format={(v) => `${v}°`} onChange={(v) => set('annotation.marker.tilt', v)} />
+                </Field>
+                <Field label="Overhang" onReset={reset('annotation.padding')}>
+                  <Slider value={t.annotation.padding} min={0} max={50} onChange={(v) => set('annotation.padding', v)} />
+                </Field>
+              </>
+            ) : (
+              <>
+                <Field label="Thickness" onReset={reset('annotation.width')}>
+                  <Slider value={t.annotation.width} min={1} max={20} step={0.5} onChange={(v) => set('annotation.width', v)} />
+                </Field>
+                <Field
+                  label={['underline', 'double', 'squiggle'].includes(t.annotation.kind) ? 'Gap below' : t.annotation.kind === 'strike' ? 'Overhang' : 'Spacing'}
+                  onReset={reset('annotation.padding')}
+                >
+                  <Slider value={t.annotation.padding} min={0} max={50} onChange={(v) => set('annotation.padding', v)} />
+                </Field>
+              </>
+            )}
+            {/* Underlines and strikes are always straight; the rest can look hand-drawn. */}
+            {!['underline', 'double', 'strike'].includes(t.annotation.kind) && (
+              <Field label={t.annotation.kind === 'marker' ? 'Brush edges' : 'Sketchiness'} onReset={reset('annotation.roughness')}>
+                <Slider value={t.annotation.roughness} min={0} max={3.5} step={0.1} format={(v) => (v < 0.3 ? 'Clean' : v.toFixed(1))} onChange={(v) => set('annotation.roughness', v)} />
+              </Field>
+            )}
             <label className="check">
               <input type="checkbox" checked={!t.annotation.color} onChange={(e) => set('annotation.color', e.target.checked ? '' : t.palettes.primary.textColor)} />
               Mark in the highlight color
@@ -730,6 +786,59 @@ function HeroSettings({ app, actions }: { app: App; actions: EditorActions }) {
   );
 }
 
+/** The language the slides are written in, and the translations exported with them. */
+function LanguagesSettings({ app, actions }: { app: App; actions: EditorActions }) {
+  const known = (code: string) => (LANGUAGES.some((l) => l.code === code) ? [] : [{ code, name: code }]);
+  const progress = translationProgress(app);
+  return (
+    <Group title="Languages">
+      <p className="group-desc">
+        Translations get their own headlines, subtitles and (optionally) screenshots; the design is shared. Pick one in the top bar to
+        edit it, or ask Claude to translate. Export makes a folder per language.
+      </p>
+      <Field label="Written in">
+        <select value={app.baseLanguage} onChange={(e) => actions.patchApp({ baseLanguage: e.target.value, languages: app.languages.filter((l) => l !== e.target.value) })}>
+          {[...LANGUAGES, ...known(app.baseLanguage)].map((l) => (
+            <option key={l.code} value={l.code}>
+              {l.name}
+            </option>
+          ))}
+        </select>
+      </Field>
+      {progress.length > 0 && (
+        <ul className="lang-list">
+          {progress.map((l) => (
+            <li key={l.code}>
+              <span className="grow">{l.name}</span>
+              <span className="muted small">{l.done === l.total ? 'Translated' : `${l.done} of ${l.total} slides`}</span>
+              <button
+                className="icon-btn danger"
+                title={`Remove ${l.name}`}
+                onClick={() =>
+                  confirm(`Remove ${l.name}? Its translations stay saved and come back if you add it again.`) &&
+                  actions.patchApp({ languages: app.languages.filter((x) => x !== l.code) })
+                }
+              >
+                <X size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <Field label="Add a language">
+        <select value="" onChange={(e) => e.target.value && actions.patchApp({ languages: [...app.languages, e.target.value] })}>
+          <option value="">Choose…</option>
+          {LANGUAGES.filter((l) => l.code !== app.baseLanguage && !app.languages.includes(l.code)).map((l) => (
+            <option key={l.code} value={l.code}>
+              {l.name}
+            </option>
+          ))}
+        </select>
+      </Field>
+    </Group>
+  );
+}
+
 function AppInfoPanel({ app, actions }: { app: App; actions: EditorActions }) {
   const patch = actions.patchApp;
   const profile = (p: Partial<AppProfile>) => patch({ profile: p });
@@ -756,6 +865,8 @@ function AppInfoPanel({ app, actions }: { app: App; actions: EditorActions }) {
           <TextInput value={app.subtitle} placeholder="120+ guided stretches" onChange={(v) => patch({ subtitle: v })} />
         </Field>
       </Group>
+
+      <LanguagesSettings app={app} actions={actions} />
 
       <Group title="Devices and sizes">
         <p className="group-desc">Design at one size; every checked size is rendered natively on export.</p>

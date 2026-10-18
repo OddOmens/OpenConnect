@@ -2,7 +2,9 @@ import type { Sticker } from '../shared/types';
 import { DOODLES, paths, seedOf } from './rough';
 
 export const emojiUrl = (slug: string, style: Sticker['style']) =>
-  `/vendor/emoji/${encodeURIComponent(slug)}/${style === '3d' ? '3d.png' : `${style}.svg`}`;
+  style === 'apple'
+    ? `/emoji-font/${encodeURIComponent(slug)}.png`
+    : `/vendor/emoji/${encodeURIComponent(slug)}/${style === '3d' ? '3d.png' : `${style}.svg`}`;
 
 /** One doodle as an inline SVG, `width` px wide, in `color`. */
 export function DoodleSvg({ name, width, color, seed, style }: { name: string; width: number; color: string; seed: number; style?: React.CSSProperties }) {
@@ -69,7 +71,7 @@ export function StickerLayer({
             }}
           >
             {s.kind === 'emoji' ? (
-              <img src={emojiUrl(s.ref, s.style)} alt="" draggable={false} style={{ width: '100%', height: '100%', display: 'block' }} />
+              <img src={emojiUrl(s.ref, s.style)} alt="" draggable={false} style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }} />
             ) : (
               <DoodleSvg name={s.ref} width={w} color={s.color || accent} seed={seedOf(s.id)} />
             )}

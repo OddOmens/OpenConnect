@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Pipette } from 'lucide-react';
+import { pickColor } from './eyedropper';
 
 /** Shown next to a setting a slide overrides; goes back to the app's style. */
 export function ResetButton({ onReset }: { onReset: () => void }) {
@@ -183,29 +185,35 @@ export function ColorField({
   onChange: (v: string) => void;
   onReset?: () => void;
 }) {
+  // Keep any alpha the user had set when a new solid color comes in.
+  const withAlpha = (h: string) => {
+    const alpha = value.match(/rgba\(.*,\s*([\d.]+)\)/)?.[1];
+    if (!alpha) return h;
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+    return `rgba(${r},${g},${b},${alpha})`;
+  };
   return (
     <div className={`color-field ${onReset ? 'overridden' : ''}`}>
       <span className="swatch" style={{ background: value }}>
-        <input
-          type="color"
-          aria-label={label}
-          value={toHex(value)}
-          onChange={(e) => {
-            // Keep any alpha the user had set.
-            const alpha = value.match(/rgba\(.*,\s*([\d.]+)\)/)?.[1];
-            if (alpha) {
-              const h = e.target.value;
-              const [r, g, b] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
-              onChange(`rgba(${r},${g},${b},${alpha})`);
-            } else onChange(e.target.value);
-          }}
-        />
+        <input type="color" aria-label={label} value={toHex(value)} onChange={(e) => onChange(withAlpha(e.target.value))} />
       </span>
       <span className="color-label">
         {label}
         {onReset && <ResetButton onReset={onReset} />}
       </span>
       <TextInput value={value} onChange={onChange} />
+      <button
+        type="button"
+        className="icon-btn eyedropper"
+        title="Pick a color from the screen"
+        aria-label={`Pick ${label.toLowerCase()} from the screen`}
+        onClick={async () => {
+          const c = await pickColor();
+          if (c) onChange(withAlpha(c));
+        }}
+      >
+        <Pipette size={14} />
+      </button>
     </div>
   );
 }

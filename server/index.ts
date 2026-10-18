@@ -6,11 +6,13 @@ import type { DeviceId } from '../src/shared/types.ts';
 import { DEVICE_IDS } from '../src/shared/types.ts';
 import { PRESETS } from '../src/shared/presets.ts';
 import { DEVICES } from '../src/shared/devices.ts';
-import { checkDevice, checkSlide } from '../src/shared/guidelines.ts';
+import { checkDevice, checkSlide, checkTranslation } from '../src/shared/guidelines.ts';
 import { buildAppData } from '../src/shared/summary.ts';
 import type { AssetSource } from '../src/shared/types.ts';
 import * as store from './store.ts';
 import { exportApp, renderCreative, renderSlides } from './renderer.ts';
+import { extractEmojiFont, findEmojiFont } from './emojiFont.ts';
+import { localize, localizeAppPatch, localizeSlidePatch, translationLanguage, translationReport } from '../src/shared/locales.ts';
 import { CREATIVE_IDS, type CreativeId } from '../src/shared/types.ts';
 
 const PORT = Number(process.env.PORT ?? 4317);
@@ -30,6 +32,18 @@ const origin = (req: Request) => req.header('x-client-id') ?? 'api';
 const p = (req: Request, key: string) => String(req.params[key]);
 /** ?set= picks a screenshot set (id or name); none means the primary set. */
 const setOf = (req: Request) => (typeof req.query.set === 'string' && req.query.set ? req.query.set : undefined);
+/** ?lang= picks a translation language; none (or the base language) means the slides as written. */
+const langOf = (req: Request): string | null => {
+  const v = typeof req.query.lang === 'string' ? req.query.lang : '';
+  if (!v) return null;
+  try {
+    return translationLanguage(store.getApp(p(req, 'app')), v);
+  } catch (e) {
+    throw new store.HttpError(400, (e as Error).message);
+  }
+};
+/** The app as one set and one language see it (read-only). */
+const viewOf = (req: Request) => localize(store.getView(p(req, 'app'), setOf(req)), langOf(req));
 
 function parseDevice(v: unknown): DeviceId | undefined {
   if (v === undefined || v === '' || v === 'auto') return undefined;
@@ -59,7 +73,7 @@ app.get('/api/meta', (_req, res) => res.json({ presets: PRESETS, devices: DEVICE
 app.get('/api', (_req, res) =>
   res.json({
     name: 'OpenAppShot local API',
-    note: 'No Anthropic API calls, no credits. Slide, style, render, preview, export and creative routes take ?set=<id or name> for a screenshot set; without it they use the primary set.',
+    note: 'No Anthropic API calls, no credits. Slide, style, render, preview, export and creative routes take ?set=<id or name> for a screenshot set; without it they use the primary set. They also take ?lang=<code> for a translation language: reads show that language, headline/subtitle/screenshot writes go to its translation.',
     endpoints: {
       'GET /api/data': 'Every app as a clean record: style, devices, screenshot counts, per-slide data',
       'GET /api/apps/:app/data': 'One app as a clean record (:app = id, name or bundle id)',
@@ -80,13 +94,15 @@ app.get('/api', (_req, res) =>
       'GET /api/apps/:app/slides/:slide/render/:device.png?scale=': 'PNG of one slide',
       'GET /api/apps/:app/creatives/:creative/render.png?scale=': 'PNG of the product page header or search results asset (:creative = header | search)',
       'POST /api/apps/:app/preview': 'Render previews to disk {device?, slides?, scale?}; each file is also served at its url',
-      'POST /api/apps/:app/export': 'Export PNGs + zip {devices?, sizes?, outDir?, creatives?}; enabled creative assets are included unless creatives is given; zipUrl downloads the zip',
-      'GET /api/emoji?q=&group=&limit=': 'Search the bundled Fluent Emoji stickers (slug, name, glyph, group, keywords)',
+      'POST /api/apps/:app/export': 'Export PNGs + zip {devices?, sizes?, outDir?, creatives?, languages?}; enabled creative assets are included unless creatives is given; every language unless languages (or ?lang=a,b) is given; zipUrl downloads the zip',
+      'GET /api/emoji?q=&group=&limit=': 'Search the emoji stickers (slug, name, glyph, group, keywords, styles; styles has "apple" when an emoji font is installed)',
       'GET /api/apps/:app/sets': 'Screenshot sets: the primary set and any others (e.g. mockups being tested)',
       'POST /api/apps/:app/sets': 'New set {name?, from? (set to copy, default primary), blank?}',
       'PATCH /api/apps/:app/sets/:set': 'Rename {name}',
       'DELETE /api/apps/:app/sets/:set': 'Delete a set (not the primary)',
       'POST /api/apps/:app/sets/:set/primary': 'Make a set the primary one (swaps with the current primary)',
+      'GET /api/apps/:app/translations?lang=': 'Base text and translation of every slide, creative and hero badge, per translation language, with what is missing',
+      'PUT /api/apps/:app/translations/:lang': 'Set many translations at once {slides: [{slide, headline?, subtitle?}], creatives?: {header?: {headline?, subtitle?}}, hero?: {badgeTitle?, badgeCaption?}}',
       'GET /api/events': 'Server-sent change events',
     },
   }),
@@ -94,7 +110,7 @@ app.get('/api', (_req, res) =>
 app.get('/api/data', (_req, res) => res.json(store.listApps().map((a) => buildAppData(store.getApp(a.id), BASE_URL))));
 app.get(
   '/api/apps/:app/data',
-  h((req, res) => res.json(buildAppData(store.getView(p(req, 'app'), setOf(req)), BASE_URL))),
+  h((req, res) => res.json(buildAppData(viewOf(req), BASE_URL))),
 );
 
 // ---------- live updates ----------
@@ -122,8 +138,14 @@ app.get(
 );
 app.get('/api/apps', (_req, res) => res.json(store.listApps()));
 app.post('/api/apps', h((req, res) => res.status(201).json(store.createApp(req.body ?? {}, origin(req)))));
-app.get('/api/apps/:app', h((req, res) => res.json(store.getView(p(req, 'app'), setOf(req)))));
-app.patch('/api/apps/:app', h((req, res) => res.json(store.updateApp(p(req, 'app'), req.body ?? {}, origin(req), setOf(req)))));
+app.get('/api/apps/:app', h((req, res) => res.json(viewOf(req))));
+app.patch(
+  '/api/apps/:app',
+  h((req, res) => {
+    const lang = langOf(req);
+    res.json(localize(store.updateApp(p(req, 'app'), localizeAppPatch(req.body ?? {}, lang), origin(req), setOf(req)), lang));
+  }),
+);
 app.delete(
   '/api/apps/:app',
   h((req, res) => {
@@ -135,10 +157,11 @@ app.delete(
 app.get(
   '/api/apps/:app/check',
   h((req, res) => {
-    const a = store.getView(p(req, 'app'), setOf(req));
+    const lang = langOf(req);
+    const a = viewOf(req);
     res.json({
       devices: Object.fromEntries(a.devices.map((d) => [d, checkDevice(a, d)])),
-      slides: Object.fromEntries(a.slides.map((s) => [s.id, checkSlide(s)])),
+      slides: Object.fromEntries(a.slides.map((s) => [s.id, [...checkSlide(s), ...checkTranslation(s, lang)]])),
     });
   }),
 );
@@ -197,6 +220,7 @@ app.post(
       },
       origin(req),
       setOf(req),
+      langOf(req),
     );
     res.status(201).json(result);
   }),
@@ -217,6 +241,28 @@ const emoji = (): EmojiEntry[] => {
   return emojiIndex;
 };
 app.use('/vendor/emoji', express.static(EMOJI_DIR, { maxAge: '30d', immutable: true, fallthrough: false }));
+
+// The 'apple' look: emoji cut out of a font the user drops into <data>/fonts (Apple Color Emoji from a Mac;
+// it can't be bundled). Done once per font file, then served like the Fluent ones.
+const FONT_EMOJI_DIR = path.join(store.DATA_DIR, 'emoji', 'font');
+let fontEmoji: { source: string; slugs: Set<string> } | null = null;
+let fontEmojiError = '';
+const loadFontEmoji = () => {
+  const font = findEmojiFont(store.DATA_DIR);
+  fontEmoji = null;
+  fontEmojiError = '';
+  if (!font || !emoji().length) return;
+  try {
+    const r = extractEmojiFont(font, emoji(), FONT_EMOJI_DIR);
+    fontEmoji = { source: r.source, slugs: new Set(r.slugs) };
+    console.log(`Emoji font: ${r.slugs.length} emoji from ${r.source}`);
+  } catch (e) {
+    fontEmojiError = e instanceof Error ? e.message : String(e);
+    console.warn(`Emoji font: ${fontEmojiError}`);
+  }
+};
+app.use('/emoji-font', express.static(FONT_EMOJI_DIR, { maxAge: '1h', fallthrough: false }));
+loadFontEmoji();
 app.get('/api/emoji', (req, res) => {
   const list = emoji();
   const q = String(req.query.q ?? '').trim().toLowerCase();
@@ -232,13 +278,42 @@ app.get('/api/emoji', (req, res) => {
     })
     // Name matches first.
     .sort((a, b) => Number(!a.name.toLowerCase().includes(q)) - Number(!b.name.toLowerCase().includes(q)));
+  const withFont = (e: EmojiEntry) => (fontEmoji?.slugs.has(e.slug) ? { ...e, styles: [...e.styles, 'apple'] } : e);
   res.json({
     available: list.length > 0,
     groups: [...new Set(list.map((e) => e.group))],
+    // the 'apple' look, when an emoji font is installed in <data>/fonts
+    font: fontEmoji ? { source: fontEmoji.source, count: fontEmoji.slugs.size } : null,
+    fontError: fontEmojiError || undefined,
     total: hits.length,
-    emoji: hits.slice(0, limit),
+    emoji: hits.slice(0, limit).map(withFont),
   });
 });
+
+// ---------- translations ----------
+app.get(
+  '/api/apps/:app/translations',
+  h((req, res) => {
+    const a = store.getView(p(req, 'app'), setOf(req));
+    const only = langOf(req);
+    res.json(translationReport(a, only ? [only] : a.languages));
+  }),
+);
+app.put(
+  '/api/apps/:app/translations/:lang',
+  h((req, res) => {
+    const a = store.getApp(p(req, 'app'));
+    let lang: string | null;
+    try {
+      lang = translationLanguage(a, p(req, 'lang'));
+    } catch (e) {
+      throw new store.HttpError(400, (e as Error).message);
+    }
+    if (!lang) throw new store.HttpError(400, `${a.baseLanguage} is the base language; edit the slides themselves`);
+    store.setTranslations(a.id, lang, req.body ?? {}, origin(req), setOf(req));
+    res.json(translationReport(store.getView(a.id, setOf(req)), [lang]));
+  }),
+);
 
 // ---------- screenshot sets ----------
 app.get('/api/apps/:app/sets', h((req, res) => res.json(store.listSets(p(req, 'app')))));
@@ -270,7 +345,23 @@ app.post(
 );
 app.patch(
   '/api/apps/:app/slides/:slide',
-  h((req, res) => res.json(store.updateSlide(p(req, 'app'), p(req, 'slide'), req.body ?? {}, origin(req), setOf(req)))),
+  h((req, res) => {
+    const stickers = req.body?.stickers;
+    const missing = Array.isArray(stickers)
+      ? stickers.find((s: { kind?: string; style?: string; ref?: string }) => s?.kind === 'emoji' && s.style === 'apple' && !fontEmoji?.slugs.has(String(s.ref)))
+      : null;
+    if (missing) {
+      throw new store.HttpError(
+        400,
+        fontEmoji
+          ? `${fontEmoji.source} has no emoji for "${missing.ref}"; use style 3d, color or flat`
+          : 'The apple style needs Apple Color Emoji: copy "Apple Color Emoji.ttc" from a Mac (/System/Library/Fonts) into the fonts folder of the OpenAppShot data directory and restart',
+      );
+    }
+    const lang = langOf(req);
+    const slide = store.updateSlide(p(req, 'app'), p(req, 'slide'), localizeSlidePatch(req.body ?? {}, lang), origin(req), setOf(req));
+    res.json(lang ? localize(store.getView(p(req, 'app'), setOf(req)), lang).slides.find((s) => s.id === slide.id) : slide);
+  }),
 );
 app.delete(
   '/api/apps/:app/slides/:slide',
@@ -288,7 +379,7 @@ app.put(
     const device = parseDevice(req.body?.device ?? req.query.device);
     if (!device) throw new store.HttpError(400, 'Pass device=iphone|ipad|mac');
     res.json(
-      store.setSlideShot(p(req, 'app'), p(req, 'slide'), device, f.buf, f.name, origin(req), jsonField<AssetSource>(req.body?.source), setOf(req)),
+      store.setSlideShot(p(req, 'app'), p(req, 'slide'), device, f.buf, f.name, origin(req), jsonField<AssetSource>(req.body?.source), setOf(req), langOf(req)),
     );
   }),
 );
@@ -296,7 +387,7 @@ app.put(
 app.get(
   '/api/apps/:app/slides/:slide/render/:file',
   h(async (req, res) => {
-    const a = store.getView(p(req, 'app'), setOf(req));
+    const a = viewOf(req);
     const slide = store.findSlide(a, p(req, 'slide'));
     const device = parseDevice(p(req, 'file').replace(/\.png$/, ''))!;
     const scale = Math.min(1, Math.max(0.1, Number(req.query.scale ?? 1)));
@@ -309,7 +400,7 @@ app.get(
 app.get(
   '/api/apps/:app/creatives/:creative/render.png',
   h(async (req, res) => {
-    const a = store.getView(p(req, 'app'), setOf(req));
+    const a = viewOf(req);
     const id = p(req, 'creative') as CreativeId;
     if (!CREATIVE_IDS.includes(id)) throw new store.HttpError(400, `Unknown creative "${id}". Use header or search`);
     const scale = Math.min(1, Math.max(0.1, Number(req.query.scale ?? 1)));
@@ -322,9 +413,9 @@ app.get(
 app.post(
   '/api/apps/:app/preview',
   h(async (req, res) => {
-    const a = store.getView(p(req, 'app'), setOf(req));
+    const a = viewOf(req);
     const devices: DeviceId[] = req.body?.device ? [parseDevice(req.body.device)!] : a.devices;
-    const folder = a.activeSet ? `${a.id}-${a.activeSet}` : a.id;
+    const folder = [a.id, a.activeSet, a.activeLang].filter(Boolean).join('-');
     const dir = path.join(store.DATA_DIR, 'previews', folder);
     fs.rmSync(dir, { recursive: true, force: true });
     const out: { device: DeviceId; slideId: string; path: string; url: string }[] = [];
@@ -350,11 +441,20 @@ app.post(
   '/api/apps/:app/export',
   h(async (req, res) => {
     const a = store.getView(p(req, 'app'), setOf(req));
+    // ?lang=de-DE,ja or {languages}; default every language.
+    const asked = (req.body?.languages as string[] | undefined) ?? (typeof req.query.lang === 'string' && req.query.lang ? req.query.lang.split(',') : undefined);
+    let languages: string[] | undefined;
+    try {
+      languages = asked?.map((c) => translationLanguage(a, c) ?? a.baseLanguage);
+    } catch (e) {
+      throw new store.HttpError(400, (e as Error).message);
+    }
     const result = await exportApp(BASE_URL, a, {
       devices: (req.body?.devices as string[] | undefined)?.map((d) => parseDevice(d)!),
       sizes: req.body?.sizes,
       outDir: req.body?.outDir,
       creatives: req.body?.creatives,
+      languages,
     });
     const zipUrl = result.zip.startsWith(path.join(store.DATA_DIR, 'exports'))
       ? `/exports/${path.basename(result.zip)}`
@@ -380,7 +480,9 @@ if (isProd) {
 }
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-  const status = err instanceof store.HttpError ? err.status : 500;
+  // Static files report a missing file as an error with status 404; keep client errors as they are.
+  const own = (err as { status?: unknown })?.status;
+  const status = err instanceof store.HttpError ? err.status : typeof own === 'number' && own >= 400 && own < 500 ? own : 500;
   if (status === 500) console.error(err);
   res.status(status).json({ error: (err as Error).message ?? String(err) });
 });

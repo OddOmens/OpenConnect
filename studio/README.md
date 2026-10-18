@@ -49,6 +49,10 @@ npm run dev            # standalone at http://127.0.0.1:4317 (data in ~/.openapp
 BASE_PATH=/studio npm run dev   # as OpenConnect serves it: http://127.0.0.1:4317/studio
 ```
 
+Inside OpenConnect the editor is a Next.js page: run this server with `BASE_PATH=/studio npm run dev`, and the
+dashboard (`npm run dev` in the repo root) with `OPENCONNECT_STUDIO_URL=http://127.0.0.1:4317`; then open
+`http://localhost:3000/studio`. Editor changes hot-reload through Next.js.
+
 Without `OPENCONNECT_URL`, the CLI and MCP server talk to `APPSHOT_URL` or the local dev server (and the
 MCP server starts it if needed). If export says no browser is available, run `npm run setup:browser` once.
 

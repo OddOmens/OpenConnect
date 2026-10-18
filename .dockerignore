@@ -23,5 +23,7 @@ docs/
 .github/
 *.md
 
-# The screenshot studio is its own image (studio/Dockerfile).
-studio/
+# The studio's server is its own image (studio/Dockerfile); this one only needs the editor's
+# source (studio/src), which Next.js builds into the /studio page.
+studio/*
+!studio/src

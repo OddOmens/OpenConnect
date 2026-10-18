@@ -27,7 +27,7 @@ App Store Connect spreads your numbers over several slow pages and only keeps da
 - **Ratings & rankings in 175 storefronts:** rating counts and averages per country, plus where your apps sit in the Top Free, Top Paid and Top Grossing charts, overall and by category.
 - **World map, device and territory breakdowns.**
 - **Sync report:** after every sync you get a popup that lists exactly what changed. It covers new and revised report dates, per-app deltas, new reviews, rating changes, and chart moves.
-- **Share cards:** render PNG cards of your stats to post anywhere.
+- **Marketing:** render PNG stats cards to post anywhere, plus promo cards for one app (launch, what's new, screenshots, reviews, download) built from its App Store listing, in five styles, any accent colour and four sizes.
 - **Fully customizable:** show, hide or reorder every section, metric, column and chart series. Light, dark or system theme.
 - **Incremental sync:** a routine sync takes a handful of requests, not a 365-day backfill.
 - **Private by default:** one password protects everything, and the container runs read-only with no Linux capabilities.
@@ -168,7 +168,7 @@ Scheduled syncs don't pop up. Open **Sync → What changed** to see the report o
 
 ## HTTPS with Tailscale
 
-Browsers block some features (like downloading share cards) on plain `http://` pages that aren't `localhost`. To get HTTPS on your tailnet at `https://openconnect.<tailnet>.ts.net`:
+Browsers block some features (like downloading marketing cards) on plain `http://` pages that aren't `localhost`. To get HTTPS on your tailnet at `https://openconnect.<tailnet>.ts.net`:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.tailscale.yml up -d
@@ -217,7 +217,7 @@ Data goes to `./data` (or `DATA_DIR`). The setup code is printed in the terminal
 
 ## Tech
 
-Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS · Radix UI · Recharts · SQLite (better-sqlite3) · Satori + resvg for share cards.
+Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS · Radix UI · Recharts · SQLite (better-sqlite3) · Satori + resvg for marketing cards.
 
 ## Contributing
 

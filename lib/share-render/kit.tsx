@@ -34,18 +34,18 @@ export function loadFonts() {
   return fonts;
 }
 
-// App icons are inlined so a slow or flaky image host can't break the render.
-const iconCache = new Map<string, string | null>();
-export async function inlineIcon(url: string | null): Promise<string | null> {
+// Images are inlined so a slow or flaky image host can't break the render.
+const imageCache = new Map<string, string | null>();
+export async function inlineImage(url: string | null): Promise<string | null> {
   if (!url) return null;
-  if (iconCache.has(url)) return iconCache.get(url)!;
+  if (imageCache.has(url)) return imageCache.get(url)!;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const res = await fetch(url.replace(/\/\d+x\d+bb\./, '/256x256bb.'), { cache: 'no-store' });
+      const res = await fetch(url, { cache: 'no-store' });
       if (res.ok) {
         const type = res.headers.get('content-type') || 'image/png';
         const data = `data:${type};base64,${Buffer.from(await res.arrayBuffer()).toString('base64')}`;
-        iconCache.set(url, data);
+        imageCache.set(url, data);
         return data;
       }
     } catch {
@@ -54,6 +54,16 @@ export async function inlineIcon(url: string | null): Promise<string | null> {
     await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
   }
   return null;
+}
+
+/** An App Store icon at 256 px. */
+export function inlineIcon(url: string | null): Promise<string | null> {
+  return inlineImage(url && url.replace(/\/\d+x\d+bb\./, '/256x256bb.'));
+}
+
+/** An icon sharp enough to be the hero of a promo card. */
+export function inlineLargeIcon(url: string | null): Promise<string | null> {
+  return inlineImage(url && url.replace(/\/\d+x\d+bb\./, '/512x512bb.'));
 }
 
 // --- Drawing helpers --------------------------------------------------------------------

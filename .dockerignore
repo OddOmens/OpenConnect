@@ -23,7 +23,11 @@ docs/
 .github/
 *.md
 
-# The studio's server is its own image (studio/Dockerfile); this one only needs the editor's
-# source (studio/src), which Next.js builds into the /studio page.
+# The studio's renderer is its own image (studio/Dockerfile); this one needs the editor (studio/src)
+# and the data API it shares with the studio's server (studio/server/api.ts, store.ts).
 studio/*
 !studio/src
+!studio/server
+studio/server/*
+!studio/server/api.ts
+!studio/server/store.ts

@@ -23,5 +23,11 @@ docs/
 .github/
 *.md
 
-# The screenshot studio is its own image (studio/Dockerfile).
-studio/
+# The studio's renderer is its own image (studio/Dockerfile); this one needs the editor (studio/src)
+# and the data API it shares with the studio's server (studio/server/api.ts, store.ts).
+studio/*
+!studio/src
+!studio/server
+studio/server/*
+!studio/server/api.ts
+!studio/server/store.ts

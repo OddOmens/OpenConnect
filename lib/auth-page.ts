@@ -14,7 +14,7 @@ export async function pageAuthState(): Promise<'setup' | 'login' | 'ok'> {
   return sessionValid((await cookies()).get(SESSION_COOKIE)?.value) ? 'ok' : 'login';
 }
 
-/** Sends anyone who isn't signed in to /login. */
-export async function requireSignIn() {
-  if ((await pageAuthState()) !== 'ok') redirect('/login');
+/** Sends anyone who isn't signed in to /login, and back to `next` (a path here) afterwards. */
+export async function requireSignIn(next?: string) {
+  if ((await pageAuthState()) !== 'ok') redirect(next ? `/login?next=${encodeURIComponent(next)}` : '/login');
 }

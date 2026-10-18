@@ -6,6 +6,7 @@ import { CREATIVES } from '../shared/creatives';
 import type { CreativeId } from '../shared/types';
 import { canvasSize } from '../shared/devices';
 import { slideTheme } from '../shared/presets';
+import { fontStack } from '../shared/locales';
 import type { Slide } from '../shared/types';
 
 declare global {
@@ -29,8 +30,10 @@ export function RenderPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const set = params.get('set');
-    fetch(`/api/apps/${appId}${set ? `?set=${encodeURIComponent(set)}` : ''}`)
+    // The server returns the app as this set and language see it.
+    const q = new URLSearchParams();
+    for (const k of ['set', 'lang']) if (params.get(k)) q.set(k, params.get(k)!);
+    fetch(`/api/apps/${appId}${q.size ? `?${q}` : ''}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(setApp)
       .catch((e) => setError(String(e)));
@@ -44,6 +47,16 @@ export function RenderPage() {
       for (const t of new Map(themes.map((t) => [`${t.headlineWeight} ${t.fontFamily}`, t])).values()) {
         await document.fonts.load(`${t.headlineWeight} 100px "${t.fontFamily}"`).catch(() => {});
         await document.fonts.load(`400 100px "${t.fontFamily}"`).catch(() => {});
+      }
+      // Translations can need the bundled Noto faces; load just the pieces the text uses.
+      const text = [...app.slides.flatMap((s) => [s.headline, s.subtitle]), app.creatives.header.headline, app.creatives.search.headline, app.theme.hero.badgeTitle]
+        .join(' ')
+        .replace(/[\x00-\x7f]/g, '');
+      if (text) {
+        for (const f of fontStack('x', app.activeLang).split(',').slice(1, 6)) {
+          await document.fonts.load(`${app.theme.headlineWeight} 100px ${f.trim()}`, text).catch(() => {});
+          await document.fonts.load(`400 100px ${f.trim()}`, text).catch(() => {});
+        }
       }
       await document.fonts.ready;
       const failed: string[] = [];

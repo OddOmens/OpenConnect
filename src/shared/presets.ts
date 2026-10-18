@@ -34,7 +34,7 @@ const baseTheme = (palettes: Theme['palettes'], extra: ThemeExtra = {}): Theme =
   vignette: 0,
   glow: { strength: 0, color: '', size: 1.2 },
   decor: { kind: 'none', density: 1, scale: 1, opacity: 0.5, color: '', seed: 1 },
-  annotation: { kind: 'none', color: '', width: 6, roughness: 1.4, padding: 14, recolor: true },
+  annotation: { kind: 'none', color: '', width: 6, roughness: 1.4, padding: 14, recolor: true, marker: { opacity: 0.4, height: 0.55, lift: 0, radius: 0, tilt: 0 } },
   stickerShadow: 0.25,
   fontFamily: 'Outfit Variable',
   headlineWeight: 500,
@@ -46,7 +46,7 @@ const baseTheme = (palettes: Theme['palettes'], extra: ThemeExtra = {}): Theme =
   ...extra,
   frame: { kind: 'outline', deviceColor: '#1c1c1e', strokeColor: '#ffffff', strokeWidth: 7, radius: 9, shadow: 0.35, ...extra.frame },
   callout: { scale: 1.12, shadow: 0.35, radius: 28 },
-  hero: { badge: 'none', badgeTitle: '', badgeCaption: '', lockup: true, tilt: -6 },
+  hero: { badge: 'none', badgeTitle: '', badgeCaption: '', lockup: true, tilt: -6, locales: {} },
 });
 
 export interface Preset {
@@ -226,7 +226,7 @@ export function applyPreset(current: Theme, id: string): Theme {
   t.vignette = current.vignette;
   t.glow = { ...current.glow };
   t.decor = { ...current.decor };
-  t.annotation = { ...current.annotation };
+  t.annotation = { ...current.annotation, marker: { ...current.annotation.marker } };
   t.stickerShadow = current.stickerShadow;
   // Frame kind, callouts and the hero design aren't part of a theme's colors and type.
   t.frame.kind = current.frame.kind;
@@ -250,6 +250,7 @@ export function newSlide(id: string, partial: Partial<Slide> = {}): Slide {
     role: 'standard',
     callouts: {},
     stickers: [],
+    locales: {},
     ...partial,
   };
 }
@@ -287,6 +288,8 @@ export function newApp(id: string, partial: Partial<App> & { preset?: string } =
     creatives: { header: newCreative('header'), search: newCreative('search') },
     primarySetName: 'Primary',
     sets: [],
+    baseLanguage: 'en-US',
+    languages: [],
     assets: {},
     createdAt: now,
     updatedAt: now,

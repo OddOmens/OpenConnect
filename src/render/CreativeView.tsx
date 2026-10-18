@@ -2,7 +2,8 @@ import type { CSSProperties, ReactNode } from 'react';
 import type { App, CreativeId } from '../shared/types';
 import { CREATIVES, creativeShots, safeArea } from '../shared/creatives';
 import { DEVICES } from '../shared/devices';
-import { assetUrl, fontStack, Frame, Headline } from './SlideView';
+import { assetUrl, Frame, Headline } from './SlideView';
+import { fontStack, headlineLineHeight, isRtl, viewLanguage } from '../shared/locales';
 import { fillCss } from './background';
 
 /**
@@ -28,6 +29,7 @@ export function CreativeView({ app, id, sizeKey, safeGuide }: { app: App; id: Cr
   const headlineSize = (t.headlineSize / 86) * 150 * u * k;
   const text = showText && (
     <div
+      dir={isRtl(app.activeLang) ? 'rtl' : undefined}
       style={{
         position: 'absolute',
         width: textWidth,
@@ -37,7 +39,7 @@ export function CreativeView({ app, id, sizeKey, safeGuide }: { app: App; id: Cr
         display: 'flex',
         flexDirection: 'column',
         alignItems: c.textPosition === 'center' ? 'center' : 'flex-start',
-        textAlign: c.textPosition === 'center' ? 'center' : 'left',
+        textAlign: c.textPosition === 'center' ? 'center' : 'start',
         color: pal.textColor,
         zIndex: 3,
       }}
@@ -62,7 +64,7 @@ export function CreativeView({ app, id, sizeKey, safeGuide }: { app: App; id: Cr
             isolation: 'isolate',
             fontSize: headlineSize,
             fontWeight: t.headlineWeight,
-            lineHeight: t.lineHeight,
+            lineHeight: headlineLineHeight(t.lineHeight, app.activeLang),
             letterSpacing: `${t.letterSpacing}em`,
             whiteSpace: 'pre-line',
             textWrap: 'balance',
@@ -170,12 +172,13 @@ export function CreativeView({ app, id, sizeKey, safeGuide }: { app: App; id: Cr
 
   return (
     <div
+      lang={viewLanguage(app)}
       style={{
         width: W,
         height: H,
         position: 'relative',
         overflow: 'hidden',
-        fontFamily: fontStack(t.fontFamily),
+        fontFamily: fontStack(t.fontFamily, app.activeLang),
         WebkitFontSmoothing: 'antialiased',
         ...fillCss((c.background ?? pal.background).type === 'screenshot' ? { ...(c.background ?? pal.background), type: 'solid' } : (c.background ?? pal.background), app, { W, H, index: 0, count: 1 }),
       }}

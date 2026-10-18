@@ -140,8 +140,16 @@ const server = new McpServer(
 
 const appArg = z.string().describe('App id, exact name, or bundle id');
 const setArg = z.string().optional().describe('Screenshot set (id or name, e.g. "Test A"); default the primary set. See manage_sets');
-/** Add ?set= for a tool call's screenshot set. */
-const inSet = (url, a) => (a?.set ? `${url}${url.includes('?') ? '&' : '?'}set=${encodeURIComponent(a.set)}` : url);
+const langArg = z
+  .string()
+  .optional()
+  .describe('Translation language (App Store code, e.g. de-DE); default the base language. Reads show that language; headline, subtitle and screenshot changes go to its translation. See languages');
+/** Add ?set= and ?lang= for a tool call's screenshot set and language. */
+const inSet = (url, a) => {
+  if (a?.set) url = `${url}${url.includes('?') ? '&' : '?'}set=${encodeURIComponent(a.set)}`;
+  if (a?.lang) url = `${url}${url.includes('?') ? '&' : '?'}lang=${encodeURIComponent(a.lang)}`;
+  return url;
+};
 const slideArg = z.string().describe('Slide id or 1-based position');
 const deviceEnum = z.enum(['iphone', 'duo', 'ipad', 'mac']);
 const layoutEnum = z.enum(['top', 'bottom', 'side']);
@@ -190,11 +198,11 @@ server.registerTool(
     title: 'Get app data',
     description:
       'Full record for one app: remembered profile, app-wide style, devices (sizes, screenshot counts, issues) and every slide with its headline, subtitle, screen, and screenshot details per device.',
-    inputSchema: { app: appArg, set: setArg },
+    inputSchema: { app: appArg, set: setArg, lang: langArg },
     annotations: { readOnlyHint: true },
   },
-  wrap(async ({ app, set }) => {
-    const data = await http('GET', inSet(`/api/apps/${enc(await appId(app))}/data`, { set }));
+  wrap(async ({ app, set, lang }) => {
+    const data = await http('GET', inSet(`/api/apps/${enc(await appId(app))}/data`, { set, lang }));
     return json(overview(data), data);
   }),
 );
@@ -247,7 +255,7 @@ server.registerTool(
       'Change the app (name, subtitle, icon, devices, export sizes) or its style. Style is app-wide: layout, colors, font, alignment, headline size, screenshot size/position, frame (outline or drawn device), callout look and the hero design apply to every slide.',
     inputSchema: {
       app: appArg,
-      set: setArg,
+      set: setArg, lang: langArg,
       layout: layoutEnum.optional(),
       alternate_colors: z.boolean().optional().describe('Use the second color scheme on every other slide'),
       align: z.enum(['left', 'center']).optional(),
@@ -287,6 +295,16 @@ server.registerTool(
       decor_opacity: z.number().optional().describe('0–1'),
       headline_mark: z.enum(['none', 'underline', 'double', 'circle', 'box', 'marker', 'strike', 'brackets', 'squiggle']).optional().describe('Hand-drawn mark on the *highlighted* headline words'),
       headline_mark_color: z.string().optional().describe('"" uses the highlight color'),
+      headline_marker: z
+        .object({
+          opacity: z.number().min(0).max(100).optional().describe('0–100'),
+          height: z.number().optional().describe('Share of the text size: 0.15 a thin stripe, 0.55 the default, 1.1 covers the words'),
+          position: z.number().optional().describe('Moves it up (+) or down (−), share of the text size'),
+          round: z.number().optional().describe('0 square ends, 1 pill'),
+          tilt: z.number().optional().describe('Degrees, −6 to 6'),
+        })
+        .optional()
+        .describe('The highlighter, when headline_mark is marker'),
       sticker_shadow: z.number().optional().describe('0–1'),
       export_sizes: z.record(z.string(), z.array(z.string())).optional().describe('Size labels per device, as shown in get_app'),
       theme: z.record(z.string(), z.any()).optional().describe('Raw deep-merge into the theme, e.g. {palettes:{primary:{accentColor:"#fde68a"}}}'),
@@ -340,6 +358,16 @@ server.registerTool(
         ...(a.decor_size !== undefined ? { scale: a.decor_size } : {}),
         ...(a.decor_opacity !== undefined ? { opacity: a.decor_opacity } : {}),
       };
+    }
+    if (a.headline_marker) {
+      const m = a.headline_marker;
+      const marker = {};
+      if (m.opacity !== undefined) marker.opacity = m.opacity / 100;
+      if (m.height !== undefined) marker.height = m.height;
+      if (m.position !== undefined) marker.lift = m.position;
+      if (m.round !== undefined) marker.radius = m.round;
+      if (m.tilt !== undefined) marker.tilt = m.tilt;
+      theme.annotation = { ...(theme.annotation ?? {}), marker };
     }
     if (a.headline_mark !== undefined || a.headline_mark_color !== undefined) {
       theme.annotation = { ...(theme.annotation ?? {}), ...(a.headline_mark ? { kind: a.headline_mark } : {}), ...(a.headline_mark_color !== undefined ? { color: a.headline_mark_color } : {}) };
@@ -399,7 +427,7 @@ server.registerTool(
       'Add image files from this Mac. Each fills the next slide missing a screenshot for its device (auto-detected from pixel size), then new slides are created.',
     inputSchema: {
       app: appArg,
-      set: setArg,
+      set: setArg, lang: langArg,
       paths: z.array(z.string()).min(1),
       device: deviceEnum.optional(),
       headlines: z.array(z.string()).optional().describe('One per file, in order'),
@@ -410,7 +438,7 @@ server.registerTool(
     const id = await appId(a.app);
     const r = await http(
       'POST',
-      `/api/apps/${id}/screenshots`,
+      inSet(`/api/apps/${id}/screenshots`, a),
       await form('files', a.paths, { device: a.device, headlines: a.headlines, screens: a.screens, source: { kind: 'file' } }),
     );
     const data = await http('GET', inSet(`/api/apps/${id}/data`, a));
@@ -428,7 +456,7 @@ server.registerTool(
     description: "Screenshot the booted iOS Simulator into the app (new slide, or replace a slide's screenshot).",
     inputSchema: {
       app: appArg,
-      set: setArg,
+      set: setArg, lang: langArg,
       slide: z.string().optional().describe('Replace this slide instead of adding'),
       headline: z.string().optional(),
       screen: z.string().optional().describe('Name of the screen being captured'),
@@ -445,6 +473,7 @@ server.registerTool(
     if (a.clean_status_bar) args.push('--clean-status-bar');
     if (a.udid) args.push('--udid', a.udid);
     if (a.set) args.push('--in', a.set);
+    if (a.lang) args.push('--lang', a.lang);
     const out = await new Promise((resolve, reject) =>
       execFile(process.execPath, args, { env: { ...process.env, APPSHOT_URL: BASE } }, (err, stdout, stderr) =>
         err ? reject(new Error(stderr.trim() || err.message)) : resolve(stdout.trim()),
@@ -456,7 +485,7 @@ server.registerTool(
 
 server.registerTool(
   'update_slide',
-  { title: 'Update slide', description: "Edit a slide's words, screen info or hero role, or override the app style on this slide only (style). For the look of every slide use update_app.", inputSchema: { app: appArg, set: setArg, slide: slideArg, ...slideFields } },
+  { title: 'Update slide', description: "Edit a slide's words, screen info or hero role, or override the app style on this slide only (style). For the look of every slide use update_app.", inputSchema: { app: appArg, set: setArg, lang: langArg, slide: slideArg, ...slideFields } },
   wrap(async (a) => {
     const id = await appId(a.app);
     const s = await http('PATCH', inSet(`/api/apps/${id}/slides/${enc(a.slide)}`, a), slidePatch(a));
@@ -537,14 +566,16 @@ server.registerTool(
   'search_emoji',
   {
     title: 'Search emoji stickers',
-    description: 'Find bundled 3D emoji (Fluent Emoji) by words, for stickers. Returns slugs to pass to stickers.',
+    description:
+      'Find emoji by words, for stickers. Returns slugs to pass to stickers. Looks: 3d, color, flat (Fluent Emoji, bundled) and apple (Apple emoji, only when the result says an emoji font is installed).',
     inputSchema: { query: z.string() },
     annotations: { readOnlyHint: true },
   },
   wrap(async (a) => {
     const r = await http('GET', `/api/emoji?q=${enc(a.query)}&limit=30`);
     if (!r.available) throw new Error('Emoji are not downloaded on the server; run "npm run setup:emoji" in OpenAppShot.');
-    return text(r.emoji.map((e) => `${e.glyph} ${e.slug} (${e.group})`).join('\n') || 'No emoji found.');
+    const head = r.font ? `Emoji font installed (${r.font.source}): style "apple" works.\n` : 'No emoji font installed: use style 3d, color or flat.\n';
+    return text(r.emoji.length ? head + r.emoji.map((e) => `${e.glyph} ${e.slug} (${e.group})`).join('\n') : 'No emoji found.');
   }),
 );
 
@@ -562,7 +593,7 @@ server.registerTool(
       index: z.number().int().min(1).optional().describe('Sticker number for update/remove (1-based, from list)'),
       kind: z.enum(['emoji', 'doodle']).optional(),
       ref: z.string().optional().describe('Emoji slug or doodle name (add)'),
-      style: z.enum(['3d', 'color', 'flat']).optional().describe('Emoji look'),
+      style: z.enum(['3d', 'color', 'flat', 'apple']).optional().describe('Emoji look; apple needs the emoji font installed (see search_emoji)'),
       x: z.number().min(0).max(1).optional(),
       y: z.number().min(0).max(1).optional(),
       size: z.number().optional(),
@@ -608,7 +639,7 @@ server.registerTool(
       "Edit the app's product page header (3840×1646, safe area 1646×661) or search results asset (3840×2560, safe area 2168×1030), shown on iOS 27+. They use the app's colors, type and frame. One short phrase; for search, make what the app does obvious. Check with preview_creative.",
     inputSchema: {
       app: appArg,
-      set: setArg,
+      set: setArg, lang: langArg,
       creative: z.enum(['header', 'search']),
       include_in_export: z.boolean().optional(),
       headline: z.string().optional().describe('*highlight* and \\n like slides'),
@@ -649,7 +680,7 @@ server.registerTool(
   {
     title: 'Preview product page asset',
     description: 'Render the product page header or search results asset and return it as an image. The safe area is the centered 1646×661 (header) or 2168×1030 (search) region.',
-    inputSchema: { app: appArg, set: setArg, creative: z.enum(['header', 'search']) },
+    inputSchema: { app: appArg, set: setArg, lang: langArg, creative: z.enum(['header', 'search']) },
     annotations: { readOnlyHint: true },
   },
   wrap(async (a) => {
@@ -705,13 +736,13 @@ server.registerTool(
   {
     title: 'Replace screenshot',
     description: "Replace one slide's screenshot for a device with an image file on this Mac.",
-    inputSchema: { app: appArg, set: setArg, slide: slideArg, path: z.string(), device: deviceEnum },
+    inputSchema: { app: appArg, set: setArg, lang: langArg, slide: slideArg, path: z.string(), device: deviceEnum },
   },
   wrap(async (a) => {
     const id = await appId(a.app);
     await http(
       'PUT',
-      `/api/apps/${id}/slides/${enc(a.slide)}/shot`,
+      inSet(`/api/apps/${id}/slides/${enc(a.slide)}/shot`, a),
       await form('file', [a.path], { device: a.device, source: { kind: 'file', path: expand(a.path) } }),
     );
     return text(`Replaced the ${a.device} screenshot on slide ${a.slide}.`);
@@ -723,7 +754,7 @@ server.registerTool(
   {
     title: 'Preview slide',
     description: 'Render a slide and return it as an image so you can check the result.',
-    inputSchema: { app: appArg, set: setArg, slide: slideArg, device: deviceEnum.optional(), scale: z.number().min(0.1).max(1).optional().describe('Default 0.3') },
+    inputSchema: { app: appArg, set: setArg, lang: langArg, slide: slideArg, device: deviceEnum.optional(), scale: z.number().min(0.1).max(1).optional().describe('Default 0.3') },
     annotations: { readOnlyHint: true },
   },
   wrap(async (a) => {
@@ -749,6 +780,7 @@ server.registerTool(
       app: appArg,
       set: setArg,
       devices: z.array(deviceEnum).optional(),
+      languages: z.array(z.string()).optional().describe('Language codes to export; default every language (a folder each)'),
       out_dir: z.string().optional(),
     },
   },
@@ -756,13 +788,84 @@ server.registerTool(
     const id = await appId(a.app);
     const local = await serverIsLocal(BASE);
     const outDir = a.out_dir ? expand(a.out_dir) : undefined;
-    let r = await http('POST', inSet(`/api/apps/${id}/export`, a), { devices: a.devices, outDir: local ? outDir : undefined });
+    let r = await http('POST', inSet(`/api/apps/${id}/export`, a), { devices: a.devices, languages: a.languages, outDir: local ? outDir : undefined });
     // Server on another machine: download the zip and unpack it on this Mac.
     if (!local) r = await fetchExport(BASE, r, outDir);
     const counts = {};
     r.files.forEach((f) => (counts[`${f.device} ${f.size}`] = (counts[`${f.device} ${f.size}`] ?? 0) + 1));
     const lines = [`Exported ${r.files.length} PNGs to ${r.dir}`, ...Object.entries(counts).map(([k, n]) => `  ${k}: ${n}`), `Zip: ${r.zip}`];
     if (r.skipped.length) lines.push(`Skipped ${r.skipped.length} slide(s) with no screenshot for that device`);
+    if (r.languages?.length > 1) lines.push(`Languages: ${r.languages.join(', ')} (a folder each)`);
+    for (const u of r.untranslated ?? []) lines.push(`Not translated: ${u.language} slide ${u.position} (${u.missing.join(', ')}) used the base text`);
+    return text(lines.join('\n'));
+  }),
+);
+
+server.registerTool(
+  'languages',
+  {
+    title: 'Languages',
+    description:
+      "Show or change an app's languages. Slides are written in the base language; each translation language gets its own headlines, subtitles and (optionally) screenshots, with the same design. Codes are App Store Connect localizations (de-DE, fr-FR, ja, zh-Hans, pt-BR, es-MX…).",
+    inputSchema: {
+      app: appArg,
+      add: z.array(z.string()).optional(),
+      remove: z.array(z.string()).optional().describe('Translations stay saved and come back if re-added'),
+      base: z.string().optional().describe('Language the slides are written in'),
+    },
+  },
+  wrap(async (a) => {
+    const id = await appId(a.app);
+    const app = await http('GET', `/api/apps/${id}`);
+    const rm = (a.remove ?? []).map((x) => x.toLowerCase());
+    const languages = [...app.languages, ...(a.add ?? [])].filter((l) => !rm.includes(l.toLowerCase()));
+    const patch = {};
+    if (a.add || a.remove) patch.languages = languages;
+    if (a.base) Object.assign(patch, { baseLanguage: a.base, languages });
+    const next = Object.keys(patch).length ? await http('PATCH', `/api/apps/${id}`, patch) : app;
+    const r = next.languages.length ? await http('GET', `/api/apps/${id}/translations`) : { languages: [] };
+    return text([`Written in ${next.baseLanguage}.`, ...r.languages.map((l) => `${l.code} ${l.name}: ${l.done}/${l.total} slides translated`)].join('\n'));
+  }),
+);
+
+server.registerTool(
+  'translate',
+  {
+    title: 'Translations',
+    description:
+      'Read or write translations for one language. Without slides/creatives/hero it returns the base text next to the current translation of every slide, creative and hero badge. With them it saves those translations (slide by id or 1-based position; an empty string clears one). Keep the *asterisks* around the highlighted words and keep headlines about as short as the original; check with preview_slide and lang.',
+    inputSchema: {
+      app: appArg,
+      set: setArg,
+      lang: z.string().describe('Translation language code, e.g. de-DE'),
+      slides: z
+        .array(z.object({ slide: z.union([z.string(), z.number()]), headline: z.string().optional(), subtitle: z.string().optional() }))
+        .optional(),
+      creatives: z
+        .object({
+          header: z.object({ headline: z.string().optional(), subtitle: z.string().optional() }).optional(),
+          search: z.object({ headline: z.string().optional(), subtitle: z.string().optional() }).optional(),
+        })
+        .optional(),
+      hero: z.object({ badgeTitle: z.string().optional(), badgeCaption: z.string().optional() }).optional(),
+    },
+  },
+  wrap(async (a) => {
+    const id = await appId(a.app);
+    const write = a.slides || a.creatives || a.hero;
+    // The language is part of the route here, not ?lang=.
+    const scope = { set: a.set };
+    const r = write
+      ? await http('PUT', inSet(`/api/apps/${id}/translations/${enc(a.lang)}`, scope), { slides: a.slides, creatives: a.creatives, hero: a.hero })
+      : await http('GET', inSet(`/api/apps/${id}/translations?lang=${enc(a.lang)}`, scope));
+    const l = r.languages[0];
+    const lines = [`${l.name} (${l.code}): ${l.done}/${l.total} slides translated`];
+    for (const s of l.slides) {
+      lines.push(`${s.position}. ${s.base.headline}${s.base.subtitle ? ` | ${s.base.subtitle}` : ''}`);
+      lines.push(`   → ${s.translation.headline || '(missing)'}${s.base.subtitle ? ` | ${s.translation.subtitle || '(missing)'}` : ''}`);
+    }
+    for (const c of l.creatives) lines.push(`${c.creative}: ${c.base.headline}\n   → ${c.translation.headline || '(missing)'}`);
+    if (l.hero) lines.push(`hero badge: ${l.hero.base.badgeTitle} / ${l.hero.base.badgeCaption}\n   → ${l.hero.translation.badgeTitle || '(missing)'} / ${l.hero.translation.badgeCaption || '(missing)'}`);
     return text(lines.join('\n'));
   }),
 );

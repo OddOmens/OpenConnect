@@ -28,3 +28,12 @@ import '@fontsource/instrument-serif/400.css';
 import '@fontsource/instrument-serif/400-italic.css';
 import '@fontsource/bebas-neue/400.css';
 import '@fontsource/dm-serif-display/400.css';
+// Scripts the typefaces above don't cover, for translations (each loads only the characters in use).
+import '@fontsource-variable/noto-sans-jp';
+import '@fontsource-variable/noto-sans-sc';
+import '@fontsource-variable/noto-sans-tc';
+import '@fontsource-variable/noto-sans-kr';
+import '@fontsource-variable/noto-sans-arabic';
+import '@fontsource-variable/noto-sans-hebrew';
+import '@fontsource-variable/noto-sans-thai';
+import '@fontsource-variable/noto-sans-devanagari';

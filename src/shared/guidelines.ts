@@ -1,5 +1,6 @@
 import type { App, Creative, DeviceId, Slide } from './types';
 import { slideInDevice } from './devices';
+import { languageName, untranslated } from './locales';
 
 // Checks drawn from Apple's App Store asset best practices and screenshot specifications:
 // https://developer.apple.com/app-store/asset-best-practices/
@@ -47,6 +48,13 @@ export function checkSlide(slide: Slide): Issue[] {
   const lines = plain(slide.headline).split('\n').length;
   if (lines > 3) issues.push({ level: 'warn', message: 'More than three headline lines will crowd the screenshot.' });
   return issues;
+}
+
+/** A slide in a translation language: what still shows the base language. */
+export function checkTranslation(slide: Slide, lang: string | null): Issue[] {
+  if (!lang) return [];
+  const missing = untranslated(slide, lang);
+  return missing.length ? [{ level: 'warn', message: `No ${languageName(lang)} ${missing.join(' or ')} yet; the base text shows instead.` }] : [];
 }
 
 /** Product page header / search results: the same text rules, and one short phrase. */

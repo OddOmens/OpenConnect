@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { fontStack, headlineLineHeight, isRtl, viewLanguage } from '../shared/locales';
 import type { AnnotationStyle, App, DeviceId, Rect, Slide, Theme } from '../shared/types';
 import { paths, seedOf, type PathSpec } from './rough';
 import { StickerLayer } from './stickers';
@@ -8,9 +9,6 @@ import { paletteFor, slideTheme } from '../shared/presets';
 
 export const assetUrl = (appId: string, assetId: string) => `/api/apps/${appId}/assets/${assetId}`;
 
-export function fontStack(family: string) {
-  return family.startsWith('-') ? `${family}, system-ui, sans-serif` : `"${family}", -apple-system, system-ui, sans-serif`;
-}
 
 
 /** Hand-drawn marks on highlighted words; `color` is already resolved (theme color or highlight). */
@@ -20,38 +18,72 @@ export interface HeadlineMarks {
   u: number;
 }
 
-type Box = { x: number; y: number; w: number; h: number };
+/** One line's piece of the highlighted words: its text box, where the letters sit (baseline) and the text size. */
+type Box = { x: number; y: number; w: number; h: number; base: number; em: number };
+type MarkPath = PathSpec & { transform?: string; opacity?: number };
 
-/** rough.js shapes for one highlighted line fragment, in the headline's own pixel space. */
-function markPaths(b: Box, m: HeadlineMarks, seed: number): PathSpec[] {
+/** A straight stroke from x1 to x2 at y, round-capped, with the caps kept inside [x1, x2]. */
+function straight(x1: number, x2: number, y: number, color: string, width: number): MarkPath {
+  const inset = Math.min(width / 2, (x2 - x1) / 2);
+  return { d: `M${x1 + inset} ${y}L${x2 - inset} ${y}`, stroke: color, strokeWidth: width, fill: '' };
+}
+
+/** A rectangle with rounded corners as a path (r is clamped to half the height). */
+function roundRect(x: number, y: number, w: number, h: number, r: number) {
+  const k = Math.max(0, Math.min(r, h / 2, w / 2));
+  return `M${x + k} ${y}H${x + w - k}A${k} ${k} 0 0 1 ${x + w} ${y + k}V${y + h - k}A${k} ${k} 0 0 1 ${x + w - k} ${y + h}H${x + k}A${k} ${k} 0 0 1 ${x} ${y + h - k}V${y + k}A${k} ${k} 0 0 1 ${x + k} ${y}Z`;
+}
+
+/**
+ * The mark for one highlighted line fragment, in the headline's own pixel space. Underline, double and strike
+ * are straight lines placed from the baseline; circle, box, brackets and squiggle are hand-drawn with rough.js;
+ * the marker is a highlighter bar behind the words.
+ */
+function markPaths(b: Box, m: HeadlineMarks, seed: number): MarkPath[] {
   const pad = m.style.padding * m.u;
-  const o = { stroke: m.color, strokeWidth: Math.max(1, m.style.width * m.u), roughness: m.style.roughness, bowing: 1.4, seed };
-  const bottom = b.y + b.h * 0.92;
+  const sw = Math.max(1, m.style.width * m.u);
+  const o = { stroke: m.color, strokeWidth: sw, roughness: m.style.roughness, bowing: 1.4, seed };
+  // Underlines sit `pad` below the baseline (through descenders, like a pen line under the words).
+  const under = b.base + pad * 0.45 + sw / 2;
+  switch (m.style.kind) {
+    case 'underline':
+      return [straight(b.x, b.x + b.w, under, m.color, sw)];
+    case 'double': {
+      const gap = Math.max(sw * 0.8, b.em * 0.05);
+      return [straight(b.x, b.x + b.w, under, m.color, sw), straight(b.x, b.x + b.w, under + sw + gap, m.color, sw)];
+    }
+    case 'strike':
+      // Through the middle of the lowercase letters.
+      return [straight(b.x - pad * 0.2, b.x + b.w + pad * 0.2, b.base - b.em * 0.27, m.color, sw)];
+    case 'marker': {
+      const mk = m.style.marker;
+      const h = Math.max(1, mk.height * b.em);
+      const bottom = b.base + b.em * 0.12 - mk.lift * b.em;
+      const x = b.x - pad * 0.4;
+      const w = b.w + pad * 0.8;
+      const d = roundRect(x, bottom - h, w, h, (mk.radius * h) / 2);
+      const fill = { stroke: 'none', fill: m.color, fillStyle: 'solid', roughness: m.style.roughness, seed };
+      const shape: MarkPath[] = m.style.roughness < 0.3 ? [{ d, stroke: 'none', strokeWidth: 0, fill: m.color }] : paths((g) => [g.path(d, fill)], fill);
+      const transform = mk.tilt ? `rotate(${mk.tilt} ${x + w / 2} ${bottom - h / 2})` : undefined;
+      return shape.map((p) => ({ ...p, transform, opacity: mk.opacity }));
+    }
+  }
   return paths((g) => {
     switch (m.style.kind) {
-      case 'underline':
-        return [g.curve([[b.x - pad * 0.3, bottom], [b.x + b.w * 0.5, bottom + pad * 0.25], [b.x + b.w + pad * 0.3, bottom - pad * 0.15]], o)];
-      case 'double':
-        return [
-          g.curve([[b.x - pad * 0.3, bottom], [b.x + b.w * 0.5, bottom + pad * 0.2], [b.x + b.w + pad * 0.3, bottom - pad * 0.1]], o),
-          g.curve([[b.x, bottom + pad * 0.8], [b.x + b.w * 0.5, bottom + pad], [b.x + b.w + pad * 0.1, bottom + pad * 0.7]], o),
-        ];
       case 'circle':
         return [g.ellipse(b.x + b.w / 2, b.y + b.h / 2, b.w + pad * 2.2, b.h + pad * 1.4, o)];
       case 'box':
         return [g.rectangle(b.x - pad, b.y - pad * 0.3, b.w + pad * 2, b.h + pad * 0.6, o)];
-      case 'marker':
-        return [g.rectangle(b.x - pad * 0.4, b.y + b.h * 0.42, b.w + pad * 0.8, b.h * 0.5, { ...o, stroke: 'none', fill: m.color, fillStyle: 'solid' })];
-      case 'strike':
-        return [g.line(b.x - pad * 0.3, b.y + b.h * 0.56, b.x + b.w + pad * 0.3, b.y + b.h * 0.5, o)];
       case 'brackets':
         return [
           g.curve([[b.x - pad * 0.4, b.y], [b.x - pad, b.y + b.h * 0.15], [b.x - pad, b.y + b.h * 0.85], [b.x - pad * 0.4, b.y + b.h]], o),
           g.curve([[b.x + b.w + pad * 0.4, b.y], [b.x + b.w + pad, b.y + b.h * 0.15], [b.x + b.w + pad, b.y + b.h * 0.85], [b.x + b.w + pad * 0.4, b.y + b.h]], o),
         ];
       case 'squiggle': {
-        const n = Math.max(6, Math.round(b.w / (pad * 1.6 || 1)));
-        return [g.curve(Array.from({ length: n + 1 }, (_, i) => [b.x + (b.w * i) / n, bottom + (i % 2 ? pad * 0.35 : -pad * 0.15)] as [number, number]), o)];
+        // Waves about one stroke apart, centered where an underline would be.
+        const amp = Math.max(sw * 0.9, b.em * 0.045);
+        const n = Math.max(4, Math.round(b.w / Math.max(amp * 3.2, 1)));
+        return [g.curve(Array.from({ length: n + 1 }, (_, i) => [b.x + (b.w * i) / n, under + amp + (i % 2 ? amp : -amp)] as [number, number]), { ...o, bowing: 0 })];
       }
       default:
         return [];
@@ -67,6 +99,7 @@ export function Headline({ text, accent, marks }: { text: string; accent: string
   const parts = text.replace(/\\n/g, '\n').split(/(\*[^*]+\*)/g);
   const ref = useRef<HTMLSpanElement>(null);
   const [boxes, setBoxes] = useState<Box[]>([]);
+  const remeasure = useRef<(() => void) | null>(null);
   const kind = marks?.style.kind ?? 'none';
   const on = kind !== 'none';
 
@@ -78,18 +111,37 @@ export function Headline({ text, accent, marks }: { text: string; accent: string
     const measure = () => {
       const hr = host.getBoundingClientRect();
       const scale = hr.width / (host.offsetWidth || 1) || 1;
+      // Where the baseline sits below the top of a text box in this font: a zero-size inline-block after an
+      // "x" rests on the baseline. Same font and size for every highlighted word, so measure once.
+      const probe = document.createElement('span');
+      probe.style.cssText = 'position:absolute;left:0;top:0;visibility:hidden;white-space:nowrap';
+      probe.innerHTML = '<span>x<span style="display:inline-block;width:0;height:0"></span></span>';
+      root.appendChild(probe);
+      const line = probe.firstElementChild!;
+      const ascent = (line.lastElementChild!.getBoundingClientRect().bottom - line.getBoundingClientRect().top) / scale;
+      const em = parseFloat(getComputedStyle(line).fontSize) || 16;
+      probe.remove();
       const out: Box[] = [];
       root.querySelectorAll('[data-mark]').forEach((el) => {
-        for (const r of el.getClientRects()) out.push({ x: (r.left - hr.left) / scale, y: (r.top - hr.top) / scale, w: r.width / scale, h: r.height / scale });
+        for (const r of el.getClientRects()) {
+          const y = (r.top - hr.top) / scale;
+          out.push({ x: (r.left - hr.left) / scale, y, w: r.width / scale, h: r.height / scale, base: y + ascent, em });
+        }
       });
       setBoxes((prev) => (JSON.stringify(prev) === JSON.stringify(out) ? prev : out));
     };
+    remeasure.current = measure;
     measure();
     document.fonts?.ready.then(measure);
     const ro = new ResizeObserver(measure);
     ro.observe(host);
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      remeasure.current = null;
+    };
   }, [on, text]);
+  // A new typeface, weight or spacing moves the words without resizing anything: check again after each render.
+  useLayoutEffect(() => remeasure.current?.());
 
   const recolor = !on || marks!.style.recolor;
   return (
@@ -104,7 +156,8 @@ export function Headline({ text, accent, marks }: { text: string; accent: string
                 stroke={p.stroke}
                 strokeWidth={p.strokeWidth}
                 fill={p.fill || 'none'}
-                opacity={kind === 'marker' ? 0.4 : 1}
+                opacity={p.opacity}
+                transform={p.transform}
                 strokeLinecap="round"
               />
             )),
@@ -185,6 +238,7 @@ export function SlideView({ app, slide, device, editing, sizeKey }: Props) {
 
   const textBlock = (width?: number | string, header?: ReactNode) => (
     <div
+      dir={isRtl(app.activeLang) ? 'rtl' : undefined}
       style={{
         // Text position: moves the headline block up (−) or down (+) without moving the screenshot.
         transform: t.textOffsetY ? `translateY(${t.textOffsetY * u}px)` : undefined,
@@ -193,7 +247,8 @@ export function SlideView({ app, slide, device, editing, sizeKey }: Props) {
         width: width ?? '100%',
         boxSizing: 'border-box',
         padding: `0 ${padX}px`,
-        textAlign: align,
+        // 'start' is the right edge in Arabic and Hebrew.
+        textAlign: align === 'center' ? 'center' : 'start',
         display: 'flex',
         flexDirection: 'column',
         alignItems: align === 'center' ? 'center' : 'flex-start',
@@ -209,7 +264,7 @@ export function SlideView({ app, slide, device, editing, sizeKey }: Props) {
           isolation: 'isolate',
           fontSize: t.headlineSize * u * ts * (hero ? 1.12 : 1),
           fontWeight: t.headlineWeight,
-          lineHeight: t.lineHeight,
+          lineHeight: headlineLineHeight(t.lineHeight, app.activeLang),
           letterSpacing: `${t.letterSpacing}em`,
           color: pal.textColor,
           whiteSpace: 'pre-line',
@@ -301,12 +356,13 @@ export function SlideView({ app, slide, device, editing, sizeKey }: Props) {
 
   return (
     <div
+      lang={viewLanguage(app)}
       style={{
         width: W,
         height: H,
         position: 'relative',
         overflow: 'hidden',
-        fontFamily: fontStack(t.fontFamily),
+        fontFamily: fontStack(t.fontFamily, app.activeLang),
         WebkitFontSmoothing: 'antialiased',
         background: pal.background.color,
       }}

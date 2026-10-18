@@ -35,7 +35,7 @@ export async function download(url, file) {
 
 /** Download preview PNGs into a temp folder; returns the result with local paths. */
 export async function fetchPreviews(base, appId, r) {
-  // The server's preview folder names the app and, for a non-primary set, the set.
+  // The server's preview folder names the app and, when not the defaults, the set and the language.
   const folder = r.files[0]?.url?.split('/')[2] ?? appId;
   const dir = path.join(os.tmpdir(), 'openappshot', 'previews', folder);
   fs.rmSync(dir, { recursive: true, force: true });

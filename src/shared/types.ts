@@ -77,10 +77,26 @@ export interface AnnotationStyle {
   width: number;
   /** 0 = clean lines, 3 = very sketchy */
   roughness: number;
-  /** space around the words, units */
+  /** space around the words, units (for underlines: the gap below the letters) */
   padding: number;
   /** also color the words with the highlight color */
   recolor: boolean;
+  /** the highlighter, for kind 'marker' */
+  marker: MarkerStyle;
+}
+
+/** A highlighter stroke behind the words. Sizes are shares of the headline's text size. */
+export interface MarkerStyle {
+  /** 0–1 */
+  opacity: number;
+  /** 0.15 is a thin stripe under the words, 1.1 covers them */
+  height: number;
+  /** moves it up (+) or down (−) */
+  lift: number;
+  /** corners: 0 square, 1 fully round ends */
+  radius: number;
+  /** degrees; negative rises to the right */
+  tilt: number;
 }
 
 /** Soft light behind the screenshot. */
@@ -140,6 +156,8 @@ export interface HeroStyle {
   lockup: boolean;
   /** device rotation in degrees; negative leans left */
   tilt: number;
+  /** badge text per translation language (see locales.ts); missing keys use the text above */
+  locales: Record<string, { badgeTitle?: string; badgeCaption?: string }>;
 }
 
 /** Every visual setting lives here and applies to all slides of the app, unless a slide overrides it. */
@@ -205,11 +223,22 @@ export interface Slide {
   style?: StyleOverride | null;
   /** emoji and doodles placed on this slide */
   stickers: Sticker[];
+  /** translations, by language code (see locales.ts); anything missing uses the base language */
+  locales: Record<string, SlideLocale>;
 }
 
-export type EmojiStyle = '3d' | 'color' | 'flat';
+/** One slide in one translation language. */
+export interface SlideLocale {
+  headline?: string;
+  subtitle?: string;
+  /** screenshots taken in this language, per device; missing ones use the base screenshots */
+  shots?: Partial<Record<DeviceId, string | null>>;
+}
 
-/** An emoji (Fluent Emoji, bundled in vendor/) or a hand-drawn doodle placed on a slide. */
+/** 'apple' is cut from an emoji font the user installs in <data>/fonts (Apple Color Emoji can't be bundled). */
+export type EmojiStyle = '3d' | 'color' | 'flat' | 'apple';
+
+/** An emoji (Fluent Emoji bundled in vendor/, or the installed emoji font) or a hand-drawn doodle placed on a slide. */
 export interface Sticker {
   id: string;
   kind: 'emoji' | 'doodle';
@@ -302,6 +331,8 @@ export interface Creative {
   shotScale: number;
   /** own background; null uses the app's colors */
   background: Background | null;
+  /** text per translation language (see locales.ts); missing keys use the text above */
+  locales: Record<string, { headline?: string; subtitle?: string }>;
 }
 
 /**
@@ -339,6 +370,12 @@ export interface App {
   sets: ScreenshotSet[];
   /** set this object shows when it's a view of a non-primary set (see setView); never saved */
   activeSet?: string;
+  /** language the slides are written in, an App Store Connect code like en-US */
+  baseLanguage: string;
+  /** translation languages, shared by every set (see locales.ts) */
+  languages: string[];
+  /** language this object shows when it's a translated view (see localize); never saved */
+  activeLang?: string;
   assets: Record<string, Asset>;
   createdAt: string;
   updatedAt: string;

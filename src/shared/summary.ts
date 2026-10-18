@@ -3,7 +3,8 @@ import { CREATIVE_IDS } from './types';
 import { CREATIVES, creativeShots } from './creatives';
 import { PRIMARY_SET, setList, setName, type SetSummary } from './sets';
 import { DEVICES, canvasSize, exportSizes, slideInDevice } from './devices';
-import { checkCreative, checkDevice, checkSlide, SEARCH_RESULT_SLOTS, type Issue } from './guidelines';
+import { checkCreative, checkDevice, checkSlide, checkTranslation, SEARCH_RESULT_SLOTS, type Issue } from './guidelines';
+import { languageName, translationProgress, untranslated, viewLanguage } from './locales';
 
 /**
  * A clean, self-describing record of one app's screenshot set: what Claude (or anything else) reads to
@@ -19,6 +20,12 @@ export interface AppData {
   set: { id: string; name: string; primary: boolean };
   /** every set of the app (pass ?set= / --set to read another) */
   sets: SetSummary[];
+  /** the language this record shows (pass ?lang= / --lang for a translation), and every translation's progress */
+  languages: {
+    current: { code: string; name: string };
+    base: { code: string; name: string };
+    translations: { code: string; name: string; done: number; total: number }[];
+  };
   hasIcon: boolean;
   profile: AppProfile;
   /** app-wide look; applies to every slide */
@@ -115,6 +122,8 @@ export interface SlideData {
   styleOverrides: Slide['style'];
   /** emoji and doodle stickers on the slide */
   stickers: Slide['stickers'];
+  /** in a translation: base-language text still showing because it isn't translated yet */
+  untranslated?: ('headline' | 'subtitle')[];
   /** part of each device's screenshot lifted out as a callout, in that screenshot's pixels */
   callouts: Partial<Record<DeviceId, { x: number; y: number; width: number; height: number }>>;
   /** can appear in App Store search results (first three exported screenshots) */
@@ -167,6 +176,7 @@ export function buildAppData(app: App, baseUrl = ''): AppData {
     role: s.role ?? 'standard',
     styleOverrides: s.style ?? null,
     stickers: s.stickers ?? [],
+    ...(app.activeLang ? { untranslated: untranslated(s, app.activeLang) } : {}),
     callouts: Object.fromEntries(
       app.devices.flatMap((d) => {
         const c = s.callouts?.[d];
@@ -180,7 +190,7 @@ export function buildAppData(app: App, baseUrl = ''): AppData {
       const p = order[d].indexOf(s.id);
       return p >= 0 && p < SEARCH_RESULT_SLOTS;
     }),
-    issues: checkSlide(s),
+    issues: [...checkSlide(s), ...checkTranslation(s, app.activeLang ?? null)],
     screenshots: Object.fromEntries(app.devices.map((d) => [d, shot(s.shots[d])])),
   }));
 
@@ -198,6 +208,11 @@ export function buildAppData(app: App, baseUrl = ''): AppData {
     updatedAt: app.updatedAt,
     set: { id: app.activeSet ?? PRIMARY_SET, name: setName(app), primary: !app.activeSet },
     sets: setList(app),
+    languages: {
+      current: { code: viewLanguage(app), name: languageName(viewLanguage(app)) },
+      base: { code: app.baseLanguage, name: languageName(app.baseLanguage) },
+      translations: translationProgress(app),
+    },
     hasIcon: !!app.iconAssetId,
     profile: app.profile,
     style: {

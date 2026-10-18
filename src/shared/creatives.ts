@@ -51,6 +51,7 @@ export function newCreative(id: CreativeId, partial: Partial<Creative> = {}): Cr
     shots: [],
     shotScale: id === 'header' ? 1.4 : 1.1,
     background: null,
+    locales: {},
     ...partial,
   };
 }

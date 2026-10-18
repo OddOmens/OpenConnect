@@ -17,9 +17,26 @@ interface EmojiEntry {
   styles: string[];
 }
 
+interface EmojiData {
+  available: boolean;
+  groups: string[];
+  /** emoji font installed in <data>/fonts (Apple Color Emoji), which adds the 'apple' look */
+  font: { source: string; count: number } | null;
+  fontError?: string;
+  emoji: EmojiEntry[];
+}
+
 // The emoji index is fetched once per session; it's ~1,600 entries.
-let emojiCache: Promise<{ available: boolean; groups: string[]; emoji: EmojiEntry[] }> | null = null;
-const loadEmoji = () => (emojiCache ??= fetch('/api/emoji').then((r) => r.json()));
+let emojiCache: Promise<EmojiData> | null = null;
+const loadEmoji = () => (emojiCache ??= fetch('/api/emoji').then((r) => r.json() as Promise<EmojiData>));
+
+const LOOKS: { value: EmojiStyle; label: string; title?: string }[] = [
+  { value: 'apple', label: 'Apple', title: 'From the Apple Color Emoji font you installed' },
+  { value: '3d', label: '3D', title: 'Best up to medium sizes' },
+  { value: 'color', label: 'Color', title: 'Sharp at any size' },
+  { value: 'flat', label: 'Flat' },
+];
+const looks = (font: boolean) => LOOKS.filter((l) => l.value !== 'apple' || font);
 
 const newId = () => Math.random().toString(36).slice(2, 10);
 
@@ -29,11 +46,15 @@ export function StickerPanel({ app, slide, device, actions }: { app: App; slide:
   const [picking, setPicking] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
+  const [apple, setApple] = useState<Set<string> | null>(null);
   const save = (next: Sticker[]) => actions.patchSlide(slide.id, { stickers: next });
   const update = (id: string, p: Partial<Sticker>) => save(stickers.map((s) => (s.id === id ? { ...s, ...p } : s)));
 
   useEffect(() => {
-    loadEmoji().then((d) => setNames(Object.fromEntries(d.emoji.map((e: EmojiEntry) => [e.slug, e.name]))));
+    loadEmoji().then((d) => {
+      setNames(Object.fromEntries(d.emoji.map((e) => [e.slug, e.name])));
+      if (d.font) setApple(new Set(d.emoji.filter((e) => e.styles.includes('apple')).map((e) => e.slug)));
+    });
   }, []);
 
   const add = (s: Omit<Sticker, 'id' | 'x' | 'y' | 'rotation' | 'layer' | 'opacity' | 'flip' | 'color'>) => {
@@ -86,11 +107,7 @@ export function StickerPanel({ app, slide, device, actions }: { app: App; slide:
             <Field group label="Look">
               <Segmented<EmojiStyle>
                 value={current.style}
-                options={[
-                  { value: '3d', label: '3D', title: 'Best up to medium sizes' },
-                  { value: 'color', label: 'Color', title: 'Sharp at any size' },
-                  { value: 'flat', label: 'Flat' },
-                ]}
+                options={looks(!!apple?.has(current.ref) || current.style === 'apple')}
                 onChange={(v) => update(current.id, { style: v })}
               />
             </Field>
@@ -215,10 +232,12 @@ function StickerPlacer({
 /** Emoji (3D, Color or Flat) and doodles, searchable. */
 function StickerPicker({ onPick, onClose }: { onPick: (s: Pick<Sticker, 'kind' | 'ref' | 'style' | 'size'>) => void; onClose: () => void }) {
   const [tab, setTab] = useState<'emoji' | 'doodle'>('emoji');
-  const [style, setStyle] = useState<EmojiStyle>('3d');
+  const [style, setStyle] = useState<EmojiStyle | null>(null);
   const [q, setQ] = useState('');
   const [group, setGroup] = useState('');
-  const [data, setData] = useState<{ available: boolean; groups: string[]; emoji: EmojiEntry[] } | null>(null);
+  const [data, setData] = useState<EmojiData | null>(null);
+  // Apple's emoji when they're installed, else 3D.
+  const look: EmojiStyle = style ?? (data?.font ? 'apple' : '3d');
   const [limit, setLimit] = useState(240);
   useEffect(() => {
     loadEmoji().then(setData);
@@ -228,9 +247,12 @@ function StickerPicker({ onPick, onClose }: { onPick: (s: Pick<Sticker, 'kind' |
     if (!data) return [];
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
     return data.emoji.filter(
-      (e) => (!group || e.group === group) && words.every((w) => `${e.name} ${e.keywords.join(' ')}`.toLowerCase().includes(w)),
+      (e) =>
+        (!group || e.group === group) &&
+        (look !== 'apple' || e.styles.includes('apple')) &&
+        words.every((w) => `${e.name} ${e.keywords.join(' ')}`.toLowerCase().includes(w)),
     );
-  }, [data, q, group]);
+  }, [data, q, group, look]);
 
   return (
     <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -260,15 +282,7 @@ function StickerPicker({ onPick, onClose }: { onPick: (s: Pick<Sticker, 'kind' |
                   <Search size={14} />
                   <input autoFocus placeholder="Search emoji (fire, rocket, mic…)" value={q} onChange={(e) => setQ(e.target.value)} />
                 </label>
-                <Segmented<EmojiStyle>
-                  value={style}
-                  options={[
-                    { value: '3d', label: '3D' },
-                    { value: 'color', label: 'Color' },
-                    { value: 'flat', label: 'Flat' },
-                  ]}
-                  onChange={setStyle}
-                />
+                <Segmented<EmojiStyle> value={look} options={looks(!!data?.font)} onChange={setStyle} />
               </div>
               <div className="chip-row">
                 {['', ...(data?.groups ?? [])].map((g) => (
@@ -279,8 +293,8 @@ function StickerPicker({ onPick, onClose }: { onPick: (s: Pick<Sticker, 'kind' |
               </div>
               <div className="sticker-grid">
                 {hits.slice(0, limit).map((e) => (
-                  <button key={e.slug} title={e.name} onClick={() => onPick({ kind: 'emoji', ref: e.slug, style, size: 200 })}>
-                    <img src={emojiUrl(e.slug, style)} alt={e.name} loading="lazy" width={44} height={44} />
+                  <button key={e.slug} title={e.name} onClick={() => onPick({ kind: 'emoji', ref: e.slug, style: look, size: 200 })}>
+                    <img src={emojiUrl(e.slug, look)} alt={e.name} loading="lazy" width={44} height={44} />
                   </button>
                 ))}
               </div>
@@ -289,7 +303,17 @@ function StickerPicker({ onPick, onClose }: { onPick: (s: Pick<Sticker, 'kind' |
                   Show more ({hits.length - limit})
                 </button>
               )}
-              <p className="muted small">Fluent Emoji by Microsoft, MIT licensed. Bundled locally.</p>
+              {look === 'apple' ? (
+                <p className="muted small">Apple emoji from your {data?.font?.source}. Not bundled with OpenAppShot.</p>
+              ) : (
+                <p className="muted small">
+                  Fluent Emoji by Microsoft, MIT licensed. Bundled locally.
+                  {!data?.font &&
+                    (data?.fontError
+                      ? ` Emoji font: ${data.fontError}.`
+                      : ' For Apple’s emoji, copy “Apple Color Emoji.ttc” from a Mac (/System/Library/Fonts) into the fonts folder of the OpenAppShot data directory and restart.')}
+                </p>
+              )}
             </>
           )
         ) : (

@@ -120,6 +120,41 @@ appshot set-rename . "Bold blue" "Blue"; appshot set-rm . "Blue"
 Never change the primary set when the user asked to try something — make a set for it. MCP tools take `set`;
 `manage_sets` lists/creates/renames/deletes/promotes.
 
+### Languages (localized screenshots)
+
+Slides are written in the app's base language (default en-US). Each translation language gets its own
+headlines, subtitles, product page text and hero badge text, and optionally its own screenshots (the app running
+in that language); the design, stickers and callouts are shared. Codes are App Store Connect localizations
+(de-DE, fr-FR, es-ES, es-MX, ja, ko, zh-Hans, zh-Hant, pt-BR, it, nl-NL, sv, ar-SA, he…). `--lang <code>` works
+on any command, like `--in`. Untranslated text falls back to the base language (and is flagged).
+
+```bash
+appshot languages . --add de-DE,ja,fr-FR          # also --rm, --base
+appshot translations . de-DE                      # base text next to each translation, what's missing
+appshot translate . de-DE de.json                 # many at once (see below); "-" reads stdin
+appshot slide . 2 --lang de-DE --headline "Jeden Euro\n*im Blick*"
+appshot creative . header --lang de-DE --headline "Dein *Geld*, geordnet"
+appshot update . --lang de-DE --badge-title "4,9 Sterne"
+appshot shot . 2 shot-de.png --device iphone --lang de-DE   # a screenshot taken in German (or add/capture --lang)
+appshot preview . --lang de-DE                    # look at it
+appshot export .                                  # every language, a folder each; --lang de-DE,ja for some
+```
+
+`de.json`: `{"slides": [{"slide": 1, "headline": "…", "subtitle": "…"}], "creatives": {"header": {"headline": "…"}},
+"hero": {"badgeTitle": "…", "badgeCaption": "…"}}` (a bare array means slides).
+
+When translating:
+- Write for the store in that country, not word for word: the same pitch, idiomatic, as short as the original.
+  German and French run ~30% longer; shorten rather than shrink the type. Use the formal/informal register the
+  app itself uses (check the profile notes, or ask).
+- Keep the `*asterisks*` on the words that carry the point (they may move), and keep `\n` breaks sensible.
+- Run the same Apple checks (no prices, no other platforms) and keep numbers in local format (4,9 / 4.9).
+- Then **preview every language** and read the images: watch for headlines that wrap to too many lines.
+  Japanese, Chinese, Korean, Arabic, Hebrew, Thai and Hindi are drawn with bundled Noto fonts; Arabic and
+  Hebrew run right to left automatically.
+- Remember choices (tone, terms not to translate) in the profile notes. MCP: `languages`, `translate`, and `lang`
+  on get_app, update_slide, update_creative, set_screenshot, preview_slide and export (`languages`).
+
 ## Hero slide and callouts
 
 ```bash
@@ -160,12 +195,16 @@ Stickers, headline marks and decorations:
 
 ```bash
 appshot emoji rocket                         # find emoji slugs
-appshot sticker . 1 add rocket --x 0.84 --y 0.13 --size 220 --rotate 12          # 3D emoji (--style color|flat)
+appshot sticker . 1 add rocket --x 0.84 --y 0.13 --size 220 --rotate 12          # 3D emoji (--style color|flat|apple)
 appshot sticker . 1 add arrow-curve --doodle --x 0.2 --y 0.2 --rotate 150 --color "#ffffff"
 appshot sticker . 1 list; appshot sticker . 1 set 2 --layer back; appshot sticker . 1 rm 1
-appshot update . --mark circle --mark-width 7          # hand-drawn marks on *highlighted* words
+appshot update . --mark circle --mark-width 7          # marks on *highlighted* words (underline/double/strike are straight)
+appshot update . --mark marker --marker-opacity 35 --marker-height 0.5 --marker-round 1   # highlighter; --marker-position, --marker-tilt
 appshot update . --decor waves --panorama on --decor-opacity 0.6 --shuffle-decor
 ```
+
+`--style apple` (Apple's emoji) works only when `appshot emoji` prints "Styles: … apple"; prefer it then, since it
+matches what users see on their iPhone. Keep Apple emoji at size 250 or less (160 px bitmaps).
 
 Use stickers sparingly: one or two per slide, near the corners, never covering the headline or the key UI. Pick
 emoji that match the slide's point (🔒 privacy, ⚡ speed, 🎙️ voice). Arrows work best pointing from the headline
@@ -263,7 +302,8 @@ appshot export . --device iphone,ipad --out ~/Desktop/AppStore
 ```
 
 Each device renders every export size chosen in the editor (App tab), natively, into
-`<device>/<W>x<H>/NN-headline.png`, plus a zip. Defaults follow App Store Connect's current requirements:
+`<device>/<W>x<H>/NN-headline.png`, plus a zip. With translations, each language gets a folder:
+`<lang>/<device>/<W>x<H>/…` (same file names in every language); the output lists slides that weren't translated. Defaults follow App Store Connect's current requirements:
 iPhone Large 1320×2868 **and** Medium 1206×2622 (Medium is required), iPhone Duo inner 2007×2853
 (required from April 2027 for iOS 27.1 SDK apps), iPad 13" 2064×2752, Mac 2880×1800. Landscape sizes are
 available too.

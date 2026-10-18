@@ -7,6 +7,7 @@ import { AppRail } from './components/AppRail';
 import { Topbar } from './components/Topbar';
 import { SetsBoard } from './components/SetsBoard';
 import { PRIMARY_SET, setList, setView } from './shared/sets';
+import { localize, localizeAppPatch, localizeSlidePatch } from './shared/locales';
 import { CreativesBoard } from './components/CreativesBoard';
 import { Inspector, type InspectorTab } from './components/Inspector';
 import { ExportDialog } from './components/ExportDialog';
@@ -36,6 +37,7 @@ const readParams = () => {
     device: device === 'product-page' ? null : (device as DeviceId | null),
     productPage: device === 'product-page',
     set: p.get('set') ?? PRIMARY_SET,
+    lang: p.get('lang'),
   };
 };
 
@@ -49,6 +51,8 @@ export function Editor() {
   const [creative, setCreative] = useState<CreativeId | null>(null);
   // The screenshot set being edited; Slide and Style tabs work on it.
   const [activeSet, setActiveSet] = useState<string>(() => readParams().set);
+  // The translation language being edited; null is the base language the slides are written in.
+  const [lang, setLang] = useState<string | null>(() => readParams().lang);
   const [tab, setTab] = useState<InspectorTab>('slide');
   const [exporting, setExporting] = useState(false);
   const [toast, setToast] = useState<{ msg: string; key: number } | null>(null);
@@ -125,8 +129,15 @@ export function Editor() {
     url.searchParams.set('device', productPage ? 'product-page' : device);
     if (activeSet === PRIMARY_SET) url.searchParams.delete('set');
     else url.searchParams.set('set', activeSet);
+    if (lang) url.searchParams.set('lang', lang);
+    else url.searchParams.delete('lang');
     history.replaceState(null, '', url);
-  }, [appId, device, productPage, activeSet]);
+  }, [appId, device, productPage, activeSet, lang]);
+
+  // Back to the base language when this app doesn't have the one being edited.
+  useEffect(() => {
+    if (app && lang && !app.languages.includes(lang)) setLang(null);
+  }, [app, lang]);
 
   // Fall back to the primary set when the active one is gone (deleted, or another app).
   useEffect(() => {
@@ -210,7 +221,9 @@ export function Editor() {
   /** Actions on one screenshot set; every row of the canvas and the inspector get their set's. */
   const actionsFor = (setId: string): EditorActions => ({
     notify,
-    patchApp: (patch) => {
+    patchApp: (raw) => {
+      // While translating, creative and badge text goes to that language.
+      const patch = localizeAppPatch(raw as Record<string, unknown>, lang);
       // Theme and creatives belong to the set; everything else (name, profile, devices…) is shared.
       const { preset, theme, creatives, ...shared } = patch as { preset?: string; theme?: unknown; creatives?: unknown };
       setApp((a) => {
@@ -223,7 +236,9 @@ export function Editor() {
       });
       queue(`app|${setId}`, patch);
     },
-    patchSlide: (slideId, patch) => {
+    patchSlide: (slideId, raw) => {
+      // While translating, headline, subtitle and screenshots go to that language.
+      const patch = localizeSlidePatch(raw as Record<string, unknown>, lang);
       setApp((a) => a && withSet(a, setId, (p) => ({ slides: p.slides.map((s) => (s.id === slideId ? deepMerge(s, patch) : s)) })));
       queue(`slide|${setId}|${slideId}`, patch);
     },
@@ -249,12 +264,12 @@ export function Editor() {
       }, 'Slide deleted'),
     ingest: (files) =>
       run(async () => {
-        const r = await api.ingest(app!.id, files, undefined, setId);
+        const r = await api.ingest(app!.id, files, undefined, setId, lang);
         const placed = r.placed.length;
         if (r.skipped.length) notify(`Added ${placed}. Skipped ${r.skipped.map((s) => `${s.name}: ${s.reason}`).join('; ')}`);
         else notify(`Added ${placed} screenshot${placed === 1 ? '' : 's'}`);
       }),
-    setShot: (slideId, files) => run(() => api.setShot(app!.id, slideId, device, files[0], setId), 'Screenshot replaced'),
+    setShot: (slideId, files) => run(() => api.setShot(app!.id, slideId, device, files[0], setId, lang), lang ? 'Screenshot replaced for this language' : 'Screenshot replaced'),
     setIcon: (file) => run(() => api.setIcon(app!.id, file), 'Icon updated'),
     uploadBackground: async (file) => {
       try {
@@ -331,9 +346,13 @@ export function Editor() {
     refreshApps();
   };
 
-  // The app as the active set sees it.
-  const view = app ? setView(app, setList(app).some((x) => x.id === activeSet) && activeSet !== PRIMARY_SET ? activeSet : null) : null;
+  // The app in the language being edited, and as the active set sees it.
+  const setRef = app && setList(app).some((x) => x.id === activeSet) && activeSet !== PRIMARY_SET ? activeSet : null;
+  const shown = app ? localize(app, lang) : null;
+  const view = shown ? setView(shown, setRef) : null;
   const selectedSlide = view?.slides.find((s) => s.id === selected) ?? null;
+  // The same slide as written in the base language, shown next to a translation.
+  const baseSlide = app && lang ? (setView(app, setRef).slides.find((s) => s.id === selected) ?? null) : null;
 
   return (
     <div className="shell" data-left={panels.left ? 'open' : 'closed'} data-right={panels.right && app ? 'open' : 'closed'}>
@@ -349,7 +368,7 @@ export function Editor() {
         layers={
           app && !productPage
             ? {
-                app,
+                app: shown!,
                 activeSet,
                 selected,
                 onSelect: (setId, id) => {
@@ -376,6 +395,12 @@ export function Editor() {
               onProductPage={() => setProductPage(true)}
               zoom={zoom}
               onZoom={setZoom}
+              lang={lang}
+              onLang={setLang}
+              onAddLanguage={() => {
+                setTab('app');
+                setPanels((p) => ({ ...p, right: true }));
+              }}
               onExport={() => setExporting(true)}
               panels={{
                 ...panels,
@@ -405,7 +430,7 @@ export function Editor() {
               />
             ) : (
               <SetsBoard
-                app={app}
+                app={shown!}
                 device={device}
                 zoom={canvasZoom}
                 activeSet={activeSet}
@@ -426,6 +451,7 @@ export function Editor() {
             app={view!}
             device={device}
             slide={selectedSlide}
+            baseSlide={baseSlide}
             productPage={productPage}
             creative={creative}
             tab={tab}
@@ -433,7 +459,7 @@ export function Editor() {
             actions={actions}
           />
           )}
-          {exporting && <ExportDialog app={view!} device={device} onClose={() => setExporting(false)} />}
+          {exporting && <ExportDialog app={setView(app, setRef)} device={device} onClose={() => setExporting(false)} />}
         </>
       ) : (
         <Welcome hasApps={!!apps?.length} onCreate={createApp} loading={apps === null} />

@@ -6,13 +6,16 @@ import { CREATIVES } from '../shared/creatives';
 import { setName } from '../shared/sets';
 import { DEVICES, exportSizes, slideInDevice } from '../shared/devices';
 import { api } from '../api';
+import { languageName, untranslated } from '../shared/locales';
 
 export function ExportDialog({ app, device, onClose }: { app: App; device: DeviceId; onClose: () => void }) {
   const [devices, setDevices] = useState<DeviceId[]>([device]);
   const [creatives, setCreatives] = useState<CreativeId[]>(() => CREATIVE_IDS.filter((c) => app.creatives[c].enabled));
   const [sizes, setSizes] = useState(() => Object.fromEntries(app.devices.map((d) => [d, exportSizes(app, d)])) as Record<DeviceId, string[]>);
+  const all = [app.baseLanguage, ...app.languages];
+  const [languages, setLanguages] = useState<string[]>(all);
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ dir: string; zipUrl: string | null; files: unknown[]; creatives?: unknown[] } | null>(null);
+  const [result, setResult] = useState<{ dir: string; zipUrl: string | null; files: unknown[]; creatives?: unknown[]; untranslated?: { language: string; position: number }[] } | null>(null);
   const [error, setError] = useState('');
 
   const count = (d: DeviceId) =>
@@ -22,7 +25,7 @@ export function ExportDialog({ app, device, onClose }: { app: App; device: Devic
     setBusy(true);
     setError('');
     try {
-      const r = await api.export(app.id, { devices, sizes, creatives }, app.activeSet);
+      const r = await api.export(app.id, { devices, sizes, creatives, languages: app.languages.length ? languages : undefined }, app.activeSet);
       setResult(r);
       if (r.zipUrl) {
         const a = document.createElement('a');
@@ -100,17 +103,49 @@ export function ExportDialog({ app, device, onClose }: { app: App; device: Devic
             </div>
           </div>
         )}
+        {app.languages.length > 0 && (
+          <div className="export-devices">
+            <div className="export-device">
+              <strong>Languages</strong>
+              <span className="muted small">One folder per language</span>
+              <div className="export-sizes">
+                {all.map((l) => {
+                  const todo = l === app.baseLanguage ? 0 : app.slides.filter((s) => untranslated(s, l).length).length;
+                  return (
+                    <label key={l} className="check">
+                      <input
+                        type="checkbox"
+                        checked={languages.includes(l)}
+                        onChange={(e) => setLanguages((x) => (e.target.checked ? [...x, l] : x.filter((y) => y !== l)))}
+                      />
+                      {languageName(l)}
+                      {todo > 0 && <span className="muted small"> · {todo} untranslated</span>}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
         {error && <p className="error">{error}</p>}
         {result && (
           <p className="success">
             Saved {result.files.length + (result.creatives?.length ?? 0)} files to <code>{result.dir}</code>
           </p>
         )}
+        {!!result?.untranslated?.length && (
+          <p className="muted small">
+            Base-language text was used where a translation is missing:{' '}
+            {[...new Set(result.untranslated.map((u) => u.language))]
+              .map((l) => `${languageName(l)} (slides ${result.untranslated!.filter((u) => u.language === l).map((u) => u.position).join(', ')})`)
+              .join('; ')}
+          </p>
+        )}
         <footer className="row end">
           <button className="btn ghost" onClick={onClose}>
             {result ? 'Done' : 'Cancel'}
           </button>
-          <button className="btn primary" onClick={run} disabled={busy || ((!devices.length || devices.every((d) => !count(d) || !sizes[d]?.length)) && !creatives.length)}>
+          <button className="btn primary" onClick={run} disabled={busy || (app.languages.length > 0 && !languages.length) || ((!devices.length || devices.every((d) => !count(d) || !sizes[d]?.length)) && !creatives.length)}>
             <Download size={15} /> {busy ? 'Rendering…' : 'Export and download zip'}
           </button>
         </footer>

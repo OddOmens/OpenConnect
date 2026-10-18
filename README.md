@@ -52,8 +52,14 @@ display scaling (common on Linux) and 100% where the OS already scales.
 - **Stickers** (Slide tab): 1,600 3D / Color / Flat emoji (Microsoft Fluent Emoji, MIT) and 21 hand-drawn
   doodles (arrows, circles, stars, sparkles, squiggles…). Search, then drag them into place on the slide preview,
   size, rotate, flip, fade, and put them behind or in front of the screenshot.
-- **Headline marks** (Style): hand-drawn underline, double underline, circle, box, marker, strike, brackets or
-  squiggle on the `*highlighted*` words, with thickness, sketchiness and color.
+  **Apple emoji**: Apple's artwork can't be bundled, but you can bring your own. Copy
+  `/System/Library/Fonts/Apple Color Emoji.ttc` from a Mac into `fonts/` in the data directory (`./data/fonts`
+  with Docker, `~/.openappshot/fonts` otherwise) and restart. The server cuts each emoji out once and an **Apple**
+  look appears next to 3D / Color / Flat. Any sbix or CBDT color emoji font with "emoji" in its file name works.
+  Apple's largest bitmaps are 160 px, so keep Apple emoji at moderate sizes (about 250 or less).
+- **Headline marks** (Style): underline, double underline, strike (straight, set from the baseline), circle, box,
+  brackets or squiggle (hand-drawn) on the `*highlighted*` words, with thickness, gap and color; or a **marker**
+  (highlighter) with its own opacity (0–100%), height, position, rounded ends, tilt and brush edges.
 - **Decorations** (Style): generated blobs, waves, rings, sparkles, confetti or bokeh in your colors, with
   amount, size, opacity and Shuffle; they flow across slides with Panorama.
 - **Fonts** include Figtree, Onest, Lexend, Rubik, Nunito, Fredoka, Bricolage Grotesque, Unbounded, Playfair
@@ -113,6 +119,18 @@ and product page assets; the app's name, icon, devices, sizes and profile are sh
 the canvas: click a slide in a row to work on that set (the Slide and Style tabs then only change it).
 Row headers rename a set, **Duplicate** it, **Make primary** (swaps it with the current primary) or delete it;
 **New set** / **Blank set** sit under the rows. Export uses the selected set, and its zip is named after it.
+
+## Languages
+
+Localize the screenshots for other App Store countries. **App tab → Languages** sets the language the slides
+are written in and adds translations (App Store Connect codes, e.g. German, Japanese, Brazilian Portuguese).
+Pick a language in the top bar to edit it: each slide shows its translation fields with the original under them,
+and you can drop a screenshot taken in that language to use for that language only. The design, stickers and
+callouts are shared. Untranslated slides show the base text and are marked *Not translated*.
+
+Claude can translate for you (`appshot translations`, `appshot translate`; see the skill). Export makes one folder
+per language with the same file names in each. Japanese, Chinese, Korean, Arabic, Hebrew, Thai and Hindi are drawn
+with bundled Noto fonts so the editor and the export match; Arabic and Hebrew run right to left.
 
 ## Product page header and search results
 

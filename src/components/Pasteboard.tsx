@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react';
+import { untranslated } from '../shared/locales';
 import { ImagePlus, Maximize2, Plus, Search, TriangleAlert } from 'lucide-react';
 import type { App, DeviceId } from '../shared/types';
 import { canvasSize } from '../shared/devices';
@@ -137,6 +138,7 @@ export function Pasteboard({
                   <span className="frame-title">{s.role === 'hero' ? 'Hero · ' : ''}{s.headline.replace(/\*/g, '').replace(/\n/g, ' ') || 'Untitled'}</span>
                 </span>
                 {!s.shots[device] && <span className="mark missing">No {DEVICES[device].label}</span>}
+                {app.activeLang && untranslated(s, app.activeLang).length > 0 && <span className="mark missing">Not translated</span>}
                 <SlideHints slide={s} position={exportOrder.indexOf(s.id)} />
               </figcaption>
               <Scaled app={app} slide={s} device={device} height={height} editing />

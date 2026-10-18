@@ -1,7 +1,7 @@
 import { SettingsView, ServerSettings } from '@/components/settings/settings-view'
 import { requireSignIn } from '@/lib/auth-page'
 import { appsResponse, settingsResponse } from '@/lib/data'
-import pkg from '../../package.json'
+import pkg from '@/package.json'
 
 export const dynamic = 'force-dynamic'
 

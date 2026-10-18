@@ -9,6 +9,8 @@
 - Promo cards come in five styles (**Studio**, **Light**, **Gradient**, **Bold**, **Glow**), any accent colour, and four sizes: 1:1, 4:5, 9:16 and 16:9. You can override the headline, tagline, button text and release notes, and the text is kept per app. You can also hide the App Store button or the rating.
 
 ### Changed
+- The studio's editor and its data API are part of the dashboard app itself; the studio container only renders (slide images, previews, exports) and can be restarted without interrupting editing.
+- The dashboard's icons are on lucide-react 1.x, the same as the studio.
 - **Share is now Marketing**, at `/marketing`. The old `/share` address redirects there.
 
 ## 1.2.0

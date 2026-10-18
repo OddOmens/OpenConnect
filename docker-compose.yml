@@ -29,7 +29,9 @@ services:
       OPENCONNECT_PASSWORD: ${OPENCONNECT_PASSWORD:-}
       # Only used with the password off: extra hostnames you open the dashboard by.
       OPENCONNECT_ALLOWED_HOSTS: ${OPENCONNECT_ALLOWED_HOSTS:-}
-      # The screenshot studio below; served at /studio behind the same sign-in.
+      # The screenshot studio: its projects live in ./data/studio (read and written here), and
+      # rendering runs in the studio service below. Both are at /studio behind the same sign-in.
+      APPSHOT_DATA: /app/data/studio
       OPENCONNECT_STUDIO_URL: http://studio:4317
     # Hardening: nothing in the image can be changed at runtime except the data volume,
     # no Linux capabilities, and no way to gain privileges.
@@ -43,15 +45,15 @@ services:
       - no-new-privileges:true
     restart: unless-stopped
 
-  # Screenshot studio: the App Store screenshot editor and renderer, with headless Chromium.
-  # It has no port of its own: the dashboard serves it at /studio behind its sign-in, and
-  # Claude reaches it there with an API token (Settings → API tokens).
+  # Screenshot studio renderer: headless Chromium for slide PNGs, previews and exports. The editor
+  # and its data API are part of the dashboard; this service only renders, and has no port of its
+  # own (Claude reaches the studio through the dashboard with an API token).
   studio:
     build: ./studio
     image: ghcr.io/oddomens/openconnect-studio:${OPENCONNECT_VERSION:-latest}
     container_name: openconnect-studio
     volumes:
-      # Screenshot projects, uploads, fonts and exports, next to the dashboard's data.
+      # Screenshot projects (read here, written by the dashboard), fonts, previews and exports.
       - ./data/studio:/data
     read_only: true
     tmpfs:

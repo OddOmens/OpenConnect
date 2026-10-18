@@ -217,7 +217,7 @@ cp .env.example .env.local   # fill in
 npm run dev                  # http://localhost:3000
 ```
 
-Data goes to `./data` (or `DATA_DIR`). The setup code is printed in the terminal.
+Data goes to `./data` (or `DATA_DIR`). The setup code is printed in the terminal. For the screenshot studio, also set `APPSHOT_DATA=./data/studio` and run its renderer (see [studio/README.md](studio/README.md#develop)).
 
 ## Troubleshooting
 

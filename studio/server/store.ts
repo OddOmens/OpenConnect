@@ -13,15 +13,10 @@ import { newCreative } from '../src/shared/creatives.ts';
 import { normalizeLanguage } from '../src/shared/locales.ts';
 
 // Apps live outside the repo so they survive re-clones and are shared by every project that uses appshot.
+// Inside OpenConnect: APPSHOT_DATA=<OpenConnect data>/studio, read and written by the dashboard, read by
+// the render container.
 export const DATA_DIR = path.resolve(process.env.APPSHOT_DATA ?? path.join(os.homedir(), '.openappshot'));
 const APPS_DIR = path.join(DATA_DIR, 'apps');
-const LEGACY_DIR = path.resolve('data');
-if (!process.env.APPSHOT_DATA && !fs.existsSync(DATA_DIR) && fs.existsSync(path.join(LEGACY_DIR, 'apps'))) {
-  fs.mkdirSync(path.dirname(DATA_DIR), { recursive: true });
-  fs.renameSync(LEGACY_DIR, DATA_DIR);
-  console.log(`Moved saved apps from ${LEGACY_DIR} to ${DATA_DIR}`);
-}
-fs.mkdirSync(APPS_DIR, { recursive: true });
 
 export const makeId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 8);
 
@@ -43,7 +38,9 @@ function normalizeText<T extends Partial<Slide>>(s: T): T {
 export const events = new EventEmitter();
 events.setMaxListeners(100);
 
-const cache = new Map<string, App>();
+// Two processes share the files (the dashboard writes, the renderer reads), so a cached app is only
+// used while its file is unchanged on disk.
+const cache = new Map<string, { app: App; mtime: number }>();
 
 function appDir(id: string) {
   return path.join(APPS_DIR, id);
@@ -56,11 +53,20 @@ export function assetPath(app: App, assetId: string) {
 }
 
 function load(id: string): App | null {
-  if (cache.has(id)) return cache.get(id)!;
+  // Ids are short and alphanumeric; anything else (a name, "../") is never a folder here.
+  if (!/^[\w-]{1,40}$/.test(id)) return null;
   const file = path.join(appDir(id), 'app.json');
-  if (!fs.existsSync(file)) return null;
+  let mtime: number;
+  try {
+    mtime = fs.statSync(file).mtimeMs;
+  } catch {
+    cache.delete(id);
+    return null;
+  }
+  const hit = cache.get(id);
+  if (hit && hit.mtime === mtime) return hit.app;
   const app = migrate(JSON.parse(fs.readFileSync(file, 'utf8')));
-  cache.set(id, app);
+  cache.set(id, { app, mtime });
   return app;
 }
 
@@ -151,11 +157,11 @@ function open(appRef: string, setRef?: string | null) {
 function save(app: App, origin?: string) {
   if (app.activeSet || app.activeLang) throw new Error('Refusing to save a set or language view as the app');
   app.updatedAt = new Date().toISOString();
-  cache.set(app.id, app);
   fs.mkdirSync(appDir(app.id), { recursive: true });
   const file = path.join(appDir(app.id), 'app.json');
   fs.writeFileSync(file + '.tmp', JSON.stringify(app, null, 2));
   fs.renameSync(file + '.tmp', file);
+  cache.set(app.id, { app, mtime: fs.statSync(file).mtimeMs });
   events.emit('change', { type: 'app', id: app.id, origin });
   return app;
 }
@@ -176,6 +182,7 @@ export function listApps(): AppSummary[] {
 }
 
 function allApps(): App[] {
+  fs.mkdirSync(APPS_DIR, { recursive: true });
   return fs
     .readdirSync(APPS_DIR)
     .map((id) => load(id))

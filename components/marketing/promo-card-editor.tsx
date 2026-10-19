@@ -5,6 +5,7 @@ import { Download, Loader2, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Segmented } from '@/components/dashboard/section'
 import {
+  LOVED_SHOW, type LovedShow,
   PROMO_ACCENTS, PROMO_FORMATS, PROMO_FRAMES, PROMO_STYLES, PROMO_TEMPLATES,
   type PromoCardSettings, type PromoFormatId, type PromoStyleId, type PromoTemplateId, type UiPrefs,
 } from '@/lib/prefs'
@@ -286,6 +287,19 @@ export function PromoCardEditor({ template, appId, mk, updateMk, info, toolbarSh
           )}
 
           {uses.quotes && (
+            <Section title="Map">
+              <Row label="Show">
+                <Segmented
+                  value={own.lovedShow ?? 'both'}
+                  onChange={(v: LovedShow) => setOwn({ lovedShow: v === 'both' ? undefined : v })}
+                  options={(Object.keys(LOVED_SHOW) as LovedShow[]).map((v) => ({ value: v, label: LOVED_SHOW[v] }))}
+                />
+              </Row>
+              <p className="text-[11px] text-muted-foreground">Every App Store country on the dashboard&apos;s map: the ones with downloads in the accent colour, the rest greyed out.</p>
+            </Section>
+          )}
+
+          {uses.quotes && (own.lovedShow ?? 'both') !== 'map' && (
             <Section
               title="Reviews"
               aside={ownQuotes.length > 0 && <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setOwn({ quotes: undefined })}>Best ones</Button>}

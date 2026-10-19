@@ -4,7 +4,8 @@
 
 import type { PromoFormatId, PromoStyleId, PromoTemplateId } from '@/lib/prefs';
 import { defaultCopy, noteBullets, type PromoData } from '@/lib/marketing';
-import { Icon, STAR_PATH, STAR_COLOR, fmtCompact, fmtDay } from './kit';
+import { DottedWorld, Icon, STAR_PATH, STAR_COLOR, WORLD_H, WORLD_W, fmtCompact, fmtDay } from './kit';
+import { TERRITORIES } from '@/lib/territories';
 
 export const PROMO_SIZES: Record<PromoFormatId, { width: number; height: number }> = {
   '1x1': { width: 1080, height: 1080 },
@@ -26,6 +27,7 @@ export interface PromoOptions {
   cta?: string;
   notes?: string;
   quotes?: number[];   // Loved By: which of data.quotes, in order
+  lovedShow?: 'both' | 'map' | 'reviews';
 }
 
 /** The app's images, inlined by the route before rendering. */
@@ -529,25 +531,62 @@ function Loved({ data, images, o, p }: Props) {
   const landscape = format === '16x9';
   const tall = format === '9x16';
   const square = format === '1x1';
+  const show = o.lovedShow ?? 'both';
+  const mapOn = show !== 'reviews';
+  const reviewsOn = show !== 'map';
   const hasRating = o.showRating && data.rating != null && data.ratingCount > 0;
   const headline = headlineOf(data, o);
   const qs = square ? 30 : tall ? 40 : 32;
   const { width: W, height: H } = PROMO_SIZES[format];
   const pad = landscape ? 96 : tall ? 88 : 72;
-  // Reviews go in only while they fit under the headline and rating (above the footer), so a long
-  // one can never push the rest of the card into the headline.
-  const cardPad = square ? 32 : 40;
-  const clamp = square ? 3 : 4;
-  const quoteW = (landscape ? W - pad * 2 - 780 : W - pad * 2) - cardPad * 2;
-  const quoteH = (q: PromoData['quotes'][number]) => cardPad * 2 + qs * 0.9 + 16 + textLines(`“${q.body}”`, qs, quoteW, clamp) * qs * 1.4 + 16 + qs * 0.75 * 1.25 + 4;
+  const leftW = 780; // 16:9: headline and rating on the left, map and reviews on the right
+  const colW = landscape ? W - pad * 2 - leftW : W - pad * 2;
   const footerH = square ? 64 : tall ? 96 : 80;
   const gap = square ? 30 : 44;
-  const headlineH = headlineHeight(headline, square ? 84 : tall ? 132 : 100, landscape ? 720 : W - pad * 2, landscape ? 3 : tall ? 3 : 2);
+
+  // The map: every App Store storefront, the ones with downloads in the accent colour.
+  const mapW = colW;
+  const legendH = square ? 30 : 36;
+  const mapH = mapW * (WORLD_H / WORLD_W) + 14 + legendH;
+  const reached = new Set(data.reached);
+  // Three levels that read in every style (even where the accent is white): a faint grid of the
+  // continents, small dim pins for countries not reached yet, larger full-strength ones for reached.
+  const NOT_YET = 0.35;
+  const pins = [
+    ...TERRITORIES.filter((t) => !reached.has(t.code)).map((t) => ({ code: t.code, color: p.muted, r: 0.4, opacity: NOT_YET })),
+    ...TERRITORIES.filter((t) => reached.has(t.code)).map((t) => ({ code: t.code, color: p.accent, r: 0.72 })),
+  ];
+  const legendFont = square ? 22 : tall ? 28 : 24;
+  const legendDot = (color: string, opacity = 1) => <div style={{ display: 'flex', width: legendFont * 0.55, height: legendFont * 0.55, borderRadius: legendFont, background: color, opacity }} />;
+  const map = mapOn && (
+    <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, gap: 14 }}>
+      <DottedWorld width={mapW} pins={pins} dotColor={p.muted} dotOpacity={0.16} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: legendFont * 0.5, height: legendH, fontSize: legendFont, color: p.muted }}>
+        {legendDot(p.accent)}
+        <span style={{ color: p.fg, fontWeight: 600 }}>{data.reached.length}</span>
+        <span>of {data.storefronts} App Store countries</span>
+        <div style={{ display: 'flex', width: legendFont }} />
+        {legendDot(p.muted, NOT_YET)}
+        <span>not yet</span>
+      </div>
+    </div>
+  );
+
+  // Reviews go in only while they fit under everything above them (and above the footer), so a
+  // long one can never push the rest of the card into the headline.
+  const cardPad = square ? 32 : 40;
+  const clamp = square ? 3 : 4;
+  const quoteW = colW - cardPad * 2;
+  const quoteH = (q: PromoData['quotes'][number]) => cardPad * 2 + qs * 0.9 + 16 + textLines(`“${q.body}”`, qs, quoteW, clamp) * qs * 1.4 + 16 + qs * 0.75 * 1.25 + 4;
+  const headlineH = headlineHeight(headline, square ? 84 : tall ? 132 : 100, landscape ? leftW - 60 : colW, landscape ? 3 : tall ? 3 : 2);
   const ratingH = hasRating ? (square ? 100 : tall ? 160 : 130) : 0;
-  const budget = landscape ? H - pad * 2 : H - pad * 2 - footerH - 32 - headlineH - (ratingH ? ratingH + gap : 0) - gap;
+  const budget = landscape
+    ? H - pad * 2 - (mapOn ? mapH + 24 : 0)
+    : H - pad * 2 - footerH - 32 - headlineH - (ratingH ? ratingH + gap : 0) - (mapOn ? mapH + gap : 0) - gap;
   // The reviews picked for this card (else the best short ones), as many as fit.
   const candidates = o.quotes?.length ? o.quotes.map((i) => data.quotes[i]).filter((q) => !!q) : data.quotes;
-  const quotes = fitting(candidates.slice(0, square ? 1 : landscape ? 2 : tall ? 3 : 2), quoteH, 24, budget);
+  const quotes = reviewsOn ? fitting(candidates.slice(0, square ? 1 : landscape ? 2 : tall ? 3 : 2), quoteH, 24, budget) : [];
+
   const rating = hasRating && (
     <div style={{ display: 'flex', flexShrink: 0, alignItems: 'center', gap: 26 }}>
       <div style={{ display: 'flex', fontSize: square ? 100 : tall ? 160 : 130, fontWeight: 800, letterSpacing: -5, lineHeight: 1 }}>{data.rating!.toFixed(1)}</div>
@@ -570,7 +609,8 @@ function Loved({ data, images, o, p }: Props) {
       ))}
     </div>
   ) : (
-    <StatChips data={data} p={p} o={o} size={30} />
+    // Nothing to quote and no map: the numbers instead.
+    !mapOn && <StatChips data={data} p={p} o={o} size={30} />
   );
   const footer = (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24 }}>
@@ -580,23 +620,27 @@ function Loved({ data, images, o, p }: Props) {
   );
   if (landscape) {
     return (
-      <Canvas format={format} p={p} pad={96} row>
-        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: 780, paddingRight: 60 }}>
+      <Canvas format={format} p={p} pad={pad} row>
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: leftW, paddingRight: 60 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 40 }}>
             <Headline text={headline} size={100} p={p} lines={3} />
             {rating}
           </div>
           {footer}
         </div>
-        <div style={{ display: 'flex', flex: 1, flexDirection: 'column', justifyContent: 'center' }}>{quoteCards}</div>
+        <div style={{ display: 'flex', flex: 1, flexDirection: 'column', justifyContent: 'center', gap: 24 }}>
+          {map}
+          {quoteCards}
+        </div>
       </Canvas>
     );
   }
   return (
-    <Canvas format={format} p={p} pad={tall ? 88 : 72}>
-      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center', gap: square ? 30 : 44 }}>
+    <Canvas format={format} p={p} pad={pad}>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center', gap }}>
         <Headline text={headline} size={square ? 84 : tall ? 132 : 100} p={p} lines={tall ? 3 : 2} />
         {rating}
+        {map}
         {quoteCards}
       </div>
       {footer}

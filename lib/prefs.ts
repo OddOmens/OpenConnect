@@ -198,7 +198,11 @@ export interface PromoCardSettings {
   notes?: string
   shots?: string[]             // this card's screenshots, in order
   quotes?: number[]            // Loved By: which reviews
+  lovedShow?: LovedShow        // Loved By: the map, the reviews, or both
 }
+
+export const LOVED_SHOW = { both: 'Map & reviews', map: 'Map', reviews: 'Reviews' } as const
+export type LovedShow = keyof typeof LOVED_SHOW
 
 // iPhone frame colours for the promo cards.
 export const PROMO_FRAMES = {

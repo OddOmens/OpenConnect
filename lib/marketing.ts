@@ -93,6 +93,8 @@ export interface PromoData {
   ratingCount: number;
   downloads: number;            // first-time, all time
   countries: number;
+  reached: string[];            // storefronts (country codes) with downloads, all time
+  storefronts: number;          // how many App Store storefronts there are
   quotes: { title: string; body: string; reviewer: string; rating: number }[]; // up to 12; Loved By picks from these
 }
 
@@ -115,6 +117,8 @@ export async function promoData(appId: string): Promise<PromoData | null> {
     ratingCount: store.rating_count,
     downloads: app.first_time_downloads,
     countries: r.apps[appId]?.count ?? 0,
+    reached: Object.keys(r.apps[appId]?.countries ?? {}),
+    storefronts: r.total,
     quotes,
   };
 }

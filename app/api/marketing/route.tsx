@@ -142,6 +142,7 @@ async function promoResponse(request: Request, q: URLSearchParams, template: Pro
     tagline: text(q.get('sub'), 240) || undefined,
     cta: text(q.get('cta'), 40) || undefined,
     notes: text(q.get('notes'), 1200) || undefined,
+    lovedShow: q.get('show') === 'map' || q.get('show') === 'reviews' ? (q.get('show') as 'map' | 'reviews') : 'both',
     quotes: (q.get('quotes') ?? '').split(',').filter((v) => /^\d{1,2}$/.test(v)).map(Number).slice(0, 3),
   };
   // The picked screenshots (studio screens or App Store ones), else the app's defaults.

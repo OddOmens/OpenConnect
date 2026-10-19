@@ -251,19 +251,20 @@ export interface WorldPin {
   code: string;
   color: string;
   r: number; // in map units (base dots are 0.22)
+  opacity?: number;
 }
 
 /** Dotted world map with coloured pins on storefronts. */
-export function DottedWorld({ width, pins, theme }: { width: number; pins: WorldPin[]; theme: Theme }) {
+export function DottedWorld({ width, pins, theme, dotColor, dotOpacity = 1 }: { width: number; pins: WorldPin[]; theme?: Theme; dotColor?: string; dotOpacity?: number }) {
   const height = Math.round((width * WORLD_H) / WORLD_W);
   return (
     <svg width={width} height={height} viewBox={`0 0 ${WORLD_W} ${WORLD_H}`}>
-      <path d={WORLD_DOTS_PATH} fill={theme.border} />
+      <path d={WORLD_DOTS_PATH} fill={dotColor ?? theme?.border ?? '#27272a'} fillOpacity={dotOpacity} />
       {pins.map((p) => {
         const t = TERRITORY_BY_CODE[p.code];
         if (!t) return null;
         const { x, y } = WORLD.getPin({ lat: t.lat, lng: t.lng });
-        return <circle key={p.code} cx={x} cy={y} r={p.r} fill={p.color} />;
+        return <circle key={p.code} cx={x} cy={y} r={p.r} fill={p.color} fillOpacity={p.opacity ?? 1} />;
       })}
     </svg>
   );

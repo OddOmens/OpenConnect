@@ -184,6 +184,22 @@ export const PROMO_FORMATS = {
 } as const
 export type PromoFormatId = keyof typeof PROMO_FORMATS
 
+/** One promo card's own settings for one app; anything unset follows the toolbar (all cards). */
+export interface PromoCardSettings {
+  style?: PromoStyleId
+  accent?: string
+  format?: PromoFormatId
+  frameColor?: string
+  showBadge?: boolean
+  showRating?: boolean
+  headline?: string
+  tagline?: string
+  cta?: string
+  notes?: string
+  shots?: string[]             // this card's screenshots, in order
+  quotes?: number[]            // Loved By: which reviews
+}
+
 // iPhone frame colours for the promo cards.
 export const PROMO_FRAMES = {
   '#2c2c30': 'Black',
@@ -238,8 +254,10 @@ export interface UiPrefs {
     showRating: boolean
     frameColor: string           // iPhone frame, #rrggbb
     shots: Record<string, string[]> // picked screenshots per app, in order ("s:<studio slide>", "a:<App Store n>")
-    // Text overrides per app; empty means the template's own wording.
+    // Text for every card of an app; empty means each template's own wording.
     copy: Record<string, { headline?: string; tagline?: string; cta?: string; notes?: string }>
+    // Each card's own settings, per app and template (edited in the card's popup).
+    cards: Record<string, Partial<Record<PromoTemplateId, PromoCardSettings>>>
   }
 }
 
@@ -285,6 +303,7 @@ export const DEFAULT_PREFS: UiPrefs = {
     frameColor: '#2c2c30',
     shots: {},
     copy: {},
+    cards: {},
   },
 }
 

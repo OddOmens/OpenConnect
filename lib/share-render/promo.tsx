@@ -3,7 +3,7 @@
 // colour, and their wording can be overridden.
 
 import type { PromoFormatId, PromoStyleId, PromoTemplateId } from '@/lib/prefs';
-import { firstSentence, noteBullets, type PromoData } from '@/lib/marketing';
+import { defaultCopy, noteBullets, type PromoData } from '@/lib/marketing';
 import { Icon, STAR_PATH, STAR_COLOR, fmtCompact, fmtDay } from './kit';
 
 export const PROMO_SIZES: Record<PromoFormatId, { width: number; height: number }> = {
@@ -25,6 +25,7 @@ export interface PromoOptions {
   tagline?: string;
   cta?: string;
   notes?: string;
+  quotes?: number[];   // Loved By: which of data.quotes, in order
 }
 
 /** The app's images, inlined by the route before rendering. */
@@ -342,11 +343,12 @@ function StatChips({ data, p, o, size, center = false }: { data: PromoData; p: P
 
 type Props = { data: PromoData; images: PromoImages; o: PromoOptions; p: Palette };
 
-const tagline = (data: PromoData, o: PromoOptions) => o.tagline ?? firstSentence(data.listing?.description ?? '');
+const tagline = (data: PromoData, o: PromoOptions) => o.tagline ?? defaultCopy(o.template, data, o.showRating).tagline;
+const headlineOf = (data: PromoData, o: PromoOptions) => o.headline || defaultCopy(o.template, data, o.showRating).headline;
 
 function Launch({ data, images, o, p }: Props) {
   const { format } = o;
-  const headline = o.headline || `Meet ${data.name}`;
+  const headline = headlineOf(data, o);
   const eyebrow = 'NEW ON THE APP STORE';
   const shots = images.screenshots;
   if (format === '16x9') {
@@ -396,7 +398,7 @@ function Update({ data, images, o, p }: Props) {
   const l = data.listing;
   const version = l?.version;
   // "Version / 1.4.0 / Is Here!", one per line.
-  const headline = o.headline || (version ? `Version\n${version}\nIs Here!` : `${data.name} just got better`);
+  const headline = headlineOf(data, o);
   const landscape = format === '16x9';
   const tall = format === '9x16';
   const square = format === '1x1';
@@ -478,7 +480,7 @@ function Update({ data, images, o, p }: Props) {
 function Screens({ data, images, o, p }: Props) {
   const { format } = o;
   const { width, height } = PROMO_SIZES[format];
-  const headline = o.headline || `See ${data.name} in action`;
+  const headline = headlineOf(data, o);
   const landscape = format === '16x9';
   const tall = format === '9x16';
   const square = format === '1x1';
@@ -528,8 +530,7 @@ function Loved({ data, images, o, p }: Props) {
   const tall = format === '9x16';
   const square = format === '1x1';
   const hasRating = o.showRating && data.rating != null && data.ratingCount > 0;
-  const headline =
-    o.headline || (data.countries > 1 ? `Loved in ${data.countries} countries` : hasRating ? `Rated ${data.rating!.toFixed(1)} stars` : `People love ${data.name}`);
+  const headline = headlineOf(data, o);
   const qs = square ? 30 : tall ? 40 : 32;
   const { width: W, height: H } = PROMO_SIZES[format];
   const pad = landscape ? 96 : tall ? 88 : 72;
@@ -544,7 +545,9 @@ function Loved({ data, images, o, p }: Props) {
   const headlineH = headlineHeight(headline, square ? 84 : tall ? 132 : 100, landscape ? 720 : W - pad * 2, landscape ? 3 : tall ? 3 : 2);
   const ratingH = hasRating ? (square ? 100 : tall ? 160 : 130) : 0;
   const budget = landscape ? H - pad * 2 : H - pad * 2 - footerH - 32 - headlineH - (ratingH ? ratingH + gap : 0) - gap;
-  const quotes = fitting(data.quotes.slice(0, square ? 1 : landscape ? 2 : tall ? 3 : 2), quoteH, 24, budget);
+  // The reviews picked for this card (else the best short ones), as many as fit.
+  const candidates = o.quotes?.length ? o.quotes.map((i) => data.quotes[i]).filter((q) => !!q) : data.quotes;
+  const quotes = fitting(candidates.slice(0, square ? 1 : landscape ? 2 : tall ? 3 : 2), quoteH, 24, budget);
   const rating = hasRating && (
     <div style={{ display: 'flex', flexShrink: 0, alignItems: 'center', gap: 26 }}>
       <div style={{ display: 'flex', fontSize: square ? 100 : tall ? 160 : 130, fontWeight: 800, letterSpacing: -5, lineHeight: 1 }}>{data.rating!.toFixed(1)}</div>
@@ -606,8 +609,7 @@ function Download({ data, images, o, p }: Props) {
   const landscape = format === '16x9';
   const tall = format === '9x16';
   const square = format === '1x1';
-  const free = data.listing?.price === 'Free';
-  const headline = o.headline || `Get ${data.name}${free ? ' free' : ''}`;
+  const headline = headlineOf(data, o);
   const url = data.listing?.storeUrl?.replace(/^https?:\/\//, '').replace(/\/[a-z]{2}\/app\/[^/]+\//, '/app/') ?? null;
   const iconSize = square ? 220 : landscape ? 240 : tall ? 360 : 300;
   return (

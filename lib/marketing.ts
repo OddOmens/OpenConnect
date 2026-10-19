@@ -2,6 +2,7 @@
 // release notes, price) plus the numbers worth bragging about (rating, downloads, reach).
 
 import { listApps, reach, reviews, storePresence } from './queries';
+import type { PromoTemplateId } from './prefs';
 
 export interface Listing {
   version: string | null;
@@ -92,7 +93,7 @@ export interface PromoData {
   ratingCount: number;
   downloads: number;            // first-time, all time
   countries: number;
-  quotes: { title: string; body: string; reviewer: string; rating: number }[];
+  quotes: { title: string; body: string; reviewer: string; rating: number }[]; // up to 12; Loved By picks from these
 }
 
 export async function promoData(appId: string): Promise<PromoData | null> {
@@ -104,7 +105,7 @@ export async function promoData(appId: string): Promise<PromoData | null> {
   const quotes = (reviews({ appId, rating: 5, limit: 100, offset: 0 }).items as any[])
     .map((q) => ({ title: plain(q.title || ''), body: plain(q.body || ''), reviewer: plain(q.reviewer || '') || 'App Store reviewer', rating: q.rating }))
     .filter((q) => q.body.length >= 20 && q.body.length <= 220)
-    .slice(0, 3);
+    .slice(0, 12);
   return {
     appId,
     name: app.name.split(':')[0],
@@ -116,4 +117,18 @@ export async function promoData(appId: string): Promise<PromoData | null> {
     countries: r.apps[appId]?.count ?? 0,
     quotes,
   };
+}
+
+/** Each template's own wording, used where a card's text is left empty. */
+export function defaultCopy(t: PromoTemplateId, data: PromoData, showRating = true) {
+  const version = data.listing?.version;
+  const rated = showRating && data.rating != null && data.ratingCount > 0;
+  const headline = {
+    launch: `Meet ${data.name}`,
+    update: version ? `Version\n${version}\nIs Here!` : `${data.name} just got better`,
+    screens: `See ${data.name}\nIn Action`,
+    loved: data.countries > 1 ? `Loved in ${data.countries} countries` : rated ? `Rated ${data.rating!.toFixed(1)} stars` : `People love ${data.name}`,
+    download: `Get ${data.name}${data.listing?.price === 'Free' ? ' free' : ''}`,
+  }[t];
+  return { headline, tagline: firstSentence(data.listing?.description ?? ''), cta: '', notes: data.listing?.releaseNotes ?? '' };
 }

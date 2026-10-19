@@ -40,7 +40,8 @@ export async function listing(appId: string): Promise<Listing | null> {
     });
     const r = res.ok ? (await res.json())?.results?.[0] : null;
     if (r) {
-      const shots: string[] = r.screenshotUrls?.length ? r.screenshotUrls : r.ipadScreenshotUrls || [];
+      // iPhone screenshots only: the cards draw them in iPhones.
+      const shots: string[] = r.screenshotUrls || [];
       result = {
         version: r.version || null,
         versionDate: r.currentVersionReleaseDate ? String(r.currentVersionReleaseDate).slice(0, 10) : null,
@@ -50,7 +51,7 @@ export async function listing(appId: string): Promise<Listing | null> {
         genre: r.primaryGenreName || null,
         seller: r.sellerName || null,
         storeUrl: r.trackViewUrl ? String(r.trackViewUrl).split('?')[0] : null,
-        screenshots: shots.slice(0, 5).map((u) => ({ url: screenshotUrl(u), ratio: ratioOf(u) })),
+        screenshots: shots.slice(0, 10).map((u) => ({ url: screenshotUrl(u), ratio: ratioOf(u) })),
       };
     }
   } catch {

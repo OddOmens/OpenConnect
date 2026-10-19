@@ -2,12 +2,15 @@ import { useEffect, useState } from 'react';
 
 export type ColorTheme = 'light' | 'dark' | 'system';
 
+const valid = (v: unknown): v is ColorTheme => v === 'light' || v === 'dark' || v === 'system';
 const read = (): ColorTheme => {
   try {
     const v = localStorage.getItem('appshot.theme');
-    if (v === 'light' || v === 'dark' || v === 'system') return v;
+    if (valid(v)) return v;
   } catch {}
-  return 'system';
+  // Inside OpenConnect: its light/dark setting, until one is picked here.
+  const oc = typeof document !== 'undefined' ? document.documentElement.dataset.ocTheme : undefined;
+  return valid(oc) ? oc : 'system';
 };
 
 function apply(theme: ColorTheme) {

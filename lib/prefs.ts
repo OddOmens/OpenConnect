@@ -184,6 +184,15 @@ export const PROMO_FORMATS = {
 } as const
 export type PromoFormatId = keyof typeof PROMO_FORMATS
 
+// iPhone frame colours for the promo cards.
+export const PROMO_FRAMES = {
+  '#2c2c30': 'Black',
+  '#d4d4d8': 'Silver',
+  '#b8ad9e': 'Natural',
+  '#c9a77c': 'Desert',
+  '#34405a': 'Blue',
+} as const
+
 export const PROMO_ACCENTS = ['#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#f97316', '#f59e0b', '#10b981', '#06b6d4'] as const
 
 export type ThemeId = 'system' | 'light' | 'dark'
@@ -227,6 +236,8 @@ export interface UiPrefs {
     format: PromoFormatId
     showBadge: boolean           // "Download on the App Store" button
     showRating: boolean
+    frameColor: string           // iPhone frame, #rrggbb
+    shots: Record<string, string[]> // picked screenshots per app, in order ("s:<studio slide>", "a:<App Store n>")
     // Text overrides per app; empty means the template's own wording.
     copy: Record<string, { headline?: string; tagline?: string; cta?: string; notes?: string }>
   }
@@ -271,6 +282,8 @@ export const DEFAULT_PREFS: UiPrefs = {
     format: '4x5',
     showBadge: true,
     showRating: true,
+    frameColor: '#2c2c30',
+    shots: {},
     copy: {},
   },
 }
@@ -296,6 +309,7 @@ export function mergePrefs(saved: Partial<UiPrefs> | null | undefined): UiPrefs 
   if (!PROMO_STYLES[p.marketing.style]) p.marketing.style = DEFAULT_PREFS.marketing.style
   if (!PROMO_FORMATS[p.marketing.format]) p.marketing.format = DEFAULT_PREFS.marketing.format
   if (!/^#[0-9a-f]{6}$/i.test(p.marketing.accent)) p.marketing.accent = DEFAULT_PREFS.marketing.accent
+  if (!/^#[0-9a-f]{6}$/i.test(p.marketing.frameColor)) p.marketing.frameColor = DEFAULT_PREFS.marketing.frameColor
   return p
 }
 

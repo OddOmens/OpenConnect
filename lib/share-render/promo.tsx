@@ -18,6 +18,7 @@ export interface PromoOptions {
   style: PromoStyleId;
   accent: string;
   format: PromoFormatId;
+  frameColor: string;  // iPhone frame
   showBadge: boolean;
   showRating: boolean;
   headline?: string;
@@ -61,22 +62,26 @@ interface Palette {
   border: string;
   badgeBg: string;
   badgeFg: string;
-  phone: string;        // phone bezel
+  frame: string;        // iPhone frame (metal) colour
 }
 
-function palette(style: PromoStyleId, accent: string): Palette {
+function palette(style: PromoStyleId, accent: string, frame: string): Palette {
+  return { ...colours(style, accent), frame };
+}
+
+function colours(style: PromoStyleId, accent: string): Omit<Palette, 'frame'> {
   switch (style) {
     case 'light':
       return {
         background: '#fafafa', image: `linear-gradient(180deg, #ffffff 0%, ${mix(accent, '#ffffff', 0.9)} 100%)`,
         fg: '#09090b', muted: '#52525b', accent: mix(accent, '#000000', 0.08), onAccent: '#ffffff', surface: '#ffffff', border: '#e4e4e7',
-        badgeBg: '#09090b', badgeFg: '#ffffff', phone: '#18181b',
+        badgeBg: '#09090b', badgeFg: '#ffffff',
       };
     case 'gradient':
       return {
         background: accent, image: `linear-gradient(155deg, ${mix(accent, '#000000', 0.55)} 0%, ${accent} 55%, ${mix(accent, '#ffffff', 0.3)} 100%)`,
         fg: '#ffffff', muted: 'rgba(255,255,255,0.78)', accent: '#ffffff', onAccent: mix(accent, '#000000', 0.2), surface: 'rgba(255,255,255,0.13)', border: 'rgba(255,255,255,0.24)',
-        badgeBg: '#000000', badgeFg: '#ffffff', phone: '#0b0b0f',
+        badgeBg: '#000000', badgeFg: '#ffffff',
       };
     case 'bold': {
       const dark = luminance(accent) > 0.3; // light accents (amber, cyan) need dark text
@@ -84,19 +89,19 @@ function palette(style: PromoStyleId, accent: string): Palette {
         background: accent,
         fg: dark ? '#0a0a0a' : '#ffffff', muted: dark ? 'rgba(0,0,0,0.68)' : 'rgba(255,255,255,0.82)', accent: dark ? '#0a0a0a' : '#ffffff', onAccent: accent,
         surface: dark ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.14)', border: dark ? 'rgba(0,0,0,0.16)' : 'rgba(255,255,255,0.28)',
-        badgeBg: dark ? '#0a0a0a' : '#ffffff', badgeFg: dark ? '#ffffff' : '#0a0a0a', phone: '#0b0b0f',
+        badgeBg: dark ? '#0a0a0a' : '#ffffff', badgeFg: dark ? '#ffffff' : '#0a0a0a',
       };
     }
     case 'glow':
       return {
         background: '#050507', image: `radial-gradient(circle at 50% 0%, ${rgba(accent, 0.55)} 0%, ${rgba(accent, 0.12)} 45%, rgba(5,5,7,0) 75%)`,
         fg: '#fafafa', muted: '#a1a1aa', accent: mix(accent, '#ffffff', 0.25), onAccent: '#09090b', surface: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.12)',
-        badgeBg: '#fafafa', badgeFg: '#09090b', phone: '#1c1c20',
+        badgeBg: '#fafafa', badgeFg: '#09090b',
       };
     default: // studio: the dashboard's own dark look
       return {
         background: '#09090b', fg: '#fafafa', muted: '#a1a1aa', accent, onAccent: '#ffffff', surface: '#0e0e11', border: '#27272a',
-        badgeBg: '#fafafa', badgeFg: '#09090b', phone: '#1c1c20',
+        badgeBg: '#fafafa', badgeFg: '#09090b',
       };
   }
 }
@@ -176,15 +181,39 @@ function StarGlyph({ size }: { size: number }) {
   );
 }
 
-/** A screenshot in a phone frame. */
+// The studio's iPhone (studio/src/render/SlideView.tsx, HARDWARE.iphone), as fractions of the
+// frame's outer width: metal rim in the frame colour, black glass bezel, screen corner radius.
+const IPHONE = { rim: 0.009, bezel: 0.026, screenRadius: 0.135 };
+
+/** Lighter or darker version of a hex colour (amount -1…1), for the metal's highlights. */
+const shade = (hex: string, amount: number) => (amount >= 0 ? mix(hex, '#ffffff', amount) : mix(hex, '#000000', -amount));
+
+/** A screenshot in an iPhone: Dynamic Island, side buttons and a metal rim in the frame colour. */
 function Phone({ shot, width, p, rotate = 0, offsetY = 0 }: { shot: { src: string; ratio: number }; width: number; p: Palette; rotate?: number; offsetY?: number }) {
-  const bezel = Math.round(width * 0.035);
-  const inner = width - bezel * 2;
-  const innerH = Math.round(inner * shot.ratio);
+  const rim = IPHONE.rim * width;
+  const bezel = IPHONE.bezel * width;
+  const screenW = width - 2 * (rim + bezel);
+  const screenH = screenW * shot.ratio;
+  const screenR = IPHONE.screenRadius * screenW;
+  const body = p.frame;
+  const metal = `linear-gradient(135deg, ${shade(body, 0.35)} 0%, ${body} 18%, ${shade(body, -0.25)} 50%, ${body} 82%, ${shade(body, 0.3)} 100%)`;
+  const height = screenH + 2 * (rim + bezel);
+  const button = (side: 'left' | 'right', top: number, h: number) => (
+    <div style={{ display: 'flex', position: 'absolute', [side]: -rim * 0.9, top: top * height, height: h * height, width: rim * 1.2, borderRadius: rim, backgroundImage: metal }} />
+  );
   return (
-    <div style={{ display: 'flex', flexShrink: 0, padding: bezel, borderRadius: width * 0.14, background: p.phone, marginTop: offsetY, ...(rotate ? { transform: `rotate(${rotate}deg)` } : {}) }}>
-      {/* eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text */}
-      <img src={shot.src} width={inner} height={innerH} style={{ borderRadius: width * 0.11 }} />
+    <div style={{ display: 'flex', flexShrink: 0, marginTop: offsetY, ...(rotate ? { transform: `rotate(${rotate}deg)` } : {}) }}>
+      <div style={{ display: 'flex', position: 'relative', width, padding: rim, backgroundImage: metal, borderRadius: screenR + bezel + rim }}>
+        {button('left', 0.17, 0.035)}
+        {button('left', 0.235, 0.065)}
+        {button('left', 0.315, 0.065)}
+        {button('right', 0.265, 0.1)}
+        <div style={{ display: 'flex', position: 'relative', padding: bezel, background: '#050505', borderRadius: screenR + bezel }}>
+          {/* eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text */}
+          <img src={shot.src} width={screenW} height={screenH} style={{ borderRadius: screenR }} />
+          <div style={{ display: 'flex', position: 'absolute', left: bezel + screenW * 0.345, top: bezel + screenW * 0.027, width: screenW * 0.31, height: screenW * 0.09, borderRadius: screenW, background: '#000000' }} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -541,5 +570,5 @@ const TEMPLATES: Record<PromoTemplateId, (props: Props) => React.ReactElement> =
 
 export function PromoCard({ data, images, o }: { data: PromoData; images: PromoImages; o: PromoOptions }) {
   const T = TEMPLATES[o.template];
-  return <T data={data} images={images} o={o} p={palette(o.style, o.accent)} />;
+  return <T data={data} images={images} o={o} p={palette(o.style, o.accent, o.frameColor)} />;
 }

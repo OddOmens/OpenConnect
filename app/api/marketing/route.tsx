@@ -23,8 +23,9 @@ export const dynamic = 'force-dynamic';
 // Marketing cards rendered to PNG. Stats cards, styled like the dashboard:
 //   /api/marketing?app=<id|all>&t=overview|reach|map|rating|review|milestone&range=30d&format=4x5&theme=dark
 // Promo cards for one app, from its App Store listing:
-//   /api/marketing?app=<id>&t=launch|update|screens|loved|download&format=1x1|4x5|9x16|16x9&style=gradient&accent=3b82f6
+//   /api/marketing?app=<id>&t=launch|update|screens|loved|reviews|download&format=1x1|4x5|9x16|16x9&style=gradient&accent=3b82f6
 //     &badge=1&rating=1&h=<headline>&sub=<tagline>&cta=<button text>&notes=<release notes>
+//     &quotes=<review indexes, first in front>&n=1|3 (Reviews)
 // Layout is done by satori and rasterised by native resvg (much cheaper than next/og's
 // WebAssembly build). Cards are still rendered one at a time and cached until the data
 // behind them changes (a sync, hiding an app, a new day).
@@ -142,7 +143,7 @@ async function promoResponse(request: Request, q: URLSearchParams, template: Pro
     tagline: text(q.get('sub'), 240) || undefined,
     cta: text(q.get('cta'), 40) || undefined,
     notes: text(q.get('notes'), 1200) || undefined,
-    lovedShow: q.get('show') === 'map' || q.get('show') === 'reviews' ? (q.get('show') as 'map' | 'reviews') : 'both',
+    reviewCount: q.get('n') === '1' ? 1 : 3,
     quotes: (q.get('quotes') ?? '').split(',').filter((v) => /^\d{1,2}$/.test(v)).map(Number).slice(0, 3),
   };
   // The picked screenshots (studio screens or App Store ones), else the app's defaults.

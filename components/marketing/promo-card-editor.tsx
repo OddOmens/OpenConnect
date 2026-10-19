@@ -5,9 +5,8 @@ import { Download, Loader2, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Segmented } from '@/components/dashboard/section'
 import {
-  LOVED_SHOW, type LovedShow,
-  PROMO_ACCENTS, PROMO_FORMATS, PROMO_FRAMES, PROMO_STYLES, PROMO_TEMPLATES,
-  type PromoCardSettings, type PromoFormatId, type PromoStyleId, type PromoTemplateId, type UiPrefs,
+  PROMO_ACCENTS, PROMO_FORMATS, PROMO_FRAMES, PROMO_STYLES, PROMO_TEMPLATES, REVIEW_COUNTS,
+  type PromoCardSettings, type PromoFormatId, type PromoStyleId, type PromoTemplateId, type ReviewCount, type UiPrefs,
 } from '@/lib/prefs'
 import { PROMO_USES, type ResolvedPromo } from '@/lib/promo-settings'
 import { cn } from '@/lib/utils'
@@ -130,10 +129,11 @@ export function PromoCardEditor({ template, appId, mk, updateMk, info, toolbarSh
   const cardShots = ownShots.length ? ownShots : toolbarShots
   const toggleShot = (id: string) => setOwn({ shots: cardShots.includes(id) ? cardShots.filter((x) => x !== id) : [...cardShots, id] })
 
-  // Reviews (Loved By): this card's picks, else the best short ones.
-  const ownQuotes = own.quotes ?? []
+  // Reviews: this card's picks, the first in front, else the best short ones.
+  const reviewCount = resolved.reviewCount
+  const ownQuotes = (own.quotes ?? []).slice(0, reviewCount)
   const toggleQuote = (i: number) =>
-    setOwn({ quotes: ownQuotes.includes(i) ? ownQuotes.filter((x) => x !== i) : [...ownQuotes, i].slice(-3) })
+    setOwn({ quotes: ownQuotes.includes(i) ? ownQuotes.filter((x) => x !== i) : [...ownQuotes, i].slice(-reviewCount) })
 
   const placeholder = (k: TextKey) => {
     const fromAll = appCopy[k]
@@ -287,25 +287,21 @@ export function PromoCardEditor({ template, appId, mk, updateMk, info, toolbarSh
           )}
 
           {uses.quotes && (
-            <Section title="Map">
-              <Row label="Show">
-                <Segmented
-                  value={own.lovedShow ?? 'both'}
-                  onChange={(v: LovedShow) => setOwn({ lovedShow: v === 'both' ? undefined : v })}
-                  options={(Object.keys(LOVED_SHOW) as LovedShow[]).map((v) => ({ value: v, label: LOVED_SHOW[v] }))}
-                />
-              </Row>
-              <p className="text-[11px] text-muted-foreground">Every App Store country on the dashboard&apos;s map: green where the app has downloads, red where it doesn&apos;t yet.</p>
-            </Section>
-          )}
-
-          {uses.quotes && (own.lovedShow ?? 'both') !== 'map' && (
             <Section
               title="Reviews"
               aside={ownQuotes.length > 0 && <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setOwn({ quotes: undefined })}>Best ones</Button>}
             >
+              <Row label="Show">
+                <Segmented
+                  value={String(reviewCount)}
+                  onChange={(v) => setOwn({ reviewCount: v === '1' ? 1 : undefined })}
+                  options={([3, 1] as ReviewCount[]).map((n) => ({ value: String(n), label: REVIEW_COUNTS[n] }))}
+                />
+              </Row>
               <p className="text-[11px] text-muted-foreground">
-                {ownQuotes.length ? 'Picked, in order (up to 3; as many as fit the size).' : 'The best short 5★ reviews. Pick up to 3 to choose them yourself.'}
+                {reviewCount === 1
+                  ? ownQuotes.length ? 'Picked.' : 'The best short 5★ review. Pick one to choose it yourself.'
+                  : ownQuotes.length ? 'Picked, in order: the first in front, the others fanned out behind it.' : 'The best short 5★ reviews. Pick up to 3 to choose them yourself; the first goes in front.'}
               </p>
               {!info ? (
                 <p className="text-xs text-muted-foreground">Loading…</p>

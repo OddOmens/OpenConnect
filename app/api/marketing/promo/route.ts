@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 /**
  * What the Marketing page needs to edit one app's promo cards: the screenshots they can show
  * (studio screens, then App Store ones), each template's own wording (shown as placeholders), and
- * the reviews Loved By can quote.
+ * the reviews the Reviews card can quote.
  */
 export async function GET(request: Request) {
   const denied = guard(request);

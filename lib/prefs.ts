@@ -163,6 +163,7 @@ export const PROMO_TEMPLATES = {
   update: "What's New",
   screens: 'Screenshots',
   loved: 'Loved By',
+  reviews: 'Reviews',
   download: 'Download',
 } as const
 export type PromoTemplateId = keyof typeof PROMO_TEMPLATES
@@ -197,12 +198,12 @@ export interface PromoCardSettings {
   cta?: string
   notes?: string
   shots?: string[]             // this card's screenshots, in order
-  quotes?: number[]            // Loved By: which reviews
-  lovedShow?: LovedShow        // Loved By: the map, the reviews, or both
+  quotes?: number[]            // Reviews: which reviews, the first in front
+  reviewCount?: ReviewCount    // Reviews: one review, or three fanned out
 }
 
-export const LOVED_SHOW = { both: 'Map & reviews', map: 'Map', reviews: 'Reviews' } as const
-export type LovedShow = keyof typeof LOVED_SHOW
+export const REVIEW_COUNTS = { 1: '1 review', 3: '3 reviews' } as const
+export type ReviewCount = 1 | 3
 
 // iPhone frame colours for the promo cards.
 export const PROMO_FRAMES = {
@@ -333,6 +334,14 @@ export function mergePrefs(saved: Partial<UiPrefs> | null | undefined): UiPrefs 
   if (!PROMO_FORMATS[p.marketing.format]) p.marketing.format = DEFAULT_PREFS.marketing.format
   if (!/^#[0-9a-f]{6}$/i.test(p.marketing.accent)) p.marketing.accent = DEFAULT_PREFS.marketing.accent
   if (!/^#[0-9a-f]{6}$/i.test(p.marketing.frameColor)) p.marketing.frameColor = DEFAULT_PREFS.marketing.frameColor
+  // Loved By used to quote reviews: its picks move to the Reviews card, and it's the map alone now.
+  p.marketing.cards = Object.fromEntries(Object.entries(p.marketing.cards).map(([app, cards]) => {
+    const old = cards.loved as (PromoCardSettings & { lovedShow?: string }) | undefined
+    if (!old || !('quotes' in old || 'lovedShow' in old)) return [app, cards]
+    const { quotes, lovedShow: _, ...loved } = old
+    const reviews = quotes?.length && !cards.reviews?.quotes ? { ...cards.reviews, quotes } : cards.reviews
+    return [app, { ...cards, loved, ...(reviews ? { reviews } : {}) }]
+  }))
   return p
 }
 

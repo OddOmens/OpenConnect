@@ -10,6 +10,7 @@ import { OverviewCard } from '@/lib/share-render/overview';
 import { MapCard, MilestoneCard, RatingCard, ReachCard, ReviewCard } from '@/lib/share-render/templates';
 import { PromoCard, PROMO_SIZES, PromoOptions } from '@/lib/share-render/promo';
 import { listing, promoData } from '@/lib/marketing';
+import { loadPromoScreens, promoScreens } from '@/lib/promo-screens';
 import {
   PROMO_FORMATS, PROMO_STYLES, PROMO_TEMPLATES, PromoFormatId, PromoStyleId, PromoTemplateId, SHARE_HEROES, SHARE_STATS, ShareHeroId, ShareStatId,
 } from '@/lib/prefs';
@@ -28,7 +29,7 @@ export const dynamic = 'force-dynamic';
 
 // --- Rendered PNG cache + one-at-a-time render queue -------------------------------
 
-const RENDER_VERSION = 21; // bump when the card design changes
+const RENDER_VERSION = 23; // bump when the card design changes
 const MAX_CACHED = 48;
 const pngCache = new Map<string, Buffer>();
 let queue: Promise<unknown> = Promise.resolve();
@@ -105,14 +106,10 @@ async function render(appId: string | undefined, range: ShareRange, format: Form
   return svgToPng(<OverviewCard data={withIcons} icons={icons.length ? icons : [null]} format={format} theme={theme} showList={picks.showList} />, format);
 }
 
-async function renderPromo(appId: string, o: PromoOptions): Promise<Buffer | null> {
+async function renderPromo(appId: string, o: PromoOptions, screenshots: { src: string; ratio: number }[]): Promise<Buffer | null> {
   const data = await promoData(appId);
   if (!data) return null;
-  const [icon, shots] = await Promise.all([
-    inlineLargeIcon(data.icon),
-    Promise.all((data.listing?.screenshots ?? []).map(async (s) => ({ src: await inlineImage(s.url), ratio: s.ratio }))),
-  ]);
-  const screenshots = shots.filter((s): s is { src: string; ratio: number } => !!s.src);
+  const icon = await inlineLargeIcon(data.icon);
   return svgToPng(<PromoCard data={data} images={{ icon, screenshots }} o={o} />, o.format);
 }
 
@@ -127,6 +124,7 @@ async function promoResponse(request: Request, q: URLSearchParams, template: Pro
     format: (q.get('format') && q.get('format')! in PROMO_FORMATS ? q.get('format') : '4x5') as PromoFormatId,
     style: (q.get('style') && q.get('style')! in PROMO_STYLES ? q.get('style') : 'gradient') as PromoStyleId,
     accent: /^#[0-9a-f]{6}$/i.test(accent) ? accent.toLowerCase() : '#3b82f6',
+    frameColor: /^#[0-9a-f]{6}$/i.test(`#${q.get('frame')}`) ? `#${q.get('frame')}`.toLowerCase() : '#2c2c30',
     showBadge: q.get('badge') !== '0',
     showRating: q.get('rating') !== '0',
     // Empty means "use the template's own wording".
@@ -135,10 +133,13 @@ async function promoResponse(request: Request, q: URLSearchParams, template: Pro
     cta: text(q.get('cta'), 40) || undefined,
     notes: text(q.get('notes'), 1200) || undefined,
   };
-  // The listing is part of the key, so a new App Store release re-renders the cards.
+  // The picked screenshots (studio screens or App Store ones), else the app's defaults.
+  const picked = (q.get('shots') ?? '').split(',').filter((id) => /^(s:[\w-]{1,40}|a:\d{1,2})$/.test(id)).slice(0, 10);
+  const shots = await loadPromoScreens(appId, picked.length ? picked : (await promoScreens(appId)).defaults);
+  // The listing and the screenshots are part of the key, so a new release or screenshot re-renders.
   const l = await listing(appId);
-  const key = [RENDER_VERSION, 'promo', shareDataVersion(), l?.version, l?.versionDate, appId, ...Object.values(o)].join('|');
-  return respond(request, key, () => renderPromo(appId, o));
+  const key = [RENDER_VERSION, 'promo', shareDataVersion(), l?.version, l?.versionDate, appId, shots.key, ...Object.values(o)].join('|');
+  return respond(request, key, () => renderPromo(appId, o, shots.images));
 }
 
 async function respond(request: Request, key: string, make: () => Promise<Buffer | null>) {

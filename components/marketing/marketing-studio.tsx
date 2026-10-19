@@ -2,14 +2,15 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { AppNav } from '@/components/nav/app-nav'
 import {
-  ArrowLeft, Download, Globe, Heart, Images, LayoutDashboard, Loader2, Map as MapIcon, Maximize2, MessageSquareQuote, RefreshCw, Rocket, Smartphone, Sparkles, Star, Trophy,
+  Download, Globe, Heart, Images, LayoutDashboard, Loader2, Map as MapIcon, Maximize2, MessageSquareQuote, RefreshCw, Rocket, Smartphone, Sparkles, Star, Trophy,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Segmented, Toggle } from '@/components/dashboard/section'
 import {
-  DEFAULT_PREFS, PROMO_ACCENTS, PROMO_FORMATS, PROMO_STYLES, PROMO_TEMPLATES, PromoFormatId, PromoStyleId, PromoTemplateId,
+  DEFAULT_PREFS, PROMO_ACCENTS, PROMO_FORMATS, PROMO_FRAMES, PROMO_STYLES, PROMO_TEMPLATES, PromoFormatId, PromoStyleId, PromoTemplateId,
   SHARE_HEROES, SHARE_STATS, SHARE_TEMPLATES, ShareHeroId, ShareStatId, ShareTemplateId, UiPrefs, monthRangeLabel,
 } from '@/lib/prefs'
 import type { App } from '@/components/dashboard/app-selector'
@@ -132,6 +133,93 @@ function useSettled<T>(value: T, ms: number) {
   return settled
 }
 
+interface PromoScreens {
+  studio: { id: string; name: string } | null
+  screens: { id: string; source: 'studio' | 'store'; label: string; thumb: string; ratio: number }[]
+  defaults: string[]
+}
+
+/** A screenshot as a small iPhone, numbered when the cards use it. */
+function ScreenThumb({ shot, order, frame, onClick }: { shot: PromoScreens['screens'][number]; order: number; frame: string; onClick: () => void }) {
+  const on = order > 0
+  const w = 44
+  return (
+    <button
+      onClick={onClick}
+      title={`${shot.label}${on ? ` (${order})` : ''}`}
+      aria-pressed={on}
+      className={cn('relative shrink-0 rounded-[10px] p-[2px] transition', on ? 'opacity-100' : 'opacity-40 hover:opacity-80')}
+      style={{ background: frame }}
+    >
+      <span className="block overflow-hidden rounded-[8px] bg-black p-[1.5px]">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={shot.thumb} alt={shot.label} loading="lazy" className="block rounded-[7px] object-cover" style={{ width: w, height: Math.round(w * shot.ratio) }} />
+      </span>
+      <span className="absolute left-1/2 top-[5px] h-[3px] w-[13px] -translate-x-1/2 rounded-full bg-black" />
+      {on && (
+        <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">
+          {order}
+        </span>
+      )}
+    </button>
+  )
+}
+
+/** Which screenshots the promo cards show, picked from the studio's screens and the App Store's. */
+function ScreenPicker({ screens, shown, picked, frame, onToggle, onReset, rowCls, labelCls }: {
+  screens: PromoScreens | null
+  shown: string[]
+  picked: boolean
+  frame: string
+  onToggle: (id: string) => void
+  onReset: () => void
+  rowCls: string
+  labelCls: string
+}) {
+  const group = (source: 'studio' | 'store') => screens?.screens.filter((x) => x.source === source) ?? []
+  const studio = group('studio')
+  const store = group('store')
+  const thumbs = (list: PromoScreens['screens']) => (
+    <div className="flex items-start gap-2.5 overflow-x-auto py-1.5 pr-2">
+      {list.map((x) => <ScreenThumb key={x.id} shot={x} order={shown.indexOf(x.id) + 1} frame={frame} onClick={() => onToggle(x.id)} />)}
+    </div>
+  )
+  return (
+    <div className={cn(rowCls, 'items-start')}>
+      <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1">
+        <span className={labelCls}>Screenshots</span>
+        <span className="text-[11px] text-muted-foreground">
+          {!screens ? 'Loading…' : shown.length ? `The cards use ${shown.length}, in this order. Click to add or remove.` : 'Pick the screens the cards should show.'}
+        </span>
+        {picked && <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onReset}>Reset</Button>}
+      </div>
+      {screens && (
+        <div className="flex w-full min-w-0 flex-col gap-1 lg:flex-row lg:gap-6">
+          <div className="min-w-0">
+            <div className="text-[11px] font-medium text-muted-foreground">
+              Studio{screens.studio ? ` · ${screens.studio.name}` : ''}
+              {screens.studio && <Link href={`/studio?app=${screens.studio.id}`} className="ml-2 underline-offset-2 hover:underline">Edit in Studio</Link>}
+            </div>
+            {studio.length ? thumbs(studio) : (
+              <p className="py-2 text-[11px] text-muted-foreground">
+                {screens.studio ? 'This studio project has no iPhone screenshots yet.' : <>No studio project for this app. <Link href="/studio" className="underline-offset-2 hover:underline">Make one in Studio</Link> to use its screens.</>}
+              </p>
+            )}
+          </div>
+          {store.length > 0 && (
+            <div className="min-w-0">
+              <div className="text-[11px] font-medium text-muted-foreground">
+                App Store <span className="font-normal">· often already designed, so they can look framed twice</span>
+              </div>
+              {thumbs(store)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface Card {
   key: string
   name: string     // shown under the preview
@@ -193,12 +281,46 @@ export function MarketingStudio() {
     updateShare({ stats: share.stats.includes(id) ? share.stats.filter((s) => s !== id) : [...share.stats, id] })
 
   // --- Promo cards: one app in every promo template -----------------------------------
+  const promo = mk.mode === 'promo'
   const promoApp = apps.find((a) => a.apple_id === mk.app) ?? apps[0]
   const appName = promoApp?.name.split(':')[0] ?? ''
   const copy: Copy = (promoApp && mk.copy[promoApp.apple_id]) || {}
   const setCopy = (patch: Copy) => promoApp && updateMk({ copy: { ...mk.copy, [promoApp.apple_id]: { ...copy, ...patch } } })
   const settledCopy = useSettled(copy, 700)
   const settledAccent = useSettled(mk.accent, 300)
+
+  // Screenshots the cards can show: the app's studio screens and its App Store ones. The picked
+  // ones (in order) are kept per app; until some are picked the cards use the defaults.
+  const [loadedScreens, setLoadedScreens] = useState<{ app: string; data: PromoScreens } | null>(null)
+  const promoAppId = promoApp?.apple_id
+  // Only the answer for the app on screen counts (switching apps shows "Loading…" until it's in).
+  const screens = loadedScreens && loadedScreens.app === promoAppId ? loadedScreens.data : null
+  useEffect(() => {
+    if (!promo || !promoAppId) return
+    let live = true
+    fetch(`/api/marketing/screens?app=${promoAppId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => live && d && setLoadedScreens({ app: promoAppId, data: d }))
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [promo, promoAppId])
+  const pickedShots = (promoAppId && mk.shots[promoAppId]) || []
+  const available = new Set(screens?.screens.map((x) => x.id) ?? [])
+  const shownShots = (pickedShots.length ? pickedShots : screens?.defaults ?? []).filter((id) => !screens || available.has(id))
+  const toggleShot = (id: string) => {
+    if (!promoAppId) return
+    const next = shownShots.includes(id) ? shownShots.filter((x) => x !== id) : [...shownShots, id]
+    updateMk({ shots: { ...mk.shots, [promoAppId]: next } })
+  }
+  const resetShots = () => {
+    if (!promoAppId) return
+    const rest = { ...mk.shots }
+    delete rest[promoAppId]
+    updateMk({ shots: rest })
+  }
+  const settledShots = useSettled(shownShots.join(','), 400)
   const promoQuery = (t: PromoTemplateId) => {
     const q = new URLSearchParams({
       app: promoApp?.apple_id ?? '',
@@ -208,7 +330,9 @@ export function MarketingStudio() {
       accent: settledAccent.replace('#', ''),
       badge: mk.showBadge ? '1' : '0',
       rating: mk.showRating ? '1' : '0',
+      frame: mk.frameColor.replace('#', ''),
     })
+    if (settledShots) q.set('shots', settledShots)
     const c = settledCopy
     if (c.headline) q.set('h', c.headline)
     if (c.tagline) q.set('sub', c.tagline)
@@ -226,7 +350,6 @@ export function MarketingStudio() {
       }))
     : []
 
-  const promo = mk.mode === 'promo'
   const cards = promo ? promoCards : statsCards
   const aspect = promo ? ASPECT[mk.format] : ASPECT[format]
   const grid = promo
@@ -263,22 +386,24 @@ export function MarketingStudio() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/70">
-        <div className="mx-auto flex min-h-16 max-w-screen-2xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Back to dashboard">
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-            <h1 className="text-lg font-semibold tracking-tight">Marketing</h1>
-            <Segmented
-              value={mk.mode}
-              onChange={(mode) => updateMk({ mode })}
-              options={[
-                { value: 'stats', label: 'Stats cards' },
-                { value: 'promo', label: 'App promos' },
-              ]}
-            />
-          </div>
+      <AppNav
+        active="marketing"
+        actions={
+          <Button size="sm" onClick={() => run('all-cards', async () => { for (const c of cards) await download(c) })} disabled={!!busy || !secure || !cards.length} title={secure ? undefined : 'Needs https://'} className="gap-2">
+            {busy === 'all-cards' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            <span className="hidden sm:inline">Download all</span>
+          </Button>
+        }
+      >
+        <div className="mx-auto flex max-w-screen-2xl flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-4 py-2.5 sm:px-6 lg:px-8">
+          <Segmented
+            value={mk.mode}
+            onChange={(mode) => updateMk({ mode })}
+            options={[
+              { value: 'stats', label: 'Stats cards' },
+              { value: 'promo', label: 'App promos' },
+            ]}
+          />
           <div className="flex flex-wrap items-center gap-2">
             {promo ? (
               <>
@@ -321,10 +446,6 @@ export function MarketingStudio() {
                 )}
               </>
             )}
-            <Button size="sm" onClick={() => run('all-cards', async () => { for (const c of cards) await download(c) })} disabled={!!busy || !secure || !cards.length} title={secure ? undefined : 'Needs https://'} className="gap-2">
-              {busy === 'all-cards' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              Download all
-            </Button>
           </div>
         </div>
 
@@ -363,10 +484,35 @@ export function MarketingStudio() {
                   <input type="color" value={mk.accent} onChange={(e) => updateMk({ accent: e.target.value })} className="absolute inset-0 cursor-pointer opacity-0" aria-label="Custom accent colour" />
                 </label>
               </div>
+              <span className={labelCls}>iPhone</span>
+              <div className="flex items-center gap-1.5">
+                {(Object.keys(PROMO_FRAMES) as (keyof typeof PROMO_FRAMES)[]).map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => updateMk({ frameColor: c })}
+                    title={PROMO_FRAMES[c]}
+                    aria-label={`${PROMO_FRAMES[c]} iPhone`}
+                    className={cn('h-6 w-6 rounded-full border-2 transition-transform', mk.frameColor === c ? 'scale-110 border-foreground' : 'border-transparent hover:scale-110')}
+                    style={{ background: `linear-gradient(135deg, ${c}, ${c}cc)` }}
+                  />
+                ))}
+              </div>
               <span className={labelCls}>Show</span>
               <Toggle active={mk.showBadge} onClick={() => updateMk({ showBadge: !mk.showBadge })}>App Store button</Toggle>
               <Toggle active={mk.showRating} onClick={() => updateMk({ showRating: !mk.showRating })}>Rating</Toggle>
             </div>
+            {promoApp && (
+              <ScreenPicker
+                screens={screens}
+                shown={shownShots}
+                picked={pickedShots.length > 0}
+                frame={mk.frameColor}
+                onToggle={toggleShot}
+                onReset={resetShots}
+                rowCls={rowCls}
+                labelCls={labelCls}
+              />
+            )}
             {promoApp && (
               <div className="mx-auto grid max-w-screen-2xl gap-x-4 gap-y-2 border-t border-border px-4 py-2.5 sm:grid-cols-2 sm:px-6 lg:grid-cols-[1fr_1.4fr_0.7fr_auto] lg:px-8">
                 <label className="flex flex-col gap-1">
@@ -453,7 +599,7 @@ export function MarketingStudio() {
             )}
           </>
         )}
-      </header>
+      </AppNav>
 
       <main className="mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 lg:px-8">
         {!secure && (

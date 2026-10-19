@@ -4,6 +4,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import DottedMap from 'dotted-map/without-countries';
+import { Resvg } from '@resvg/resvg-js';
 import worldDots from '@/lib/world-dots.json';
 import type { ShareData, ShareIcon } from '@/lib/share';
 import { TERRITORY_BY_CODE } from '@/lib/territories';
@@ -54,6 +55,15 @@ export async function inlineImage(url: string | null): Promise<string | null> {
     await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
   }
   return null;
+}
+
+/** A large image (data: URI) scaled to `target` px wide, as PNG. Small images come back as they are. */
+export function shrinkImage(data: string, width: number, height: number, target: number): string {
+  if (!width || !height || width <= target) return data;
+  const h = Math.round((height * target) / width);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${target}" height="${h}"><image width="${target}" height="${h}" xlink:href="${data}"/></svg>`;
+  const png = new Resvg(svg, { fitTo: { mode: 'original' } }).render().asPng();
+  return `data:image/png;base64,${Buffer.from(png).toString('base64')}`;
 }
 
 /** An App Store icon at 256 px. */

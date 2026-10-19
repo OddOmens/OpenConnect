@@ -1,8 +1,7 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
-import { ArrowLeft, CheckCircle2, Info, KeyRound, LayoutDashboard, Loader2, Monitor, Moon, Palette, RefreshCw, Shield, Sun, XCircle } from "lucide-react"
+import { CheckCircle2, Info, KeyRound, LayoutDashboard, Loader2, Monitor, Moon, Palette, RefreshCw, Shield, Sun, XCircle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
@@ -10,6 +9,7 @@ import { CHARTS, CURRENCIES, ChartId, RANGES, RangeId, SyncConfig, ThemeId, UiPr
 import { applyTheme } from "@/lib/theme"
 import { cn } from "@/lib/utils"
 import { SecuritySection } from "./security-section"
+import { AppNav } from "@/components/nav/app-nav"
 import { ApiTokensSection } from "./api-tokens-section"
 import { CustomizeSettings } from "./customize-settings"
 import { Panel, Row } from "./panel"
@@ -84,15 +84,9 @@ export function SettingsView({ initial, apps: initialApps, version }: { initial:
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/70">
-        <div className="mx-auto flex h-16 max-w-5xl items-center gap-3 px-4 sm:px-6 lg:px-8">
-          <Link href="/" className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Back to dashboard">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-          <h1 className="text-lg font-semibold tracking-tight">Settings</h1>
-        </div>
-      </header>
+      <AppNav active="settings" />
 
+      <h1 className="mx-auto max-w-5xl px-4 pt-6 text-lg font-semibold tracking-tight sm:px-6 lg:px-8">Settings</h1>
       <div className="mx-auto max-w-5xl gap-8 px-4 py-6 sm:px-6 md:grid md:grid-cols-[200px_minmax(0,1fr)] lg:px-8">
         <nav aria-label="Settings sections" className="mb-6 flex gap-1 overflow-x-auto md:mb-0 md:flex-col">
           {(Object.keys(SECTIONS) as SectionKey[]).map((key) => {

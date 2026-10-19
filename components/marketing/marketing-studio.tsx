@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { AppNav } from '@/components/nav/app-nav'
+import { ScreenThumb, type PromoScreens } from './screen-thumb'
+import { PromoCardEditor } from './promo-card-editor'
+import { hasOwnSettings, promoUrl, resolvePromo, type ResolvedPromo } from '@/lib/promo-settings'
 import {
   Download, Globe, Heart, Images, LayoutDashboard, Loader2, Map as MapIcon, Maximize2, MessageSquareQuote, RefreshCw, Rocket, Smartphone, Sparkles, Star, Trophy,
 } from 'lucide-react'
@@ -133,38 +136,6 @@ function useSettled<T>(value: T, ms: number) {
   return settled
 }
 
-interface PromoScreens {
-  studio: { id: string; name: string } | null
-  screens: { id: string; source: 'studio' | 'store'; label: string; thumb: string; ratio: number }[]
-  defaults: string[]
-}
-
-/** A screenshot as a small iPhone, numbered when the cards use it. */
-function ScreenThumb({ shot, order, frame, onClick }: { shot: PromoScreens['screens'][number]; order: number; frame: string; onClick: () => void }) {
-  const on = order > 0
-  const w = 44
-  return (
-    <button
-      onClick={onClick}
-      title={`${shot.label}${on ? ` (${order})` : ''}`}
-      aria-pressed={on}
-      className={cn('relative shrink-0 rounded-[10px] p-[2px] transition', on ? 'opacity-100' : 'opacity-40 hover:opacity-80')}
-      style={{ background: frame }}
-    >
-      <span className="block overflow-hidden rounded-[8px] bg-black p-[1.5px]">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={shot.thumb} alt={shot.label} loading="lazy" className="block rounded-[7px] object-cover" style={{ width: w, height: Math.round(w * shot.ratio) }} />
-      </span>
-      <span className="absolute left-1/2 top-[5px] h-[3px] w-[13px] -translate-x-1/2 rounded-full bg-black" />
-      {on && (
-        <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">
-          {order}
-        </span>
-      )}
-    </button>
-  )
-}
-
 /** Which screenshots the promo cards show, picked from the studio's screens and the App Store's. */
 function ScreenPicker({ screens, shown, picked, frame, onToggle, onReset, rowCls, labelCls }: {
   screens: PromoScreens | null
@@ -226,6 +197,10 @@ interface Card {
   title: string    // dialog title / alt text
   url: string
   file: string
+  aspect: string   // CSS aspect class
+  template?: PromoTemplateId  // promo cards: opens the card's settings popup
+  resolved?: ResolvedPromo
+  edited?: boolean // has settings of its own
   extra?: React.ReactNode
 }
 
@@ -236,7 +211,7 @@ export function MarketingStudio() {
   const [share, setShare, updateShare] = useSaved<UiPrefs['share']>('share', DEFAULT_PREFS.share)
   const [mk, setMk, updateMk] = useSaved<Marketing>('marketing', DEFAULT_PREFS.marketing)
   const [busy, setBusy] = useState<string | null>(null)
-  const [open, setOpen] = useState<Card | null>(null)
+  const [openKey, setOpenKey] = useState<string | null>(null)
   // Browsers block file downloads on plain http:// pages (except localhost).
   const [secure, setSecure] = useState(true)
   useEffect(() => setSecure(window.isSecureContext), [])
@@ -270,6 +245,7 @@ export function MarketingStudio() {
     title: `${c.name} card`,
     url: `/api/marketing?app=${c.id}&t=${template}&range=${range}&format=${format}&theme=${theme}&hero=${share.hero}&stats=${share.stats.join(',')}&list=${share.showList ? 1 : 0}&pick=${picks[c.id] ?? 0}`,
     file: `${slug(c.name)}-${template}${usesRange ? `-${range.replace('m:', '')}` : ''}-${format === '4x5' ? '1080x1350' : '1080x1920'}.png`,
+    aspect: ASPECT[format],
     extra: template === 'review' && (
       <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setPicks((p) => ({ ...p, [c.id]: (p[c.id] ?? 0) + 1 }))}>
         <RefreshCw className="h-3.5 w-3.5" />
@@ -298,7 +274,7 @@ export function MarketingStudio() {
   useEffect(() => {
     if (!promo || !promoAppId) return
     let live = true
-    fetch(`/api/marketing/screens?app=${promoAppId}`)
+    fetch(`/api/marketing/promo?app=${promoAppId}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => live && d && setLoadedScreens({ app: promoAppId, data: d }))
       .catch(() => {})
@@ -321,37 +297,29 @@ export function MarketingStudio() {
     updateMk({ shots: rest })
   }
   const settledShots = useSettled(shownShots.join(','), 400)
-  const promoQuery = (t: PromoTemplateId) => {
-    const q = new URLSearchParams({
-      app: promoApp?.apple_id ?? '',
-      t,
-      format: mk.format,
-      style: mk.style,
-      accent: settledAccent.replace('#', ''),
-      badge: mk.showBadge ? '1' : '0',
-      rating: mk.showRating ? '1' : '0',
-      frame: mk.frameColor.replace('#', ''),
-    })
-    if (settledShots) q.set('shots', settledShots)
-    const c = settledCopy
-    if (c.headline) q.set('h', c.headline)
-    if (c.tagline) q.set('sub', c.tagline)
-    if (c.cta) q.set('cta', c.cta)
-    if (c.notes && t === 'update') q.set('notes', c.notes)
-    return q.toString()
-  }
+  // Toolbar text and colour settle before the cards re-render (no render per keystroke).
+  const mkForCards = { ...mk, accent: settledAccent, copy: promoAppId ? { ...mk.copy, [promoAppId]: settledCopy } : mk.copy }
+  const toolbarShots = settledShots ? settledShots.split(',') : []
   const promoCards: Card[] = promoApp
-    ? (Object.keys(PROMO_TEMPLATES) as PromoTemplateId[]).map((t) => ({
-        key: t,
-        name: PROMO_TEMPLATES[t],
-        title: `${appName} · ${PROMO_TEMPLATES[t]}`,
-        url: `/api/marketing?${promoQuery(t)}`,
-        file: `${slug(appName)}-${t}-${mk.style}-${SIZE[mk.format]}.png`,
-      }))
+    ? (Object.keys(PROMO_TEMPLATES) as PromoTemplateId[]).map((t) => {
+        const r = resolvePromo(mkForCards, promoApp.apple_id, t, toolbarShots)
+        return {
+          key: t,
+          name: PROMO_TEMPLATES[t],
+          title: `${appName} · ${PROMO_TEMPLATES[t]}`,
+          url: promoUrl(promoApp.apple_id, t, r),
+          file: `${slug(appName)}-${t}-${r.style}-${SIZE[r.format]}.png`,
+          aspect: ASPECT[r.format],
+          template: t,
+          resolved: r,
+          edited: hasOwnSettings(mk, promoApp.apple_id, t),
+        }
+      })
     : []
 
   const cards = promo ? promoCards : statsCards
-  const aspect = promo ? ASPECT[mk.format] : ASPECT[format]
+  // Looked up live, so an open card's preview follows its settings.
+  const open = cards.find((c) => c.key === openKey) ?? null
   const grid = promo
     ? mk.format === '16x9' ? 'sm:grid-cols-2' : mk.format === '9x16' ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5' : 'sm:grid-cols-2 xl:grid-cols-3'
     : format === '4x5' ? 'sm:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4'
@@ -625,11 +593,12 @@ export function MarketingStudio() {
             const Icon = promo ? PROMO_ICONS[c.key as PromoTemplateId] : null
             return (
               <figure key={c.key} className="space-y-2">
-                <Preview src={c.url} alt={c.title} aspect={aspect} onOpen={() => setOpen(c)} />
+                <Preview src={c.url} alt={c.title} aspect={c.aspect} onOpen={() => setOpenKey(c.key)} />
                 <figcaption className="flex items-center justify-between gap-2">
                   <span className="flex min-w-0 items-center gap-2 truncate text-sm font-medium">
                     {Icon && <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />}
                     {c.name}
+                    {c.edited && <span className="rounded bg-accent px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">Own settings</span>}
                   </span>
                   <span className="flex shrink-0 gap-1.5">
                     {c.extra}
@@ -645,23 +614,43 @@ export function MarketingStudio() {
         </div>
       </main>
 
-      <Dialog open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
-        <DialogContent className="w-auto max-w-[95vw] gap-3 p-3 sm:max-w-[95vw]">
-          <DialogTitle className="sr-only">{open?.title}</DialogTitle>
-          {open && (
-            <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={open.url} alt={open.title} className={cn('max-h-[82vh] w-auto max-w-[92vw] rounded-md', aspect)} />
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-medium">{open.title}</span>
-                <Button size="sm" className="gap-1.5" disabled={!!busy} onClick={() => run(open.key, () => download(open))}>
-                  {busy === open.key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                  Download PNG
-                </Button>
-              </div>
-            </>
-          )}
-        </DialogContent>
+      <Dialog open={!!open} onOpenChange={(o) => !o && setOpenKey(null)}>
+        {open?.template && open.resolved && promoApp ? (
+          <DialogContent className="w-auto max-w-[95vw] gap-0 overflow-hidden p-0 sm:max-w-[95vw]">
+            <DialogTitle className="sr-only">{open.title}</DialogTitle>
+            <PromoCardEditor
+              key={`${promoApp.apple_id}-${open.template}`}
+              template={open.template}
+              appId={promoApp.apple_id}
+              mk={mk}
+              updateMk={updateMk}
+              info={screens}
+              toolbarShots={toolbarShots}
+              resolved={open.resolved}
+              url={open.url}
+              aspect={open.aspect}
+              busy={busy === open.key}
+              onDownload={() => run(open.key, () => download(open))}
+            />
+          </DialogContent>
+        ) : (
+          <DialogContent className="w-auto max-w-[95vw] gap-3 p-3 sm:max-w-[95vw]">
+            <DialogTitle className="sr-only">{open?.title}</DialogTitle>
+            {open && (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={open.url} alt={open.title} className={cn('max-h-[82vh] w-auto max-w-[92vw] rounded-md', open.aspect)} />
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium">{open.title}</span>
+                  <Button size="sm" className="gap-1.5" disabled={!!busy} onClick={() => run(open.key, () => download(open))}>
+                    {busy === open.key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                    Download PNG
+                  </Button>
+                </div>
+              </>
+            )}
+          </DialogContent>
+        )}
       </Dialog>
     </div>
   )

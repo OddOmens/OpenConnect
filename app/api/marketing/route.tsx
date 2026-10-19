@@ -2,6 +2,8 @@ import satori from 'satori';
 import { guard } from '@/lib/auth';
 import { Resvg } from '@resvg/resvg-js';
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   isShareRange, mapShare, milestoneShare, ratingShare, reachShare, reviewShare, SHARE_TEMPLATES, ShareData, ShareRange, ShareTemplate, shareData, shareDataVersion,
 } from '@/lib/share';
@@ -29,7 +31,15 @@ export const dynamic = 'force-dynamic';
 
 // --- Rendered PNG cache + one-at-a-time render queue -------------------------------
 
-const RENDER_VERSION = 23; // bump when the card design changes
+// Part of every card's cache key and ETag: the build, so a new deploy never serves (or lets a
+// browser keep, via 304) a card drawn by older code. Falls back to the start time in dev.
+const RENDER_VERSION = (() => {
+  try {
+    return fs.readFileSync(path.join(process.cwd(), '.next', 'BUILD_ID'), 'utf8').trim();
+  } catch {
+    return `dev-${Date.now()}`;
+  }
+})();
 const MAX_CACHED = 48;
 const pngCache = new Map<string, Buffer>();
 let queue: Promise<unknown> = Promise.resolve();
@@ -132,6 +142,7 @@ async function promoResponse(request: Request, q: URLSearchParams, template: Pro
     tagline: text(q.get('sub'), 240) || undefined,
     cta: text(q.get('cta'), 40) || undefined,
     notes: text(q.get('notes'), 1200) || undefined,
+    quotes: (q.get('quotes') ?? '').split(',').filter((v) => /^\d{1,2}$/.test(v)).map(Number).slice(0, 3),
   };
   // The picked screenshots (studio screens or App Store ones), else the app's defaults.
   const picked = (q.get('shots') ?? '').split(',').filter((id) => /^(s:[\w-]{1,40}|a:\d{1,2})$/.test(id)).slice(0, 10);

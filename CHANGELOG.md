@@ -4,6 +4,7 @@
 
 ### Added
 - **One top bar on every page:** OpenConnect, Dashboard · Marketing · Studio, the page's own controls and Settings, always in the same place (the studio included, in its own colours). The studio starts in your OpenConnect light/dark setting.
+- **Edit each promo card on its own.** Clicking a card opens it large with a settings panel beside it: size, style, accent, iPhone colour, App Store button and rating, its own text (headlines keep line breaks), its own screenshots, and for Loved By which reviews to quote. Anything left alone follows the toolbar, which now sets every card; Reset puts a card back.
 - **Promo screenshots from the studio.** App promo cards show screenshots you pick on the Marketing page, in order: the app's raw screens from its studio project (matched by Apple ID, bundle ID or name) or its App Store ones. They're drawn in the studio's iPhone, with Dynamic Island and side buttons, in a frame colour you choose.
 - **Screenshot studio**, formerly OpenAppShot, now part of OpenConnect at `/studio`, behind the same sign-in. Design, localize and export App Store screenshots for iPhone, iPhone Duo, iPad and Mac. It runs as a second container with headless Chromium (`openconnect-studio`), and its data lives in `./data/studio`.
 - **API tokens** (Settings → Security). Claude's `appshot` CLI and MCP server reach the studio with `OPENCONNECT_URL` and `OPENCONNECT_TOKEN`. A token only opens the studio, never your sales data or settings, and each one can be revoked.
@@ -11,6 +12,8 @@
 - Promo cards come in five styles (**Studio**, **Light**, **Gradient**, **Bold**, **Glow**), any accent colour, and four sizes: 1:1, 4:5, 9:16 and 16:9. You can override the headline, tagline, button text and release notes, and the text is kept per app. You can also hide the App Store button or the rating.
 
 ### Changed
+- **Screenshots** cards read "See Afternoon / In Action" on two lines.
+- Card images are tied to the build, so a browser never keeps showing a card drawn by an older version after an update.
 - **What's New** cards read "Version / 1.4.0 / Is Here!" on three lines, and release notes are trimmed to what fits.
 - **Loved By** cards only include the reviews that fit under the headline and rating, so long reviews no longer run into the header.
 - The studio's editor and its data API are part of the dashboard app itself; the studio container only renders (slide images, previews, exports) and can be restarted without interrupting editing.

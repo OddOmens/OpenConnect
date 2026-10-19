@@ -8,6 +8,7 @@ export function StudioFrame({ children }: { children: React.ReactNode }) {
   return (
     <div className={styles.frame}>
       <header className={styles.bar}>
+        <div className={styles.inner}>
         <Link href="/" className={styles.brand}>
           OpenConnect
         </Link>
@@ -22,6 +23,7 @@ export function StudioFrame({ children }: { children: React.ReactNode }) {
         <Link href="/settings" className={styles.icon} aria-label="Settings" title="Settings">
           <Settings size={16} />
         </Link>
+        </div>
       </header>
       {children}
     </div>

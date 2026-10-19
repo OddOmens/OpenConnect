@@ -108,8 +108,42 @@ function colours(style: PromoStyleId, accent: string): Omit<Palette, 'frame'> {
 
 // --- Pieces ----------------------------------------------------------------------------
 
-/** Headline size that shrinks for longer lines. */
-const headlineSize = (text: string, base: number) => (text.length > 48 ? base * 0.68 : text.length > 30 ? base * 0.8 : text.length > 18 ? base * 0.9 : base);
+/** Headline size that shrinks for longer lines (the longest line, when it has line breaks). */
+const headlineSize = (text: string, base: number) => {
+  const n = Math.max(...text.split('\n').map((l) => l.length));
+  return n > 48 ? base * 0.68 : n > 30 ? base * 0.8 : n > 18 ? base * 0.9 : base;
+};
+
+// --- Fitting text into the card ----------------------------------------------------------
+// satori can't measure before laying out, so blocks are sized from their text: lines at about
+// half an em per character (a little generous, so estimates err towards "taller").
+
+/** Lines `text` takes at `fontPx` in `widthPx`, at most `clamp`. Line breaks start new lines. */
+function textLines(text: string, fontPx: number, widthPx: number, clamp: number) {
+  const perLine = Math.max(1, Math.floor(widthPx / (fontPx * 0.53)));
+  const lines = text.split('\n').reduce((n, l) => n + Math.max(1, Math.ceil(l.length / perLine)), 0);
+  return Math.min(clamp, lines);
+}
+
+/** Height of a headline block (see Headline). */
+const headlineHeight = (text: string, size: number, widthPx: number, clamp: number) => {
+  const fs = headlineSize(text, size);
+  // Headline type is set tight (negative tracking), so it runs narrower than body text.
+  return textLines(text, fs * 0.82, widthPx, clamp) * fs * 1.05;
+};
+
+/** The leading items whose heights (plus gaps) fit in `budget`; always at least `min`. */
+function fitting<T>(items: T[], height: (item: T) => number, gap: number, budget: number, min = 0) {
+  const out: T[] = [];
+  let used = 0;
+  for (const item of items) {
+    const h = height(item) + (out.length ? gap : 0);
+    if (used + h > budget && out.length >= min) break;
+    out.push(item);
+    used += h;
+  }
+  return out;
+}
 
 function AppIcon({ src, size, p }: { src: string | null; size: number; p: Palette }) {
   const radius = Math.round(size * 0.225);
@@ -123,7 +157,7 @@ function AppIcon({ src, size, p }: { src: string | null; size: number; p: Palett
 
 function Eyebrow({ children, p, size = 24, center = false }: { children: React.ReactNode; p: Palette; size?: number; center?: boolean }) {
   return (
-    <div style={{ display: 'flex', alignSelf: center ? 'center' : 'flex-start', alignItems: 'center', gap: 10, padding: `${size * 0.45}px ${size * 1.05}px`, borderRadius: 999, background: p.surface, border: `2px solid ${p.border}`, color: p.accent, fontSize: size, fontWeight: 600, letterSpacing: size * 0.12 }}>
+    <div style={{ display: 'flex', flexShrink: 0, alignSelf: center ? 'center' : 'flex-start', alignItems: 'center', gap: 10, padding: `${size * 0.45}px ${size * 1.05}px`, borderRadius: 999, background: p.surface, border: `2px solid ${p.border}`, color: p.accent, fontSize: size, fontWeight: 600, letterSpacing: size * 0.12 }}>
       {children}
     </div>
   );
@@ -275,7 +309,7 @@ function AppLine({ data, icon, p, size = 72 }: { data: PromoData; icon: string |
 function Headline({ text, size, p, align = 'left', lines = 3 }: { text: string; size: number; p: Palette; align?: 'left' | 'center'; lines?: number }) {
   const fs = headlineSize(text, size);
   return (
-    <div style={{ display: 'block', fontSize: fs, fontWeight: 800, letterSpacing: -fs * 0.035, lineHeight: 1.05, color: p.fg, textAlign: align, lineClamp: lines }}>
+    <div style={{ display: 'block', flexShrink: 0, fontSize: fs, fontWeight: 800, letterSpacing: -fs * 0.035, lineHeight: 1.05, color: p.fg, textAlign: align, lineClamp: lines, whiteSpace: 'pre-line' }}>
       {text}
     </div>
   );
@@ -361,16 +395,36 @@ function Update({ data, images, o, p }: Props) {
   const { format } = o;
   const l = data.listing;
   const version = l?.version;
-  const headline = o.headline || (version ? `Version ${version} is here` : `${data.name} just got better`);
+  // "Version / 1.4.0 / Is Here!", one per line.
+  const headline = o.headline || (version ? `Version\n${version}\nIs Here!` : `${data.name} just got better`);
   const landscape = format === '16x9';
-  const max = { '1x1': 4, '4x5': 6, '9x16': 8, '16x9': 5 }[format];
-  const bullets = noteBullets(o.notes ?? l?.releaseNotes ?? '', max);
-  const items = bullets.length ? bullets : ['Performance improvements and bug fixes'];
   const tall = format === '9x16';
   const square = format === '1x1';
+  const { width: W, height: H } = PROMO_SIZES[format];
+  const pad = landscape ? 96 : tall ? 88 : 72;
+  const headSize = square ? 76 : landscape ? 84 : tall ? 124 : 96;
   const fs = square ? 30 : tall ? 44 : 34;
+  const notesPad = square ? 36 : 44;
+  const bulletGap = square ? 18 : 26;
+  const max = { '1x1': 4, '4x5': 6, '9x16': 8, '16x9': 5 }[format];
+  const bullets = noteBullets(o.notes ?? l?.releaseNotes ?? '', max);
+  const all = bullets.length ? bullets : ['Performance improvements and bug fixes'];
+  // Release notes go in only while they fit between the headline and the footer.
+  const date = l?.versionDate ? fmtDay(l.versionDate, { month: 'long', day: 'numeric', year: 'numeric' }) : null;
+  const colW = landscape ? 1080 : W - pad * 2;
+  const gap = square ? 26 : tall ? 44 : 36;
+  const eyebrowH = (square ? 22 : tall ? 28 : 24) * 2.2;
+  const used =
+    eyebrowH + gap +
+    headlineHeight(headline, headSize, colW, 3) + gap +
+    (date && !landscape ? (square ? 26 : tall ? 34 : 30) * 1.3 + gap - 8 : 0) +
+    (tall ? 200 + gap : 0) +
+    notesPad * 2;
+  const budget = H - pad * 2 - (landscape ? 0 : (square ? 64 : tall ? 96 : 80) + 32) - (landscape ? 80 + 32 : 0) - used;
+  const bulletW = colW - notesPad * 2 - fs * 1.25 - 22;
+  const items = fitting(all, (b) => textLines(b, fs, bulletW, 2) * fs * 1.35, bulletGap, budget, 1);
   const notes = (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: square ? 18 : 26, padding: square ? 36 : 44, borderRadius: 32, background: p.surface, border: `2px solid ${p.border}` }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, gap: bulletGap, padding: notesPad, borderRadius: 32, background: p.surface, border: `2px solid ${p.border}` }}>
       {items.map((b, i) => (
         <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 22 }}>
           <div style={{ display: 'flex', flexShrink: 0, alignItems: 'center', justifyContent: 'center', width: fs * 1.25, height: fs * 1.25, marginTop: fs * 0.06, borderRadius: fs, background: p.accent }}>
@@ -383,7 +437,6 @@ function Update({ data, images, o, p }: Props) {
       ))}
     </div>
   );
-  const date = l?.versionDate ? fmtDay(l.versionDate, { month: 'long', day: 'numeric', year: 'numeric' }) : null;
   const footer = (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24 }}>
       <AppLine data={data} icon={images.icon} p={p} size={square ? 64 : tall ? 96 : 80} />
@@ -397,7 +450,7 @@ function Update({ data, images, o, p }: Props) {
         <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: 1080 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
             <Eyebrow p={p}>{eyebrow}</Eyebrow>
-            <Headline text={headline} size={92} p={p} lines={2} />
+            <Headline text={headline} size={headSize} p={p} lines={3} />
             {notes}
           </div>
           {footer}
@@ -410,11 +463,11 @@ function Update({ data, images, o, p }: Props) {
   }
   return (
     <Canvas format={format} p={p} pad={tall ? 88 : 72}>
-      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center', gap: square ? 26 : tall ? 44 : 36 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center', gap }}>
         {tall && <AppIcon src={images.icon} size={200} p={p} />}
         <Eyebrow p={p} size={square ? 22 : tall ? 28 : 24}>{eyebrow}</Eyebrow>
-        <Headline text={headline} size={square ? 88 : tall ? 132 : 104} p={p} lines={tall ? 3 : 2} />
-        {date && <div style={{ display: 'flex', marginTop: -8, fontSize: square ? 26 : tall ? 34 : 30, color: p.muted }}>Released {date}</div>}
+        <Headline text={headline} size={headSize} p={p} lines={3} />
+        {date && <div style={{ display: 'flex', flexShrink: 0, marginTop: -8, fontSize: square ? 26 : tall ? 34 : 30, color: p.muted }}>Released {date}</div>}
         {notes}
       </div>
       {footer}
@@ -477,10 +530,23 @@ function Loved({ data, images, o, p }: Props) {
   const hasRating = o.showRating && data.rating != null && data.ratingCount > 0;
   const headline =
     o.headline || (data.countries > 1 ? `Loved in ${data.countries} countries` : hasRating ? `Rated ${data.rating!.toFixed(1)} stars` : `People love ${data.name}`);
-  const quotes = data.quotes.slice(0, square ? 1 : landscape ? 2 : tall ? 3 : 2);
   const qs = square ? 30 : tall ? 40 : 32;
+  const { width: W, height: H } = PROMO_SIZES[format];
+  const pad = landscape ? 96 : tall ? 88 : 72;
+  // Reviews go in only while they fit under the headline and rating (above the footer), so a long
+  // one can never push the rest of the card into the headline.
+  const cardPad = square ? 32 : 40;
+  const clamp = square ? 3 : 4;
+  const quoteW = (landscape ? W - pad * 2 - 780 : W - pad * 2) - cardPad * 2;
+  const quoteH = (q: PromoData['quotes'][number]) => cardPad * 2 + qs * 0.9 + 16 + textLines(`“${q.body}”`, qs, quoteW, clamp) * qs * 1.4 + 16 + qs * 0.75 * 1.25 + 4;
+  const footerH = square ? 64 : tall ? 96 : 80;
+  const gap = square ? 30 : 44;
+  const headlineH = headlineHeight(headline, square ? 84 : tall ? 132 : 100, landscape ? 720 : W - pad * 2, landscape ? 3 : tall ? 3 : 2);
+  const ratingH = hasRating ? (square ? 100 : tall ? 160 : 130) : 0;
+  const budget = landscape ? H - pad * 2 : H - pad * 2 - footerH - 32 - headlineH - (ratingH ? ratingH + gap : 0) - gap;
+  const quotes = fitting(data.quotes.slice(0, square ? 1 : landscape ? 2 : tall ? 3 : 2), quoteH, 24, budget);
   const rating = hasRating && (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 26 }}>
+    <div style={{ display: 'flex', flexShrink: 0, alignItems: 'center', gap: 26 }}>
       <div style={{ display: 'flex', fontSize: square ? 100 : tall ? 160 : 130, fontWeight: 800, letterSpacing: -5, lineHeight: 1 }}>{data.rating!.toFixed(1)}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <StarRow rating={data.rating!} size={square ? 40 : tall ? 58 : 50} empty={p.border} />
@@ -491,11 +557,11 @@ function Loved({ data, images, o, p }: Props) {
     </div>
   );
   const quoteCards = quotes.length ? (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, gap: 24 }}>
       {quotes.map((q, i) => (
-        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: square ? 32 : 40, borderRadius: 28, background: p.surface, border: `2px solid ${p.border}` }}>
+        <div key={i} style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, gap: 16, padding: cardPad, borderRadius: 28, background: p.surface, border: `2px solid ${p.border}` }}>
           <StarRow rating={q.rating} size={qs * 0.9} gap={4} empty={p.border} />
-          <div style={{ display: 'block', fontSize: qs, lineHeight: 1.4, lineClamp: square ? 3 : 4 }}>{`“${q.body}”`}</div>
+          <div style={{ display: 'block', fontSize: qs, lineHeight: 1.4, lineClamp: clamp }}>{`“${q.body}”`}</div>
           <div style={{ display: 'flex', fontSize: qs * 0.75, color: p.muted }}>{q.reviewer}</div>
         </div>
       ))}

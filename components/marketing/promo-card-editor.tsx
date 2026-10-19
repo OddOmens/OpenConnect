@@ -295,7 +295,7 @@ export function PromoCardEditor({ template, appId, mk, updateMk, info, toolbarSh
                   options={(Object.keys(LOVED_SHOW) as LovedShow[]).map((v) => ({ value: v, label: LOVED_SHOW[v] }))}
                 />
               </Row>
-              <p className="text-[11px] text-muted-foreground">Every App Store country on the dashboard&apos;s map: the ones with downloads in the accent colour, the rest greyed out.</p>
+              <p className="text-[11px] text-muted-foreground">Every App Store country on the dashboard&apos;s map: green where the app has downloads, red where it doesn&apos;t yet.</p>
             </Section>
           )}
 

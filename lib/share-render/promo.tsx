@@ -549,24 +549,26 @@ function Loved({ data, images, o, p }: Props) {
   const legendH = square ? 30 : 36;
   const mapH = mapW * (WORLD_H / WORLD_W) + 14 + legendH;
   const reached = new Set(data.reached);
-  // Three levels that read in every style (even where the accent is white): a faint grid of the
-  // continents, small dim pins for countries not reached yet, larger full-strength ones for reached.
-  const NOT_YET = 0.35;
+  // Green for countries with downloads, red for the rest, the same in every style, over a faint
+  // grid of the continents. A dark outline keeps them clear on a green or red background (Bold).
+  const REACHED = '#22c55e';
+  const NOT_YET = '#ef4444';
+  const ring = 'rgba(0,0,0,0.55)';
   const pins = [
-    ...TERRITORIES.filter((t) => !reached.has(t.code)).map((t) => ({ code: t.code, color: p.muted, r: 0.4, opacity: NOT_YET })),
-    ...TERRITORIES.filter((t) => reached.has(t.code)).map((t) => ({ code: t.code, color: p.accent, r: 0.72 })),
+    ...TERRITORIES.filter((t) => !reached.has(t.code)).map((t) => ({ code: t.code, color: NOT_YET, r: 0.5, stroke: ring })),
+    ...TERRITORIES.filter((t) => reached.has(t.code)).map((t) => ({ code: t.code, color: REACHED, r: 0.62, stroke: ring })),
   ];
   const legendFont = square ? 22 : tall ? 28 : 24;
-  const legendDot = (color: string, opacity = 1) => <div style={{ display: 'flex', width: legendFont * 0.55, height: legendFont * 0.55, borderRadius: legendFont, background: color, opacity }} />;
+  const legendDot = (color: string) => <div style={{ display: 'flex', width: legendFont * 0.6, height: legendFont * 0.6, borderRadius: legendFont, background: color, border: `${Math.max(2, legendFont * 0.08)}px solid ${ring}` }} />;
   const map = mapOn && (
     <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, gap: 14 }}>
       <DottedWorld width={mapW} pins={pins} dotColor={p.muted} dotOpacity={0.16} />
       <div style={{ display: 'flex', alignItems: 'center', gap: legendFont * 0.5, height: legendH, fontSize: legendFont, color: p.muted }}>
-        {legendDot(p.accent)}
+        {legendDot(REACHED)}
         <span style={{ color: p.fg, fontWeight: 600 }}>{data.reached.length}</span>
         <span>of {data.storefronts} App Store countries</span>
         <div style={{ display: 'flex', width: legendFont }} />
-        {legendDot(p.muted, NOT_YET)}
+        {legendDot(NOT_YET)}
         <span>not yet</span>
       </div>
     </div>

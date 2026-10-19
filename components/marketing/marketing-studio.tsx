@@ -55,6 +55,7 @@ const PROMO_ICONS: Record<PromoTemplateId, React.ElementType> = {
   update: Sparkles,
   screens: Images,
   loved: Heart,
+  reviews: MessageSquareQuote,
   download: Smartphone,
 }
 

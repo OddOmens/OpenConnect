@@ -1,4 +1,4 @@
-// Marketing promo cards: Launch, What's New, Screenshots, Loved By and Download. Unlike the
+// Marketing promo cards: Launch, What's New, Screenshots, Loved By, Reviews and Download. Unlike the
 // stats cards these are made to sell the app, so they come in several styles and an accent
 // colour, and their wording can be overridden.
 
@@ -26,8 +26,8 @@ export interface PromoOptions {
   tagline?: string;
   cta?: string;
   notes?: string;
-  quotes?: number[];   // Loved By: which of data.quotes, in order
-  lovedShow?: 'both' | 'map' | 'reviews';
+  quotes?: number[];   // Reviews: which of data.quotes, the first in front
+  reviewCount?: 1 | 3; // Reviews: one review, or three fanned out
 }
 
 /** The app's images, inlined by the route before rendering. */
@@ -345,8 +345,8 @@ function StatChips({ data, p, o, size, center = false }: { data: PromoData; p: P
 
 type Props = { data: PromoData; images: PromoImages; o: PromoOptions; p: Palette };
 
-const tagline = (data: PromoData, o: PromoOptions) => o.tagline ?? defaultCopy(o.template, data, o.showRating).tagline;
-const headlineOf = (data: PromoData, o: PromoOptions) => o.headline || defaultCopy(o.template, data, o.showRating).headline;
+const tagline = (data: PromoData, o: PromoOptions) => o.tagline ?? defaultCopy(o.template, data).tagline;
+const headlineOf = (data: PromoData, o: PromoOptions) => o.headline || defaultCopy(o.template, data).headline;
 
 function Launch({ data, images, o, p }: Props) {
   const { format } = o;
@@ -531,26 +531,16 @@ function Loved({ data, images, o, p }: Props) {
   const landscape = format === '16x9';
   const tall = format === '9x16';
   const square = format === '1x1';
-  const show = o.lovedShow ?? 'both';
-  const mapOn = show !== 'reviews';
-  const reviewsOn = show !== 'map';
-  const hasRating = o.showRating && data.rating != null && data.ratingCount > 0;
   const headline = headlineOf(data, o);
-  const qs = square ? 30 : tall ? 40 : 32;
-  const { width: W, height: H } = PROMO_SIZES[format];
+  const { width: W } = PROMO_SIZES[format];
   const pad = landscape ? 96 : tall ? 88 : 72;
-  const leftW = 780; // 16:9: headline and rating on the left, map and reviews on the right
-  const colW = landscape ? W - pad * 2 - leftW : W - pad * 2;
-  const footerH = square ? 64 : tall ? 96 : 80;
-  const gap = square ? 30 : 44;
-
-  // The map: every App Store storefront, the ones with downloads in the accent colour.
-  const mapW = colW;
+  const leftW = 780; // 16:9: headline on the left, the map on the right
+  const mapW = landscape ? W - pad * 2 - leftW : W - pad * 2;
   const legendH = square ? 30 : 36;
-  const mapH = mapW * (WORLD_H / WORLD_W) + 14 + legendH;
   const reached = new Set(data.reached);
-  // Green for countries with downloads, red for the rest, the same in every style, over a faint
-  // grid of the continents. A dark outline keeps them clear on a green or red background (Bold).
+  // Every App Store storefront: green for countries with downloads, red for the rest, the same in
+  // every style, over a faint grid of the continents. A dark outline keeps them clear on a green or
+  // red background (Bold).
   const REACHED = '#22c55e';
   const NOT_YET = '#ef4444';
   const ring = 'rgba(0,0,0,0.55)';
@@ -560,7 +550,7 @@ function Loved({ data, images, o, p }: Props) {
   ];
   const legendFont = square ? 22 : tall ? 28 : 24;
   const legendDot = (color: string) => <div style={{ display: 'flex', width: legendFont * 0.6, height: legendFont * 0.6, borderRadius: legendFont, background: color, border: `${Math.max(2, legendFont * 0.08)}px solid ${ring}` }} />;
-  const map = mapOn && (
+  const map = (
     <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, gap: 14 }}>
       <DottedWorld width={mapW} pins={pins} dotColor={p.muted} dotOpacity={0.16} />
       <div style={{ display: 'flex', alignItems: 'center', gap: legendFont * 0.5, height: legendH, fontSize: legendFont, color: p.muted }}>
@@ -573,46 +563,127 @@ function Loved({ data, images, o, p }: Props) {
       </div>
     </div>
   );
+  const footer = (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24 }}>
+      <AppLine data={data} icon={images.icon} p={p} size={square ? 64 : tall ? 96 : 80} />
+      {o.showBadge && <Badge p={p} cta={o.cta} scale={square ? 0.8 : tall ? 1.05 : 0.9} />}
+    </div>
+  );
+  if (landscape) {
+    return (
+      <Canvas format={format} p={p} pad={pad} row>
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: leftW, paddingRight: 60 }}>
+          <Headline text={headline} size={110} p={p} lines={3} />
+          {footer}
+        </div>
+        <div style={{ display: 'flex', flex: 1, alignItems: 'center' }}>{map}</div>
+      </Canvas>
+    );
+  }
+  return (
+    <Canvas format={format} p={p} pad={pad}>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center', gap: square ? 40 : tall ? 72 : 56 }}>
+        <Headline text={headline} size={square ? 96 : tall ? 140 : 112} p={p} lines={3} />
+        {map}
+      </div>
+      {footer}
+    </Canvas>
+  );
+}
 
-  // Reviews go in only while they fit under everything above them (and above the footer), so a
-  // long one can never push the rest of the card into the headline.
-  const cardPad = square ? 32 : 40;
-  const clamp = square ? 3 : 4;
-  const quoteW = colW - cardPad * 2;
-  const quoteH = (q: PromoData['quotes'][number]) => cardPad * 2 + qs * 0.9 + 16 + textLines(`“${q.body}”`, qs, quoteW, clamp) * qs * 1.4 + 16 + qs * 0.75 * 1.25 + 4;
-  const headlineH = headlineHeight(headline, square ? 84 : tall ? 132 : 100, landscape ? leftW - 60 : colW, landscape ? 3 : tall ? 3 : 2);
-  const ratingH = hasRating ? (square ? 100 : tall ? 160 : 130) : 0;
-  const budget = landscape
-    ? H - pad * 2 - (mapOn ? mapH + 24 : 0)
-    : H - pad * 2 - footerH - 32 - headlineH - (ratingH ? ratingH + gap : 0) - (mapOn ? mapH + gap : 0) - gap;
-  // The reviews picked for this card (else the best short ones), as many as fit.
+/**
+ * Review cards drawn solid, so the ones fanned out behind never show through the front one. On
+ * see-through styles (Gradient, Bold, Glow) they're white or near-black paper instead of glass.
+ */
+function reviewPaper(style: PromoStyleId, p: Palette) {
+  if (style === 'gradient' || style === 'bold') return { bg: '#ffffff', fg: '#09090b', muted: '#52525b', border: 'rgba(0,0,0,0.06)', empty: '#e4e4e7' };
+  if (style === 'glow') return { bg: '#16161a', fg: '#fafafa', muted: '#a1a1aa', border: 'rgba(255,255,255,0.12)', empty: '#3f3f46' };
+  return { bg: p.surface, fg: p.fg, muted: p.muted, border: p.border, empty: p.border };
+}
+
+type Quote = PromoData['quotes'][number];
+
+function Reviews({ data, images, o, p }: Props) {
+  const { format } = o;
+  const landscape = format === '16x9';
+  const tall = format === '9x16';
+  const square = format === '1x1';
+  const hasRating = o.showRating && data.rating != null && data.ratingCount > 0;
+  const headline = headlineOf(data, o);
+  const { width: W, height: H } = PROMO_SIZES[format];
+  const pad = landscape ? 96 : tall ? 88 : 72;
+  const leftW = 780; // 16:9: headline and rating on the left, the reviews on the right
+  const colW = landscape ? W - pad * 2 - leftW : W - pad * 2;
+  const footerH = square ? 64 : tall ? 96 : 80;
+  const gap = square ? 30 : tall ? 56 : 44;
+  const paper = reviewPaper(o.style, p);
+
+  // The reviews picked for this card, the first in front (else the best short ones).
   const candidates = o.quotes?.length ? o.quotes.map((i) => data.quotes[i]).filter((q) => !!q) : data.quotes;
-  const quotes = reviewsOn ? fitting(candidates.slice(0, square ? 1 : landscape ? 2 : tall ? 3 : 2), quoteH, 24, budget) : [];
+  const quotes = candidates.slice(0, o.reviewCount === 1 ? 1 : 3);
+  const fanned = quotes.length > 1;
+
+  const headSize = square ? 84 : tall ? 132 : 100;
+  const numSize = landscape ? 130 : square ? 76 : tall ? 140 : 110;
+  const ratingH = hasRating ? numSize : 0;
+  // Height the cards get: everything else on the card comes first.
+  const stackH = landscape
+    ? H - pad * 2
+    : H - pad * 2 - footerH - 32 - headlineHeight(headline, headSize, colW, 2) - gap - (ratingH ? ratingH + gap : 0) - gap;
+
+  // Front card, and the two behind it: narrower, raised so their stars show above it, and turned.
+  const frontW = Math.round(fanned ? colW * 0.8 : landscape ? colW : colW * (tall ? 1 : 0.92));
+  const backW = Math.round(colW * 0.64);
+  const fs = (q: Quote, base: number) => (q.body.length > 140 ? base * 0.86 : base);
+  const base = square ? (fanned ? 32 : 38) : tall ? (fanned ? 44 : 50) : landscape ? (fanned ? 42 : 48) : fanned ? 36 : 42;
+  const cardPad = Math.round(base * 1.1);
+  const lift = fanned ? Math.round(base * 3.2) : 0; // how far the back cards rise above the front one
+  const tilt = Math.round(backW * 0.06); // room for a turned card's corners
+  const chrome = (size: number) => cardPad * 2 + size * 0.9 + size * 0.55 + size * 0.55 + size * 0.75 * 1.25;
+  const front = quotes[0];
+  const frontFs = front ? fs(front, base) : base;
+  const frontMax = Math.max(2, Math.floor((stackH - lift - tilt - chrome(frontFs)) / (frontFs * 1.4)));
+  const frontLines = front ? textLines(`“${front.body}”`, frontFs, frontW - cardPad * 2, frontMax) : 0;
+  const frontH = Math.round(chrome(frontFs) + frontLines * frontFs * 1.4);
+  const backH = Math.round(frontH * 0.88);
+
+  const card = (q: Quote, width: number, size: number, lines: number, height?: number) => (
+    <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, width, ...(height ? { height } : {}), overflow: 'hidden', gap: size * 0.55, padding: cardPad, borderRadius: size * 0.9, background: paper.bg, border: `2px solid ${paper.border}`, boxShadow: '0 24px 60px rgba(0,0,0,0.28)', color: paper.fg }}>
+      <StarRow rating={q.rating} size={size * 0.9} gap={4} empty={paper.empty} />
+      <div style={{ display: 'block', fontSize: size, lineHeight: 1.4, lineClamp: lines }}>{`“${q.body}”`}</div>
+      <div style={{ display: 'flex', fontSize: size * 0.75, color: paper.muted }}>{q.reviewer}</div>
+    </div>
+  );
+  const backCard = (q: Quote) => {
+    const size = fs(q, base) * 0.92;
+    return card(q, backW, size, Math.max(1, Math.floor((backH - chrome(size)) / (size * 1.4))), backH);
+  };
+  // satori has no z-index: the back cards first, the front one painted last.
+  const stack = front ? (
+    <div style={{ display: 'flex', position: 'relative', flexShrink: 0, alignSelf: 'center', width: colW, height: lift + frontH, marginTop: fanned ? tilt : 0 }}>
+      {quotes[1] && (
+        <div style={{ display: 'flex', position: 'absolute', left: 0, top: 0, transform: 'rotate(-6deg)' }}>{backCard(quotes[1])}</div>
+      )}
+      {quotes[2] && (
+        <div style={{ display: 'flex', position: 'absolute', left: colW - backW, top: 0, transform: 'rotate(6deg)' }}>{backCard(quotes[2])}</div>
+      )}
+      <div style={{ display: 'flex', position: 'absolute', left: Math.round((colW - frontW) / 2), top: lift }}>{card(front, frontW, frontFs, frontLines)}</div>
+    </div>
+  ) : (
+    // No short 5★ written reviews yet: the numbers instead.
+    <StatChips data={data} p={p} o={o} size={30} />
+  );
 
   const rating = hasRating && (
-    <div style={{ display: 'flex', flexShrink: 0, alignItems: 'center', gap: 26 }}>
-      <div style={{ display: 'flex', fontSize: square ? 100 : tall ? 160 : 130, fontWeight: 800, letterSpacing: -5, lineHeight: 1 }}>{data.rating!.toFixed(1)}</div>
+    <div style={{ display: 'flex', flexShrink: 0, alignItems: 'center', gap: numSize * 0.2 }}>
+      <div style={{ display: 'flex', fontSize: numSize, fontWeight: 800, letterSpacing: -numSize * 0.04, lineHeight: 1 }}>{data.rating!.toFixed(1)}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <StarRow rating={data.rating!} size={square ? 40 : tall ? 58 : 50} empty={p.border} />
-        <div style={{ display: 'flex', fontSize: square ? 24 : tall ? 32 : 28, color: p.muted }}>
+        <StarRow rating={data.rating!} size={numSize * 0.38} empty={p.border} />
+        <div style={{ display: 'flex', fontSize: Math.max(22, numSize * 0.22), color: p.muted }}>
           {fmtCompact(data.ratingCount)} rating{data.ratingCount === 1 ? '' : 's'} on the App Store
         </div>
       </div>
     </div>
-  );
-  const quoteCards = quotes.length ? (
-    <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, gap: 24 }}>
-      {quotes.map((q, i) => (
-        <div key={i} style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, gap: 16, padding: cardPad, borderRadius: 28, background: p.surface, border: `2px solid ${p.border}` }}>
-          <StarRow rating={q.rating} size={qs * 0.9} gap={4} empty={p.border} />
-          <div style={{ display: 'block', fontSize: qs, lineHeight: 1.4, lineClamp: clamp }}>{`“${q.body}”`}</div>
-          <div style={{ display: 'flex', fontSize: qs * 0.75, color: p.muted }}>{q.reviewer}</div>
-        </div>
-      ))}
-    </div>
-  ) : (
-    // Nothing to quote and no map: the numbers instead.
-    !mapOn && <StatChips data={data} p={p} o={o} size={30} />
   );
   const footer = (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24 }}>
@@ -625,25 +696,21 @@ function Loved({ data, images, o, p }: Props) {
       <Canvas format={format} p={p} pad={pad} row>
         <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: leftW, paddingRight: 60 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 40 }}>
-            <Headline text={headline} size={100} p={p} lines={3} />
+            <Headline text={headline} size={headSize} p={p} lines={3} />
             {rating}
           </div>
           {footer}
         </div>
-        <div style={{ display: 'flex', flex: 1, flexDirection: 'column', justifyContent: 'center', gap: 24 }}>
-          {map}
-          {quoteCards}
-        </div>
+        <div style={{ display: 'flex', flex: 1, flexDirection: 'column', justifyContent: 'center' }}>{stack}</div>
       </Canvas>
     );
   }
   return (
     <Canvas format={format} p={p} pad={pad}>
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center', gap }}>
-        <Headline text={headline} size={square ? 84 : tall ? 132 : 100} p={p} lines={tall ? 3 : 2} />
+        <Headline text={headline} size={headSize} p={p} lines={2} />
         {rating}
-        {map}
-        {quoteCards}
+        {stack}
       </div>
       {footer}
     </Canvas>
@@ -679,6 +746,7 @@ const TEMPLATES: Record<PromoTemplateId, (props: Props) => React.ReactElement> =
   update: Update,
   screens: Screens,
   loved: Loved,
+  reviews: Reviews,
   download: Download,
 };
 

@@ -95,7 +95,7 @@ export interface PromoData {
   countries: number;
   reached: string[];            // storefronts (country codes) with downloads, all time
   storefronts: number;          // how many App Store storefronts there are
-  quotes: { title: string; body: string; reviewer: string; rating: number }[]; // up to 12; Loved By picks from these
+  quotes: { title: string; body: string; reviewer: string; rating: number }[]; // up to 12; the Reviews card picks from these
 }
 
 export async function promoData(appId: string): Promise<PromoData | null> {
@@ -124,14 +124,14 @@ export async function promoData(appId: string): Promise<PromoData | null> {
 }
 
 /** Each template's own wording, used where a card's text is left empty. */
-export function defaultCopy(t: PromoTemplateId, data: PromoData, showRating = true) {
+export function defaultCopy(t: PromoTemplateId, data: PromoData) {
   const version = data.listing?.version;
-  const rated = showRating && data.rating != null && data.ratingCount > 0;
   const headline = {
     launch: `Meet ${data.name}`,
     update: version ? `Version\n${version}\nIs Here!` : `${data.name} just got better`,
     screens: `See ${data.name}\nIn Action`,
-    loved: data.countries > 1 ? `Loved in ${data.countries} countries` : rated ? `Rated ${data.rating!.toFixed(1)} stars` : `People love ${data.name}`,
+    loved: data.countries > 1 ? `Loved In\n${data.countries} Countries` : `People Love\n${data.name}`,
+    reviews: `People Love\n${data.name}`,
     download: `Get ${data.name}${data.listing?.price === 'Free' ? ' free' : ''}`,
   }[t];
   return { headline, tagline: firstSentence(data.listing?.description ?? ''), cta: '', notes: data.listing?.releaseNotes ?? '' };

@@ -1,7 +1,7 @@
 // A promo card's settings: its own (from its popup) over the toolbar's, which apply to every card.
 // Shared by the Marketing page; the render route reads the same names from the card's URL.
 
-import type { LovedShow, PromoCardSettings, PromoTemplateId, UiPrefs } from './prefs'
+import type { PromoCardSettings, ReviewCount, PromoTemplateId, UiPrefs } from './prefs'
 
 type Marketing = UiPrefs['marketing']
 
@@ -10,7 +10,8 @@ export const PROMO_USES: Record<PromoTemplateId, { text: ('headline' | 'tagline'
   launch: { text: ['headline', 'tagline', 'cta'], shots: 3, quotes: false, rating: true },
   update: { text: ['headline', 'notes', 'cta'], shots: 1, quotes: false, rating: false },
   screens: { text: ['headline', 'tagline', 'cta'], shots: 4, quotes: false, rating: false },
-  loved: { text: ['headline', 'cta'], shots: 0, quotes: true, rating: true },
+  loved: { text: ['headline', 'cta'], shots: 0, quotes: false, rating: false },
+  reviews: { text: ['headline', 'cta'], shots: 0, quotes: true, rating: true },
   download: { text: ['headline', 'tagline', 'cta'], shots: 0, quotes: false, rating: true },
 }
 
@@ -27,7 +28,7 @@ export interface ResolvedPromo {
   notes?: string
   shots: string[]
   quotes?: number[]
-  lovedShow: LovedShow
+  reviewCount: ReviewCount
 }
 
 const set = <T,>(v: T | undefined | null) => (v === undefined || v === null || (v as unknown) === '' ? undefined : v)
@@ -51,8 +52,8 @@ export function resolvePromo(mk: Marketing, appId: string, t: PromoTemplateId, t
     cta: set(own.cta) ?? set(all.cta),
     notes: t === 'update' ? set(own.notes) ?? set(all.notes) : undefined,
     shots: own.shots?.length ? own.shots : toolbarShots,
-    quotes: t === 'loved' && own.quotes?.length ? own.quotes : undefined,
-    lovedShow: own.lovedShow ?? 'both',
+    quotes: t === 'reviews' && own.quotes?.length ? own.quotes : undefined,
+    reviewCount: own.reviewCount ?? 3,
   }
 }
 
@@ -79,6 +80,6 @@ export function promoUrl(appId: string, t: PromoTemplateId, r: ResolvedPromo) {
   if (r.cta) q.set('cta', r.cta)
   if (r.notes) q.set('notes', r.notes)
   if (r.quotes?.length) q.set('quotes', r.quotes.join(','))
-  if (t === 'loved' && r.lovedShow !== 'both') q.set('show', r.lovedShow)
+  if (t === 'reviews' && r.reviewCount === 1) q.set('n', '1')
   return `/api/marketing?${q}`
 }

@@ -11,20 +11,18 @@ import {
 import { PROMO_USES, type ResolvedPromo } from '@/lib/promo-settings'
 import { cn } from '@/lib/utils'
 import { ScreenThumb, type PromoScreens } from './screen-thumb'
+import { inputCls, selectSmCls, textareaCls } from '@/components/ui/field'
 
 type Marketing = UiPrefs['marketing']
 type TextKey = 'headline' | 'tagline' | 'cta' | 'notes'
 
 const TEXT_LABELS: Record<TextKey, string> = { headline: 'Headline', tagline: 'Tagline', cta: 'Button text', notes: 'Release notes' }
 
-const fieldCls =
-  'w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring'
-
 function Section({ title, children, aside }: { title: string; children: React.ReactNode; aside?: React.ReactNode }) {
   return (
     <section className="space-y-2.5 border-b border-border px-4 py-4 last:border-0">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</h3>
+        <h3 className="text-sm font-semibold">{title}</h3>
         {aside}
       </div>
       {children}
@@ -77,9 +75,9 @@ function TextField({ label, value, placeholder, multiline, maxLength, onCommit }
     <label className="block space-y-1">
       <span className="text-xs text-muted-foreground">{label}</span>
       {multiline ? (
-        <textarea value={draft} onChange={(e) => change(e.target.value)} placeholder={placeholder} maxLength={maxLength} rows={label === 'Release notes' ? 5 : 3} className={cn(fieldCls, 'resize-y')} />
+        <textarea value={draft} onChange={(e) => change(e.target.value)} placeholder={placeholder} maxLength={maxLength} rows={label === 'Release notes' ? 5 : 3} className={cn(textareaCls, 'resize-y')} />
       ) : (
-        <input value={draft} onChange={(e) => change(e.target.value)} placeholder={placeholder} maxLength={maxLength} className={cn(fieldCls, 'h-9 py-1')} />
+        <input value={draft} onChange={(e) => change(e.target.value)} placeholder={placeholder} maxLength={maxLength} className={inputCls} />
       )}
     </label>
   )
@@ -178,7 +176,7 @@ export function PromoCardEditor({ template, appId, mk, updateMk, info, toolbarSh
               <select
                 value={own.format ?? ''}
                 onChange={(e) => setOwn({ format: (e.target.value || undefined) as PromoFormatId | undefined })}
-                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                className={selectSmCls}
                 aria-label="Size"
               >
                 <option value="">All cards ({PROMO_FORMATS[mk.format].split(' · ')[0]})</option>
@@ -189,7 +187,7 @@ export function PromoCardEditor({ template, appId, mk, updateMk, info, toolbarSh
               <select
                 value={own.style ?? ''}
                 onChange={(e) => setOwn({ style: (e.target.value || undefined) as PromoStyleId | undefined })}
-                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                className={selectSmCls}
                 aria-label="Style"
               >
                 <option value="">All cards ({PROMO_STYLES[mk.style]})</option>
@@ -213,8 +211,8 @@ export function PromoCardEditor({ template, appId, mk, updateMk, info, toolbarSh
                   style={{ background: c }}
                 />
               ))}
-              <label className="relative h-6 w-6 cursor-pointer overflow-hidden rounded-full border border-border" title="Custom colour" style={{ background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' }}>
-                <input type="color" value={resolved.accent} onChange={(e) => setOwn({ accent: e.target.value })} className="absolute inset-0 cursor-pointer opacity-0" aria-label="Custom accent colour" />
+              <label className="relative h-6 w-6 cursor-pointer overflow-hidden rounded-full border border-border" title="Custom color" style={{ background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' }}>
+                <input type="color" value={resolved.accent} onChange={(e) => setOwn({ accent: e.target.value })} className="absolute inset-0 cursor-pointer opacity-0" aria-label="Custom accent color" />
               </label>
             </Row>
             {uses.shots > 0 && (
@@ -266,7 +264,7 @@ export function PromoCardEditor({ template, appId, mk, updateMk, info, toolbarSh
           {uses.shots > 0 && (
             <Section
               title="Screenshots"
-              aside={ownShots.length > 0 && <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setOwn({ shots: undefined })}>Use all cards&apos;</Button>}
+              aside={ownShots.length > 0 && <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setOwn({ shots: undefined })} title="Use the toolbar's screenshots">Reset</Button>}
             >
               <p className="text-[11px] text-muted-foreground">
                 {ownShots.length ? 'This card’s own, in order.' : 'Same as all cards. Click to give this card its own.'} It shows up to {uses.shots}
@@ -289,7 +287,7 @@ export function PromoCardEditor({ template, appId, mk, updateMk, info, toolbarSh
           {uses.quotes && (
             <Section
               title="Reviews"
-              aside={ownQuotes.length > 0 && <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setOwn({ quotes: undefined })}>Best ones</Button>}
+              aside={ownQuotes.length > 0 && <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setOwn({ quotes: undefined })} title="Use the best short reviews">Reset</Button>}
             >
               <Row label="Show">
                 <Segmented

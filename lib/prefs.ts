@@ -2,10 +2,10 @@
 
 export const SECTIONS = {
   kpis: 'Key Metrics',
-  history: 'History Chart',
+  history: 'History',
   map: 'World Map',
   reach: 'Global Reach',
-  breakdowns: 'Products, Devices & Versions',
+  breakdowns: 'Breakdowns',
   store: 'Ratings & Rankings',
   territories: 'Territories',
   subscriptions: 'Subscriptions',

@@ -93,7 +93,7 @@ export function KPICards({ data, currency, hidden, order, columns, onHide }: KPI
             <button
               onClick={() => onHide(id)}
               title="Hide this metric"
-              className="absolute right-2 top-2 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+              className="absolute right-2 top-2 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -104,14 +104,14 @@ export function KPICards({ data, currency, hidden, order, columns, onHide }: KPI
             <div className="mt-2 truncate text-2xl font-semibold tabular-nums tracking-tight">{v.value}</div>
             <div className="mt-1 h-4 text-xs">
               {v.change != null ? (
-                <span className={cn("tabular-nums", v.change > 0 ? "text-emerald-500" : v.change < 0 ? "text-red-500" : "text-muted-foreground")}>
+                <span className={cn("tabular-nums", v.change > 0 ? "text-emerald-600 dark:text-emerald-400" : v.change < 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground")}>
                   {v.change > 0 ? "▲" : v.change < 0 ? "▼" : "•"} {Math.abs(v.change).toFixed(1)}%
                   <span className="ml-1 text-muted-foreground">vs prev.</span>
                 </span>
               ) : v.up ? (
-                <span className="text-emerald-600 dark:text-emerald-500">▲ {v.up}</span>
+                <span className="text-emerald-600 dark:text-emerald-400">▲ {v.up}</span>
               ) : v.delta != null ? (
-                <span className="tabular-nums text-emerald-500">
+                <span className="tabular-nums text-emerald-600 dark:text-emerald-400">
                   ▲ +{v.delta}
                   <span className="ml-1 text-muted-foreground">from 0</span>
                 </span>

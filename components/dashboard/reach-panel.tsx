@@ -89,7 +89,7 @@ export function ReachPanel({ data, apps, selectedAppId, onSelectApp, range, hidd
               <span className="text-sm text-muted-foreground">of {total} storefronts reached</span>
               <span className="text-sm font-medium tabular-nums">{pct.toFixed(0)}%</span>
               {showNew && current && current.newInRange > 0 && (
-                <span className="text-sm text-emerald-600 dark:text-emerald-500">▲ {current.newInRange} new in this period</span>
+                <span className="text-sm text-emerald-600 dark:text-emerald-400">▲ {current.newInRange} new in this period</span>
               )}
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-muted">
@@ -218,7 +218,7 @@ function ReachTooltip({ code, first, appsIn, appCount }: { code: string; first?:
         {TERRITORY_BY_CODE[code]?.name ?? code}
       </div>
       {first ? (
-        <div className="text-emerald-600 dark:text-emerald-500">Reached · first download {firstSeen(first)}</div>
+        <div className="text-emerald-600 dark:text-emerald-400">Reached · first download {firstSeen(first)}</div>
       ) : (
         <div className="text-muted-foreground">Not reached yet</div>
       )}

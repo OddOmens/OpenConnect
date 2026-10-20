@@ -19,6 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { CURRENCIES, DEFAULT_PREFS, RANGES, RangeId, SECTIONS, SectionId, UiPrefs, monthRangeLabel } from '@/lib/prefs'
 import { fmtDate } from '@/lib/format'
+import { selectCls } from '@/components/ui/field'
 
 // Charts, the map and the tables are loaded after the first paint, in parallel, so the page
 // shows its numbers straight away instead of waiting for ~1 MB of chart and map code.
@@ -47,10 +48,6 @@ export interface DashboardData {
   reach: ReachData
 }
 
-
-const selectCls =
-  'h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring'
-
 /** Everything the first render needs, read from the local database on the server. */
 export interface InitialData {
   apps: App[]
@@ -78,7 +75,6 @@ export function Dashboard({ initial }: { initial: InitialData }) {
       setMonths(data.months || [])
     }
   }, [])
-
 
   const loadStore = useCallback(async () => {
     const res = await fetch(`/api/store?app=${selectedAppId || 'all'}`).catch(() => null)
@@ -288,7 +284,7 @@ export function Dashboard({ initial }: { initial: InitialData }) {
               {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
             <SyncStatusButton sync={sync} />
-            <Button asChild variant="ghost" size="icon" title="Customize the dashboard">
+            <Button asChild variant="ghost" size="sm" className="h-9 w-9 p-0" title="Customize the dashboard">
               <Link href="/settings#customize" aria-label="Customize the dashboard">
                 <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
               </Link>

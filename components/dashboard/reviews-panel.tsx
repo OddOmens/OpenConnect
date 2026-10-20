@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { countryToFlag, territoryName } from "@/lib/territories"
 import { fmtDate, fmtNumber } from "@/lib/format"
 import type { App } from "./app-selector"
+import { selectSmCls } from "@/components/ui/field"
 
 interface Review {
   id: string
@@ -57,7 +58,7 @@ export function ReviewsPanel({ appId, apps, refreshKey, onHide }: { appId: strin
           <select
             value={country}
             onChange={(e) => { setCountry(e.target.value); setLimit(10) }}
-            className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+            className={selectSmCls}
           >
             <option value="">All countries</option>
             {(data?.countries || []).map((c) => (

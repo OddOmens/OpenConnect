@@ -3,9 +3,8 @@
 import { useState } from 'react'
 import { Loader2, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-
-const inputCls =
-  'flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring'
+import { inputCls } from '@/components/ui/field'
+import { cn } from '@/lib/utils'
 
 interface Props {
   mode: 'setup' | 'login'
@@ -62,7 +61,7 @@ export function LoginForm({ mode, minLength, passwordFromEnv, next = '/' }: Prop
         {setup && (
           <label className="block space-y-1.5 text-sm">
             <span className="font-medium">Setup code</span>
-            <input className={inputCls} value={code} onChange={(e) => setCode(e.target.value)} placeholder="ABCD-EFGH" autoComplete="off" autoFocus required />
+            <input className={cn(inputCls, 'h-10')} value={code} onChange={(e) => setCode(e.target.value)} placeholder="ABCD-EFGH" autoComplete="off" autoFocus required />
             <span className="block text-xs text-muted-foreground">
               Shown in the server log: run <code className="rounded bg-muted px-1">docker logs openconnect</code>.
             </span>
@@ -72,7 +71,7 @@ export function LoginForm({ mode, minLength, passwordFromEnv, next = '/' }: Prop
         <label className="block space-y-1.5 text-sm">
           <span className="font-medium">{setup ? 'New password' : 'Password'}</span>
           <input
-            className={inputCls}
+            className={cn(inputCls, 'h-10')}
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -87,7 +86,7 @@ export function LoginForm({ mode, minLength, passwordFromEnv, next = '/' }: Prop
         {setup && (
           <label className="block space-y-1.5 text-sm">
             <span className="font-medium">Confirm password</span>
-            <input className={inputCls} type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" required />
+            <input className={cn(inputCls, 'h-10')} type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" required />
           </label>
         )}
 

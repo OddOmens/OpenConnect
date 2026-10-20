@@ -3,15 +3,30 @@
 ## Unreleased
 
 ### Added
+- **One top bar on every page:** OpenConnect, Dashboard · Marketing · Studio, the page's own controls and Settings, always in the same place (the studio included, in its own colours). The studio starts in your OpenConnect light/dark setting.
+- **Edit each promo card on its own.** Clicking a card opens it large with a settings panel beside it: size, style, accent, iPhone colour, App Store button and rating, its own text (headlines keep line breaks), its own screenshots, and for Reviews which reviews to quote. Anything left alone follows the toolbar, which now sets every card; Reset puts a card back.
+- **Loved By shows where people love it:** "Loved In / 42 Countries" over the dashboard's world map with every App Store country, green where the app has downloads and red where it doesn't yet.
+- **Reviews**, a new promo card for your 5★ reviews: one review, or three with the first in front and the other two fanned out behind it. Pick which reviews it shows, in order, with the rating above them.
+- **Promo screenshots from the studio.** App promo cards show screenshots you pick on the Marketing page, in order: the app's raw screens from its studio project (matched by Apple ID, bundle ID or name) or its App Store ones. They're drawn in the studio's iPhone, with Dynamic Island and side buttons, in a frame colour you choose.
 - **Screenshot studio**, formerly OpenAppShot, now part of OpenConnect at `/studio`, behind the same sign-in. Design, localize and export App Store screenshots for iPhone, iPhone Duo, iPad and Mac. It runs as a second container with headless Chromium (`openconnect-studio`), and its data lives in `./data/studio`.
 - **API tokens** (Settings → Security). Claude's `appshot` CLI and MCP server reach the studio with `OPENCONNECT_URL` and `OPENCONNECT_TOKEN`. A token only opens the studio, never your sales data or settings, and each one can be revoked.
-- **App promos.** The Marketing page has a second mode that makes promo cards for one app you pick, built from its live App Store listing: **Launch** (screenshots in phone frames), **What's New** (the current version's release notes), **Screenshots**, **Loved By** (rating and your best short 5★ reviews) and **Download** (call to action with rating, downloads, countries and price). Every template renders at once, so **Download all** gives you a full set.
+- **App promos.** The Marketing page has a second mode that makes promo cards for one app you pick, built from its live App Store listing: **Launch** (screenshots in phone frames), **What's New** (the current version's release notes), **Screenshots**, **Loved By** (where in the world it's downloaded), **Reviews** (rating and your best short 5★ reviews) and **Download** (call to action with rating, downloads, countries and price). Every template renders at once, so **Download all** gives you a full set.
 - Promo cards come in five styles (**Studio**, **Light**, **Gradient**, **Bold**, **Glow**), any accent colour, and four sizes: 1:1, 4:5, 9:16 and 16:9. You can override the headline, tagline, button text and release notes, and the text is kept per app. You can also hide the App Store button or the rating.
 
 ### Changed
+- **Marketing loads much faster.** The grid's previews are drawn smaller (full size when you open or download a card), Reviews cards no longer use a costly blurred shadow, and app icons and listings download once, outside the one-at-a-time render queue.
+- **Loved By's legend** counts the countries without downloads too: "10 of 175 App Store countries · 165 not yet".
+- **A more consistent look:** every input and select shares one style (with placeholders and focus rings), status colours match in light and dark, popups use the same headings, Settings lines up with the top bar and shows "Saved" once, and every button has a keyboard focus ring. Section names in Customize match the dashboard's (History, Breakdowns).
+- **Screenshots** cards read "See Afternoon / In Action" on two lines.
+- Card images are tied to the build, so a browser never keeps showing a card drawn by an older version after an update.
+- **What's New** cards read "Version / 1.4.0 / Is Here!" on three lines, and release notes are trimmed to what fits.
+- **Reviews** cards shorten a long front review to what fits under the headline and rating, so it never runs into the header.
 - The studio's editor and its data API are part of the dashboard app itself; the studio container only renders (slide images, previews, exports) and can be restarted without interrupting editing.
 - The dashboard's icons are on lucide-react 1.x, the same as the studio.
 - **Share is now Marketing**, at `/marketing`. The old `/share` address redirects there.
+
+### Fixed
+- **Revoking an API token** works again: Revoke asks inside the page (Revoke / Cancel) instead of a browser pop-up that some browsers block, and says so if the server refuses. Full re-sync and Reset layout ask the same way.
 
 ## 1.2.0
 

@@ -1,0 +1,94 @@
+/* The dashboard's top bar (components/nav/app-nav.tsx), drawn with the studio's own colours: the
+   studio page has no Tailwind. Sizes are in px so they match the dashboard whatever the studio's
+   UI scale is. */
+.frame {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+.frame > :global(#root) {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+.frame :global(.shell) {
+  height: 100%;
+}
+.bar {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  /* Tailwind's font-sans, which the dashboard uses. */
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  font-size: 14px;
+  line-height: 20px;
+}
+/* Centred and capped like the dashboard's bar (max-w-screen-2xl). */
+.inner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: 1536px;
+  height: 56px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+.brand {
+  flex-shrink: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: inherit;
+  text-decoration: none;
+}
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.tab,
+.icon {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+  text-decoration: none;
+  transition: background-color 0.15s, color 0.15s;
+}
+.tab {
+  gap: 8px;
+  padding: 0 10px;
+  font-weight: 500;
+}
+.icon {
+  justify-content: center;
+  width: 32px;
+  margin-left: auto;
+}
+.tab:hover,
+.icon:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.tab[aria-current='page'] {
+  background: var(--accent);
+  color: var(--foreground);
+}
+@media (max-width: 1023px) {
+  .inner {
+    padding: 0 24px;
+  }
+}
+@media (max-width: 639px) {
+  .inner {
+    gap: 8px;
+    padding: 0 16px;
+  }
+  .label {
+    display: none;
+  }
+}

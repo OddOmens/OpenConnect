@@ -2,18 +2,25 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { AppNav } from '@/components/nav/app-nav'
+import { ScreenThumb, type PromoScreens } from './screen-thumb'
+import { PromoCardEditor } from './promo-card-editor'
+import { hasOwnSettings, promoUrl, resolvePromo, type ResolvedPromo } from '@/lib/promo-settings'
 import {
-  ArrowLeft, Download, Globe, Heart, Images, LayoutDashboard, Loader2, Map as MapIcon, Maximize2, MessageSquareQuote, RefreshCw, Rocket, Smartphone, Sparkles, Star, Trophy,
+  AlertTriangle, Download, Globe, Heart, Images, LayoutDashboard, Loader2, Map as MapIcon, Maximize2, MessageSquareQuote, RefreshCw, Rocket, Smartphone, Sparkles, Star, Trophy,
 } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import { Segmented, Toggle } from '@/components/dashboard/section'
+import { EmptyState, Segmented, Toggle } from '@/components/dashboard/section'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
-  DEFAULT_PREFS, PROMO_ACCENTS, PROMO_FORMATS, PROMO_STYLES, PROMO_TEMPLATES, PromoFormatId, PromoStyleId, PromoTemplateId,
+  DEFAULT_PREFS, PROMO_ACCENTS, PROMO_FORMATS, PROMO_FRAMES, PROMO_STYLES, PROMO_TEMPLATES, PromoFormatId, PromoStyleId, PromoTemplateId,
   SHARE_HEROES, SHARE_STATS, SHARE_TEMPLATES, ShareHeroId, ShareStatId, ShareTemplateId, UiPrefs, monthRangeLabel,
 } from '@/lib/prefs'
 import type { App } from '@/components/dashboard/app-selector'
 import { cn } from '@/lib/utils'
+import { inputCls, selectCls } from '@/components/ui/field'
 
 const RANGES = {
   '30d': 'Last 30 days',
@@ -51,6 +58,7 @@ const PROMO_ICONS: Record<PromoTemplateId, React.ElementType> = {
   update: Sparkles,
   screens: Images,
   loved: Heart,
+  reviews: MessageSquareQuote,
   download: Smartphone,
 }
 
@@ -76,11 +84,6 @@ const SIZE: Record<PromoFormatId, string> = {
   '9x16': '1080x1920',
   '16x9': '1920x1080',
 }
-
-const selectCls =
-  'h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring'
-const inputCls =
-  'h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring'
 
 function slug(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
@@ -132,12 +135,71 @@ function useSettled<T>(value: T, ms: number) {
   return settled
 }
 
+/** Which screenshots the promo cards show, picked from the studio's screens and the App Store's. */
+function ScreenPicker({ screens, shown, picked, frame, onToggle, onReset, rowCls, labelCls }: {
+  screens: PromoScreens | null
+  shown: string[]
+  picked: boolean
+  frame: string
+  onToggle: (id: string) => void
+  onReset: () => void
+  rowCls: string
+  labelCls: string
+}) {
+  const group = (source: 'studio' | 'store') => screens?.screens.filter((x) => x.source === source) ?? []
+  const studio = group('studio')
+  const store = group('store')
+  const thumbs = (list: PromoScreens['screens']) => (
+    <div className="flex items-start gap-2.5 overflow-x-auto py-1.5 pr-2">
+      {list.map((x) => <ScreenThumb key={x.id} shot={x} order={shown.indexOf(x.id) + 1} frame={frame} onClick={() => onToggle(x.id)} />)}
+    </div>
+  )
+  return (
+    <div className={cn(rowCls, 'items-start')}>
+      <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1">
+        <span className={labelCls}>Screenshots</span>
+        <span className="text-[11px] text-muted-foreground">
+          {!screens ? 'Loading…' : shown.length ? `The cards use ${shown.length}, in this order. Click to add or remove.` : 'Pick the screens the cards should show.'}
+        </span>
+        {picked && <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onReset}>Reset</Button>}
+      </div>
+      {screens && (
+        <div className="flex w-full min-w-0 flex-col gap-1 lg:flex-row lg:gap-6">
+          <div className="min-w-0">
+            <div className="text-[11px] font-medium text-muted-foreground">
+              Studio{screens.studio ? ` · ${screens.studio.name}` : ''}
+              {screens.studio && <Link href={`/studio?app=${screens.studio.id}`} className="ml-2 underline-offset-2 hover:underline">Edit in Studio</Link>}
+            </div>
+            {studio.length ? thumbs(studio) : (
+              <p className="py-2 text-[11px] text-muted-foreground">
+                {screens.studio ? 'This studio project has no iPhone screenshots yet.' : <>No studio project for this app. <Link href="/studio" className="underline-offset-2 hover:underline">Make one in Studio</Link> to use its screens.</>}
+              </p>
+            )}
+          </div>
+          {store.length > 0 && (
+            <div className="min-w-0">
+              <div className="text-[11px] font-medium text-muted-foreground">
+                App Store <span className="font-normal">· often already designed, so they can look framed twice</span>
+              </div>
+              {thumbs(store)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface Card {
   key: string
   name: string     // shown under the preview
   title: string    // dialog title / alt text
   url: string
   file: string
+  aspect: string   // CSS aspect class
+  template?: PromoTemplateId  // promo cards: opens the card's settings popup
+  resolved?: ResolvedPromo
+  edited?: boolean // has settings of its own
   extra?: React.ReactNode
 }
 
@@ -148,7 +210,7 @@ export function MarketingStudio() {
   const [share, setShare, updateShare] = useSaved<UiPrefs['share']>('share', DEFAULT_PREFS.share)
   const [mk, setMk, updateMk] = useSaved<Marketing>('marketing', DEFAULT_PREFS.marketing)
   const [busy, setBusy] = useState<string | null>(null)
-  const [open, setOpen] = useState<Card | null>(null)
+  const [openKey, setOpenKey] = useState<string | null>(null)
   // Browsers block file downloads on plain http:// pages (except localhost).
   const [secure, setSecure] = useState(true)
   useEffect(() => setSecure(window.isSecureContext), [])
@@ -182,6 +244,7 @@ export function MarketingStudio() {
     title: `${c.name} card`,
     url: `/api/marketing?app=${c.id}&t=${template}&range=${range}&format=${format}&theme=${theme}&hero=${share.hero}&stats=${share.stats.join(',')}&list=${share.showList ? 1 : 0}&pick=${picks[c.id] ?? 0}`,
     file: `${slug(c.name)}-${template}${usesRange ? `-${range.replace('m:', '')}` : ''}-${format === '4x5' ? '1080x1350' : '1080x1920'}.png`,
+    aspect: ASPECT[format],
     extra: template === 'review' && (
       <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setPicks((p) => ({ ...p, [c.id]: (p[c.id] ?? 0) + 1 }))}>
         <RefreshCw className="h-3.5 w-3.5" />
@@ -193,47 +256,75 @@ export function MarketingStudio() {
     updateShare({ stats: share.stats.includes(id) ? share.stats.filter((s) => s !== id) : [...share.stats, id] })
 
   // --- Promo cards: one app in every promo template -----------------------------------
+  const promo = mk.mode === 'promo'
   const promoApp = apps.find((a) => a.apple_id === mk.app) ?? apps[0]
   const appName = promoApp?.name.split(':')[0] ?? ''
   const copy: Copy = (promoApp && mk.copy[promoApp.apple_id]) || {}
   const setCopy = (patch: Copy) => promoApp && updateMk({ copy: { ...mk.copy, [promoApp.apple_id]: { ...copy, ...patch } } })
   const settledCopy = useSettled(copy, 700)
   const settledAccent = useSettled(mk.accent, 300)
-  const promoQuery = (t: PromoTemplateId) => {
-    const q = new URLSearchParams({
-      app: promoApp?.apple_id ?? '',
-      t,
-      format: mk.format,
-      style: mk.style,
-      accent: settledAccent.replace('#', ''),
-      badge: mk.showBadge ? '1' : '0',
-      rating: mk.showRating ? '1' : '0',
-    })
-    const c = settledCopy
-    if (c.headline) q.set('h', c.headline)
-    if (c.tagline) q.set('sub', c.tagline)
-    if (c.cta) q.set('cta', c.cta)
-    if (c.notes && t === 'update') q.set('notes', c.notes)
-    return q.toString()
+
+  // Screenshots the cards can show: the app's studio screens and its App Store ones. The picked
+  // ones (in order) are kept per app; until some are picked the cards use the defaults.
+  const [loadedScreens, setLoadedScreens] = useState<{ app: string; data: PromoScreens } | null>(null)
+  const promoAppId = promoApp?.apple_id
+  // Only the answer for the app on screen counts (switching apps shows "Loading…" until it's in).
+  const screens = loadedScreens && loadedScreens.app === promoAppId ? loadedScreens.data : null
+  useEffect(() => {
+    if (!promo || !promoAppId) return
+    let live = true
+    fetch(`/api/marketing/promo?app=${promoAppId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => live && d && setLoadedScreens({ app: promoAppId, data: d }))
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [promo, promoAppId])
+  const pickedShots = (promoAppId && mk.shots[promoAppId]) || []
+  const available = new Set(screens?.screens.map((x) => x.id) ?? [])
+  const shownShots = (pickedShots.length ? pickedShots : screens?.defaults ?? []).filter((id) => !screens || available.has(id))
+  const toggleShot = (id: string) => {
+    if (!promoAppId) return
+    const next = shownShots.includes(id) ? shownShots.filter((x) => x !== id) : [...shownShots, id]
+    updateMk({ shots: { ...mk.shots, [promoAppId]: next } })
   }
+  const resetShots = () => {
+    if (!promoAppId) return
+    const rest = { ...mk.shots }
+    delete rest[promoAppId]
+    updateMk({ shots: rest })
+  }
+  const settledShots = useSettled(shownShots.join(','), 400)
+  // Toolbar text and colour settle before the cards re-render (no render per keystroke).
+  const mkForCards = { ...mk, accent: settledAccent, copy: promoAppId ? { ...mk.copy, [promoAppId]: settledCopy } : mk.copy }
+  const toolbarShots = settledShots ? settledShots.split(',') : []
   const promoCards: Card[] = promoApp
-    ? (Object.keys(PROMO_TEMPLATES) as PromoTemplateId[]).map((t) => ({
-        key: t,
-        name: PROMO_TEMPLATES[t],
-        title: `${appName} · ${PROMO_TEMPLATES[t]}`,
-        url: `/api/marketing?${promoQuery(t)}`,
-        file: `${slug(appName)}-${t}-${mk.style}-${SIZE[mk.format]}.png`,
-      }))
+    ? (Object.keys(PROMO_TEMPLATES) as PromoTemplateId[]).map((t) => {
+        const r = resolvePromo(mkForCards, promoApp.apple_id, t, toolbarShots)
+        return {
+          key: t,
+          name: PROMO_TEMPLATES[t],
+          title: `${appName} · ${PROMO_TEMPLATES[t]}`,
+          url: promoUrl(promoApp.apple_id, t, r),
+          file: `${slug(appName)}-${t}-${r.style}-${SIZE[r.format]}.png`,
+          aspect: ASPECT[r.format],
+          template: t,
+          resolved: r,
+          edited: hasOwnSettings(mk, promoApp.apple_id, t),
+        }
+      })
     : []
 
-  const promo = mk.mode === 'promo'
   const cards = promo ? promoCards : statsCards
-  const aspect = promo ? ASPECT[mk.format] : ASPECT[format]
+  // Looked up live, so an open card's preview follows its settings.
+  const open = cards.find((c) => c.key === openKey) ?? null
   const grid = promo
     ? mk.format === '16x9' ? 'sm:grid-cols-2' : mk.format === '9x16' ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5' : 'sm:grid-cols-2 xl:grid-cols-3'
     : format === '4x5' ? 'sm:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4'
 
-  // The previews already rendered these, so downloads come straight from the server's cache.
+  // Full size: straight from the server's cache if the card was opened, else drawn now (the grid's
+  // previews are smaller).
   const download = async (card: Card) => {
     if (!secure) {
       // No download possible here: open the full-size PNG so it can be saved from the tab.
@@ -263,22 +354,24 @@ export function MarketingStudio() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/70">
-        <div className="mx-auto flex min-h-16 max-w-screen-2xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Back to dashboard">
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-            <h1 className="text-lg font-semibold tracking-tight">Marketing</h1>
-            <Segmented
-              value={mk.mode}
-              onChange={(mode) => updateMk({ mode })}
-              options={[
-                { value: 'stats', label: 'Stats cards' },
-                { value: 'promo', label: 'App promos' },
-              ]}
-            />
-          </div>
+      <AppNav
+        active="marketing"
+        actions={
+          <Button size="sm" onClick={() => run('all-cards', async () => { for (const c of cards) await download(c) })} disabled={!!busy || !secure || !cards.length} title={secure ? undefined : 'Needs https://'} className="gap-1.5">
+            {busy === 'all-cards' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            <span className="hidden sm:inline">Download all</span>
+          </Button>
+        }
+      >
+        <div className="mx-auto flex max-w-screen-2xl flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-4 py-2.5 sm:px-6 lg:px-8">
+          <Segmented
+            value={mk.mode}
+            onChange={(mode) => updateMk({ mode })}
+            options={[
+              { value: 'stats', label: 'Stats cards' },
+              { value: 'promo', label: 'App promos' },
+            ]}
+          />
           <div className="flex flex-wrap items-center gap-2">
             {promo ? (
               <>
@@ -321,10 +414,6 @@ export function MarketingStudio() {
                 )}
               </>
             )}
-            <Button size="sm" onClick={() => run('all-cards', async () => { for (const c of cards) await download(c) })} disabled={!!busy || !secure || !cards.length} title={secure ? undefined : 'Needs https://'} className="gap-2">
-              {busy === 'all-cards' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              Download all
-            </Button>
           </div>
         </div>
 
@@ -359,14 +448,39 @@ export function MarketingStudio() {
                     style={{ background: c }}
                   />
                 ))}
-                <label className="relative h-6 w-6 cursor-pointer overflow-hidden rounded-full border border-border" title="Custom colour" style={{ background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' }}>
-                  <input type="color" value={mk.accent} onChange={(e) => updateMk({ accent: e.target.value })} className="absolute inset-0 cursor-pointer opacity-0" aria-label="Custom accent colour" />
+                <label className="relative h-6 w-6 cursor-pointer overflow-hidden rounded-full border border-border" title="Custom color" style={{ background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' }}>
+                  <input type="color" value={mk.accent} onChange={(e) => updateMk({ accent: e.target.value })} className="absolute inset-0 cursor-pointer opacity-0" aria-label="Custom accent color" />
                 </label>
+              </div>
+              <span className={labelCls}>iPhone</span>
+              <div className="flex items-center gap-1.5">
+                {(Object.keys(PROMO_FRAMES) as (keyof typeof PROMO_FRAMES)[]).map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => updateMk({ frameColor: c })}
+                    title={PROMO_FRAMES[c]}
+                    aria-label={`${PROMO_FRAMES[c]} iPhone`}
+                    className={cn('h-6 w-6 rounded-full border-2 transition-transform', mk.frameColor === c ? 'scale-110 border-foreground' : 'border-transparent hover:scale-110')}
+                    style={{ background: `linear-gradient(135deg, ${c}, ${c}cc)` }}
+                  />
+                ))}
               </div>
               <span className={labelCls}>Show</span>
               <Toggle active={mk.showBadge} onClick={() => updateMk({ showBadge: !mk.showBadge })}>App Store button</Toggle>
               <Toggle active={mk.showRating} onClick={() => updateMk({ showRating: !mk.showRating })}>Rating</Toggle>
             </div>
+            {promoApp && (
+              <ScreenPicker
+                screens={screens}
+                shown={shownShots}
+                picked={pickedShots.length > 0}
+                frame={mk.frameColor}
+                onToggle={toggleShot}
+                onReset={resetShots}
+                rowCls={rowCls}
+                labelCls={labelCls}
+              />
+            )}
             {promoApp && (
               <div className="mx-auto grid max-w-screen-2xl gap-x-4 gap-y-2 border-t border-border px-4 py-2.5 sm:grid-cols-2 sm:px-6 lg:grid-cols-[1fr_1.4fr_0.7fr_auto] lg:px-8">
                 <label className="flex flex-col gap-1">
@@ -453,21 +567,26 @@ export function MarketingStudio() {
             )}
           </>
         )}
-      </header>
+      </AppNav>
 
       <main className="mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 lg:px-8">
         {!secure && (
-          <div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
-            <div className="font-medium">Downloads need https://</div>
-            <div className="mt-0.5 text-xs text-muted-foreground">
-              Your browser blocks downloads on http:// pages. Open OpenConnect at its Tailscale address
-              (https://openconnect.&lt;your-tailnet&gt;.ts.net) to download. Until then, PNG opens the full-size card
-              in a new tab: right-click it and choose Save image as.
+          <div className="mb-6 flex gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+            <div>
+              <div className="font-medium">Downloads need https://</div>
+              <div className="mt-0.5 text-xs text-muted-foreground">
+                Your browser blocks downloads on http:// pages. Open OpenConnect at its Tailscale address
+                (https://openconnect.&lt;your-tailnet&gt;.ts.net) to download. Until then, PNG opens the full-size card
+                in a new tab: right-click it and choose Save image as.
+              </div>
             </div>
           </div>
         )}
         {promo && loaded && apps.length === 0 && (
-          <div className="rounded-lg border border-border px-4 py-10 text-center text-sm text-muted-foreground">Sync your apps first: promo cards are made from an app&apos;s App Store listing.</div>
+          <div className="rounded-lg border border-border">
+            <EmptyState>Sync your apps first: promo cards are made from an app&apos;s App Store listing.</EmptyState>
+          </div>
         )}
         {promo && promoApp && (
           <p className="mb-4 text-xs text-muted-foreground">
@@ -475,15 +594,17 @@ export function MarketingStudio() {
           </p>
         )}
         <div className={cn('grid gap-6', grid)}>
+          {!loaded && [0, 1, 2].map((i) => <Skeleton key={i} className={cn('w-full rounded-lg', ASPECT[mk.format])} />)}
           {loaded && cards.map((c) => {
             const Icon = promo ? PROMO_ICONS[c.key as PromoTemplateId] : null
             return (
               <figure key={c.key} className="space-y-2">
-                <Preview src={c.url} alt={c.title} aspect={aspect} onOpen={() => setOpen(c)} />
+                <Preview src={`${c.url}&preview=1`} alt={c.title} aspect={c.aspect} onOpen={() => setOpenKey(c.key)} />
                 <figcaption className="flex items-center justify-between gap-2">
                   <span className="flex min-w-0 items-center gap-2 truncate text-sm font-medium">
                     {Icon && <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />}
                     {c.name}
+                    {c.edited && <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">Own settings</Badge>}
                   </span>
                   <span className="flex shrink-0 gap-1.5">
                     {c.extra}
@@ -499,23 +620,43 @@ export function MarketingStudio() {
         </div>
       </main>
 
-      <Dialog open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
-        <DialogContent className="w-auto max-w-[95vw] gap-3 p-3 sm:max-w-[95vw]">
-          <DialogTitle className="sr-only">{open?.title}</DialogTitle>
-          {open && (
-            <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={open.url} alt={open.title} className={cn('max-h-[82vh] w-auto max-w-[92vw] rounded-md', aspect)} />
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-medium">{open.title}</span>
-                <Button size="sm" className="gap-1.5" disabled={!!busy} onClick={() => run(open.key, () => download(open))}>
-                  {busy === open.key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                  Download PNG
-                </Button>
-              </div>
-            </>
-          )}
-        </DialogContent>
+      <Dialog open={!!open} onOpenChange={(o) => !o && setOpenKey(null)}>
+        {open?.template && open.resolved && promoApp ? (
+          <DialogContent className="w-auto max-w-[95vw] gap-0 overflow-hidden p-0 sm:max-w-[95vw]">
+            <DialogTitle className="sr-only">{open.title}</DialogTitle>
+            <PromoCardEditor
+              key={`${promoApp.apple_id}-${open.template}`}
+              template={open.template}
+              appId={promoApp.apple_id}
+              mk={mk}
+              updateMk={updateMk}
+              info={screens}
+              toolbarShots={toolbarShots}
+              resolved={open.resolved}
+              url={open.url}
+              aspect={open.aspect}
+              busy={busy === open.key}
+              onDownload={() => run(open.key, () => download(open))}
+            />
+          </DialogContent>
+        ) : (
+          <DialogContent className="w-auto max-w-[95vw] gap-3 p-3 sm:max-w-[95vw]">
+            <DialogTitle className="sr-only">{open?.title}</DialogTitle>
+            {open && (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={open.url} alt={open.title} className={cn('max-h-[82vh] w-auto max-w-[92vw] rounded-md', open.aspect)} />
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium">{open.title}</span>
+                  <Button size="sm" className="gap-1.5" disabled={!!busy} onClick={() => run(open.key, () => download(open))}>
+                    {busy === open.key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                    Download PNG
+                  </Button>
+                </div>
+              </>
+            )}
+          </DialogContent>
+        )}
       </Dialog>
     </div>
   )

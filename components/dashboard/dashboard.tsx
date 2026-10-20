@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, Images, Megaphone, Settings, SlidersHorizontal } from 'lucide-react'
+import { AlertTriangle, SlidersHorizontal } from 'lucide-react'
+import { AppNav } from '@/components/nav/app-nav'
 import { AppSelector, App } from '@/components/dashboard/app-selector'
 import { KPICards, KPI_COLUMNS } from '@/components/dashboard/kpi-cards'
 import dynamic from 'next/dynamic'
@@ -18,6 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { CURRENCIES, DEFAULT_PREFS, RANGES, RangeId, SECTIONS, SectionId, UiPrefs, monthRangeLabel } from '@/lib/prefs'
 import { fmtDate } from '@/lib/format'
+import { selectCls } from '@/components/ui/field'
 
 // Charts, the map and the tables are loaded after the first paint, in parallel, so the page
 // shows its numbers straight away instead of waiting for ~1 MB of chart and map code.
@@ -46,10 +48,6 @@ export interface DashboardData {
   reach: ReachData
 }
 
-
-const selectCls =
-  'h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring'
-
 /** Everything the first render needs, read from the local database on the server. */
 export interface InitialData {
   apps: App[]
@@ -77,7 +75,6 @@ export function Dashboard({ initial }: { initial: InitialData }) {
       setMonths(data.months || [])
     }
   }, [])
-
 
   const loadStore = useCallback(async () => {
     const res = await fetch(`/api/store?app=${selectedAppId || 'all'}`).catch(() => null)
@@ -266,17 +263,15 @@ export function Dashboard({ initial }: { initial: InitialData }) {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/70">
-        <div className="mx-auto flex h-16 max-w-screen-2xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
-          <div className="flex min-w-0 items-baseline gap-3">
-            <h1 className="truncate text-lg font-semibold tracking-tight">OpenConnect</h1>
+      <AppNav
+        active="dashboard"
+        actions={
+          <>
             {dash?.range.start && (
-              <span className="hidden text-xs text-muted-foreground md:inline">
+              <span className="hidden text-xs text-muted-foreground xl:inline">
                 {fmtDate(dash.range.start)} – {fmtDate(dash.range.end)}
               </span>
             )}
-          </div>
-          <div className="flex items-center gap-2">
             <select value={prefs.range} onChange={(e) => updatePrefs({ range: e.target.value as UiPrefs['range'] })} className={selectCls} aria-label="Date range">
               {(Object.keys(RANGES) as RangeId[]).map((r) => <option key={r} value={r}>{RANGES[r]}</option>)}
               {months.length > 0 && (
@@ -289,34 +284,14 @@ export function Dashboard({ initial }: { initial: InitialData }) {
               {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
             <SyncStatusButton sync={sync} />
-            <Button asChild variant="outline" size="sm" className="gap-2">
-              {/* The screenshot studio is its own app (studio/), so a full page load, not a client navigation. */}
-              {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-              <a href="/studio">
-                <Images className="h-4 w-4" />
-                <span className="hidden sm:inline">Studio</span>
-              </a>
-            </Button>
-            <Button asChild variant="outline" size="sm" className="gap-2">
-              <Link href="/marketing">
-                <Megaphone className="h-4 w-4" />
-                <span className="hidden sm:inline">Marketing</span>
+            <Button asChild variant="ghost" size="sm" className="h-9 w-9 p-0" title="Customize the dashboard">
+              <Link href="/settings#customize" aria-label="Customize the dashboard">
+                <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
               </Link>
             </Button>
-            <Button asChild variant="outline" size="sm" className="gap-2">
-              <Link href="/settings#customize">
-                <SlidersHorizontal className="h-4 w-4" />
-                <span className="hidden sm:inline">Customize</span>
-              </Link>
-            </Button>
-            <Button asChild variant="ghost" size="icon" title="Settings">
-              <Link href="/settings" aria-label="Settings">
-                <Settings className="h-5 w-5 text-muted-foreground" />
-              </Link>
-            </Button>
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       <div
         className={`mx-auto max-w-screen-2xl gap-6 px-4 py-6 sm:px-6 lg:grid lg:px-8 ${

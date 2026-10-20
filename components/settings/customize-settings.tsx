@@ -11,6 +11,8 @@ import {
   BREAKDOWN_TABS, DEFAULT_PREFS, REACH_ITEMS, HISTORY_SERIES, KPIS, MAP_ITEMS, SECTIONS, STORE_COLUMNS, SUBSCRIPTION_ITEMS, TERRITORY_COLUMNS,
   BreakdownTab, HistorySeries, ReachItem, KpiId, MapItem, SectionId, SectionWidth, StoreColumn, SubscriptionItem, TerritoryColumn, UiPrefs,
 } from "@/lib/prefs"
+import { ConfirmButton } from "@/components/ui/confirm-button"
+import { inputCls } from "@/components/ui/field"
 
 function toggleIn<T>(list: T[], item: T): T[] {
   return list.includes(item) ? list.filter((x) => x !== item) : [...list, item]
@@ -21,11 +23,7 @@ interface Props {
   onPrefs: (p: Partial<UiPrefs>) => void
   apps: App[]
   onToggleApp: (id: string) => void
-  footer?: React.ReactNode
 }
-
-const selectCls =
-  "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
 
 function moved<T>(list: T[], item: T, delta: number): T[] | null {
   const order = [...list]
@@ -40,7 +38,7 @@ function moved<T>(list: T[], item: T, delta: number): T[] | null {
  * Everything about what the dashboard shows and where: apps, layout, sections, metrics,
  * columns and the parts inside each section. Changes save as you make them.
  */
-export function CustomizeSettings({ prefs, onPrefs, apps, onToggleApp, footer }: Props) {
+export function CustomizeSettings({ prefs, onPrefs, apps, onToggleApp }: Props) {
   const move = (id: SectionId, delta: number) => {
     const order = moved(prefs.sectionOrder, id, delta)
     if (order) onPrefs({ sectionOrder: order })
@@ -63,7 +61,7 @@ export function CustomizeSettings({ prefs, onPrefs, apps, onToggleApp, footer }:
 
   return (
     <>
-      <Panel title="Apps" description="Hidden apps are left out of the app list and of All Apps totals." footer={footer}>
+      <Panel title="Apps" description="Hidden apps are left out of the app list and of All Apps totals.">
         <div className="divide-y divide-border rounded-md border border-border">
           {apps.map((app) => (
             <label key={app.apple_id} className="flex cursor-pointer items-center gap-3 px-3 py-2">
@@ -81,18 +79,18 @@ export function CustomizeSettings({ prefs, onPrefs, apps, onToggleApp, footer }:
         </div>
       </Panel>
 
-      <Panel title="Layout" description="Where things sit on the dashboard." footer={footer}>
+      <Panel title="Layout" description="Where things sit on the dashboard.">
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="space-y-1.5 text-sm">
             <span className="font-medium">App list</span>
-            <select value={prefs.sidebar} onChange={(e) => onPrefs({ sidebar: e.target.value as UiPrefs["sidebar"] })} className={selectCls}>
+            <select value={prefs.sidebar} onChange={(e) => onPrefs({ sidebar: e.target.value as UiPrefs["sidebar"] })} className={inputCls}>
               <option value="left">Left side</option>
               <option value="right">Right side</option>
             </select>
           </label>
           <label className="space-y-1.5 text-sm">
             <span className="font-medium">Key metrics per row</span>
-            <select value={prefs.kpiColumns} onChange={(e) => onPrefs({ kpiColumns: Number(e.target.value) as UiPrefs["kpiColumns"] })} className={selectCls}>
+            <select value={prefs.kpiColumns} onChange={(e) => onPrefs({ kpiColumns: Number(e.target.value) as UiPrefs["kpiColumns"] })} className={inputCls}>
               {[3, 4, 5, 6].map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
           </label>
@@ -124,7 +122,7 @@ export function CustomizeSettings({ prefs, onPrefs, apps, onToggleApp, footer }:
         </div>
       </Panel>
 
-      <Panel title="Key metrics" description="The cards across the top of the dashboard, in this order." footer={footer}>
+      <Panel title="Key metrics" description="The cards across the top of the dashboard, in this order.">
         <div className="divide-y divide-border rounded-md border border-border">
           {prefs.kpiOrder.map((id, i) => (
             <div key={id} className="flex items-center gap-3 px-3 py-1.5">
@@ -136,7 +134,7 @@ export function CustomizeSettings({ prefs, onPrefs, apps, onToggleApp, footer }:
         </div>
       </Panel>
 
-      <Panel title="Inside each section" description="Switch off any series, column or part you don’t want to see." footer={footer}>
+      <Panel title="Inside each section" description="Switch off any series, column or part you don’t want to see.">
         <Detail title="History chart series">
           <Chips<HistorySeries> all={HISTORY_SERIES} hidden={prefs.hiddenHistorySeries} onChange={(hiddenHistorySeries) => onPrefs({ hiddenHistorySeries })} />
         </Detail>
@@ -161,16 +159,18 @@ export function CustomizeSettings({ prefs, onPrefs, apps, onToggleApp, footer }:
       </Panel>
 
       <div className="flex justify-end">
-        <Button
+        <ConfirmButton
           variant="ghost"
           size="sm"
-          onClick={() =>
+          question="Put the dashboard layout back to the defaults?"
+          confirmLabel="Reset layout"
+          onConfirm={() =>
             // Only what this section controls; theme, defaults and marketing choices stay.
             onPrefs({ ...DEFAULT_PREFS, share: prefs.share, marketing: prefs.marketing, theme: prefs.theme, currency: prefs.currency, range: prefs.range, compareToPrevious: prefs.compareToPrevious })
           }
         >
           Reset layout to defaults
-        </Button>
+        </ConfirmButton>
       </div>
     </>
   )

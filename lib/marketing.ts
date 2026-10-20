@@ -2,6 +2,7 @@
 // release notes, price) plus the numbers worth bragging about (rating, downloads, reach).
 
 import { listApps, reach, reviews, storePresence } from './queries';
+import type { PromoTemplateId } from './prefs';
 
 export interface Listing {
   version: string | null;
@@ -18,6 +19,8 @@ export interface Listing {
 // The listing changes only on an App Store release, so a few hours is plenty.
 const LISTING_TTL = 6 * 60 * 60 * 1000;
 const listingCache = new Map<string, { at: number; listing: Listing | null }>();
+// Lookups under way, so the cards that load together share one.
+const listingLoads = new Map<string, Promise<Listing | null>>();
 
 /** Screenshot URL at a size that's sharp on a 1080 px card without being a megabyte PNG. */
 function screenshotUrl(url: string) {
@@ -29,9 +32,18 @@ function ratioOf(url: string) {
   return m ? Number(m[2]) / Number(m[1]) : 2.165;
 }
 
-export async function listing(appId: string): Promise<Listing | null> {
+export function listing(appId: string): Promise<Listing | null> {
   const hit = listingCache.get(appId);
-  if (hit && Date.now() - hit.at < LISTING_TTL) return hit.listing;
+  if (hit && Date.now() - hit.at < LISTING_TTL) return Promise.resolve(hit.listing);
+  let load = listingLoads.get(appId);
+  if (!load) {
+    load = lookup(appId).finally(() => listingLoads.delete(appId));
+    listingLoads.set(appId, load);
+  }
+  return load;
+}
+
+async function lookup(appId: string): Promise<Listing | null> {
   let result: Listing | null = null;
   try {
     const res = await fetch(`https://itunes.apple.com/lookup?id=${encodeURIComponent(appId)}&country=us&entity=software`, {
@@ -40,7 +52,8 @@ export async function listing(appId: string): Promise<Listing | null> {
     });
     const r = res.ok ? (await res.json())?.results?.[0] : null;
     if (r) {
-      const shots: string[] = r.screenshotUrls?.length ? r.screenshotUrls : r.ipadScreenshotUrls || [];
+      // iPhone screenshots only: the cards draw them in iPhones.
+      const shots: string[] = r.screenshotUrls || [];
       result = {
         version: r.version || null,
         versionDate: r.currentVersionReleaseDate ? String(r.currentVersionReleaseDate).slice(0, 10) : null,
@@ -50,7 +63,7 @@ export async function listing(appId: string): Promise<Listing | null> {
         genre: r.primaryGenreName || null,
         seller: r.sellerName || null,
         storeUrl: r.trackViewUrl ? String(r.trackViewUrl).split('?')[0] : null,
-        screenshots: shots.slice(0, 5).map((u) => ({ url: screenshotUrl(u), ratio: ratioOf(u) })),
+        screenshots: shots.slice(0, 10).map((u) => ({ url: screenshotUrl(u), ratio: ratioOf(u) })),
       };
     }
   } catch {
@@ -91,7 +104,9 @@ export interface PromoData {
   ratingCount: number;
   downloads: number;            // first-time, all time
   countries: number;
-  quotes: { title: string; body: string; reviewer: string; rating: number }[];
+  reached: string[];            // storefronts (country codes) with downloads, all time
+  storefronts: number;          // how many App Store storefronts there are
+  quotes: { title: string; body: string; reviewer: string; rating: number }[]; // up to 12; the Reviews card picks from these
 }
 
 export async function promoData(appId: string): Promise<PromoData | null> {
@@ -103,7 +118,7 @@ export async function promoData(appId: string): Promise<PromoData | null> {
   const quotes = (reviews({ appId, rating: 5, limit: 100, offset: 0 }).items as any[])
     .map((q) => ({ title: plain(q.title || ''), body: plain(q.body || ''), reviewer: plain(q.reviewer || '') || 'App Store reviewer', rating: q.rating }))
     .filter((q) => q.body.length >= 20 && q.body.length <= 220)
-    .slice(0, 3);
+    .slice(0, 12);
   return {
     appId,
     name: app.name.split(':')[0],
@@ -113,6 +128,22 @@ export async function promoData(appId: string): Promise<PromoData | null> {
     ratingCount: store.rating_count,
     downloads: app.first_time_downloads,
     countries: r.apps[appId]?.count ?? 0,
+    reached: Object.keys(r.apps[appId]?.countries ?? {}),
+    storefronts: r.total,
     quotes,
   };
+}
+
+/** Each template's own wording, used where a card's text is left empty. */
+export function defaultCopy(t: PromoTemplateId, data: PromoData) {
+  const version = data.listing?.version;
+  const headline = {
+    launch: `Meet ${data.name}`,
+    update: version ? `Version\n${version}\nIs Here!` : `${data.name} just got better`,
+    screens: `See ${data.name}\nIn Action`,
+    loved: data.countries > 1 ? `Loved In\n${data.countries} Countries` : `People Love\n${data.name}`,
+    reviews: `People Love\n${data.name}`,
+    download: `Get ${data.name}${data.listing?.price === 'Free' ? ' free' : ''}`,
+  }[t];
+  return { headline, tagline: firstSentence(data.listing?.description ?? ''), cta: '', notes: data.listing?.releaseNotes ?? '' };
 }

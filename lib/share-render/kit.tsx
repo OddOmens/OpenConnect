@@ -4,6 +4,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import DottedMap from 'dotted-map/without-countries';
+import { Resvg } from '@resvg/resvg-js';
 import worldDots from '@/lib/world-dots.json';
 import type { ShareData, ShareIcon } from '@/lib/share';
 import { TERRITORY_BY_CODE } from '@/lib/territories';
@@ -36,9 +37,20 @@ export function loadFonts() {
 
 // Images are inlined so a slow or flaky image host can't break the render.
 const imageCache = new Map<string, string | null>();
-export async function inlineImage(url: string | null): Promise<string | null> {
-  if (!url) return null;
-  if (imageCache.has(url)) return imageCache.get(url)!;
+// Downloads under way, so the cards that load together share one download of the same icon.
+const imageLoads = new Map<string, Promise<string | null>>();
+export function inlineImage(url: string | null): Promise<string | null> {
+  if (!url) return Promise.resolve(null);
+  if (imageCache.has(url)) return Promise.resolve(imageCache.get(url)!);
+  let load = imageLoads.get(url);
+  if (!load) {
+    load = fetchImage(url).finally(() => imageLoads.delete(url));
+    imageLoads.set(url, load);
+  }
+  return load;
+}
+
+async function fetchImage(url: string): Promise<string | null> {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const res = await fetch(url, { cache: 'no-store' });
@@ -54,6 +66,15 @@ export async function inlineImage(url: string | null): Promise<string | null> {
     await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
   }
   return null;
+}
+
+/** A large image (data: URI) scaled to `target` px wide, as PNG. Small images come back as they are. */
+export function shrinkImage(data: string, width: number, height: number, target: number): string {
+  if (!width || !height || width <= target) return data;
+  const h = Math.round((height * target) / width);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${target}" height="${h}"><image width="${target}" height="${h}" xlink:href="${data}"/></svg>`;
+  const png = new Resvg(svg, { fitTo: { mode: 'original' } }).render().asPng();
+  return `data:image/png;base64,${Buffer.from(png).toString('base64')}`;
 }
 
 /** An App Store icon at 256 px. */
@@ -241,19 +262,21 @@ export interface WorldPin {
   code: string;
   color: string;
   r: number; // in map units (base dots are 0.22)
+  opacity?: number;
+  stroke?: string; // outline, so the pin stands out on a background of its own colour
 }
 
 /** Dotted world map with coloured pins on storefronts. */
-export function DottedWorld({ width, pins, theme }: { width: number; pins: WorldPin[]; theme: Theme }) {
+export function DottedWorld({ width, pins, theme, dotColor, dotOpacity = 1 }: { width: number; pins: WorldPin[]; theme?: Theme; dotColor?: string; dotOpacity?: number }) {
   const height = Math.round((width * WORLD_H) / WORLD_W);
   return (
     <svg width={width} height={height} viewBox={`0 0 ${WORLD_W} ${WORLD_H}`}>
-      <path d={WORLD_DOTS_PATH} fill={theme.border} />
+      <path d={WORLD_DOTS_PATH} fill={dotColor ?? theme?.border ?? '#27272a'} fillOpacity={dotOpacity} />
       {pins.map((p) => {
         const t = TERRITORY_BY_CODE[p.code];
         if (!t) return null;
         const { x, y } = WORLD.getPin({ lat: t.lat, lng: t.lng });
-        return <circle key={p.code} cx={x} cy={y} r={p.r} fill={p.color} />;
+        return <circle key={p.code} cx={x} cy={y} r={p.r} fill={p.color} fillOpacity={p.opacity ?? 1} {...(p.stroke ? { stroke: p.stroke, strokeWidth: 0.16 } : {})} />;
       })}
     </svg>
   );

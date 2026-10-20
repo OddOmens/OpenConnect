@@ -3,9 +3,7 @@
 import * as React from "react"
 import { LogOut, ShieldOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
-
-const inputCls =
-  "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+import { inputCls } from "@/components/ui/field"
 
 async function auth(body: object) {
   const res = await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
@@ -71,21 +69,22 @@ export function SecuritySection() {
       {fromEnv ? (
         <p className="text-xs text-muted-foreground">The password is set by OPENCONNECT_PASSWORD; change it there and restart.</p>
       ) : (
-        <form onSubmit={change} className="grid grid-cols-2 gap-3">
-          <label className="space-y-1 text-xs text-muted-foreground">
-            Current password
+        <form onSubmit={change} className="grid gap-4 sm:grid-cols-2">
+          <label className="space-y-1.5 text-sm">
+            <span className="font-medium">Current password</span>
             <input className={inputCls} type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" required />
           </label>
-          <label className="space-y-1 text-xs text-muted-foreground">
-            New password
+          <label className="space-y-1.5 text-sm">
+            <span className="font-medium">New password</span>
             <input className={inputCls} type="password" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" minLength={10} required />
+            <span className="block text-xs text-muted-foreground">At least 10 characters.</span>
           </label>
-          <div className="col-span-2">
-            <Button type="submit" size="sm" variant="outline" disabled={busy}>Change password</Button>
+          <div className="sm:col-span-2">
+            <Button type="submit" size="sm" disabled={busy}>Change password</Button>
           </div>
         </form>
       )}
-      {message && <p className={message.ok ? "text-xs text-emerald-500" : "text-xs text-red-500"}>{message.text}</p>}
+      {message && <p className={message.ok ? "text-xs text-emerald-600 dark:text-emerald-400" : "text-xs text-red-600 dark:text-red-400"}>{message.text}</p>}
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="outline" className="gap-1.5" onClick={() => signOut(false)}>
           <LogOut className="h-3.5 w-3.5" /> Sign out

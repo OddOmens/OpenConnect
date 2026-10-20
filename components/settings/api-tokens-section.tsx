@@ -3,9 +3,8 @@
 import * as React from "react"
 import { Check, Copy, KeyRound, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-
-const inputCls =
-  "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+import { ConfirmButton } from "@/components/ui/confirm-button"
+import { inputCls } from "@/components/ui/field"
 
 interface Token { id: string; name: string; hint: string; created_at: string; last_used_at: string | null }
 
@@ -38,8 +37,12 @@ export function ApiTokensSection() {
   }
 
   const revoke = async (t: Token) => {
-    if (!confirm(`Revoke "${t.name}"? Anything using it stops working.`)) return
-    await fetch(`/api/tokens?id=${encodeURIComponent(t.id)}`, { method: "DELETE" })
+    setError(null)
+    const res = await fetch(`/api/tokens?id=${encodeURIComponent(t.id)}`, { method: "DELETE" }).catch(() => null)
+    if (!res?.ok) {
+      const d = await res?.json().catch(() => ({}))
+      setError(d?.error || `Couldn't revoke "${t.name}".`)
+    }
     load()
   }
 
@@ -56,11 +59,11 @@ export function ApiTokensSection() {
       </p>
       <form onSubmit={create} className="flex gap-2">
         <input className={inputCls} placeholder="Name, e.g. Claude on my Mac" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
-        <Button type="submit" size="sm" variant="outline" className="h-9 shrink-0 gap-1.5">
+        <Button type="submit" size="sm" className="shrink-0 gap-1.5">
           <KeyRound className="h-3.5 w-3.5" /> Create token
         </Button>
       </form>
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
       {created && (
         <div className="space-y-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3">
           <p className="text-xs font-medium">Copy this token now. It won&apos;t be shown again.</p>
@@ -83,9 +86,17 @@ export function ApiTokensSection() {
                   …{t.hint} · created {when(t.created_at)} · last used {when(t.last_used_at)}
                 </div>
               </div>
-              <Button size="sm" variant="ghost" className="shrink-0 gap-1.5 text-red-500 hover:text-red-500" onClick={() => revoke(t)}>
+              <ConfirmButton
+                size="sm"
+                variant="ghost"
+                className="shrink-0 gap-1.5 text-red-600 dark:text-red-400 hover:text-red-600 dark:hover:text-red-400"
+                question="Anything using it stops working."
+                confirmLabel="Revoke"
+                destructive
+                onConfirm={() => revoke(t)}
+              >
                 <Trash2 className="h-3.5 w-3.5" /> Revoke
-              </Button>
+              </ConfirmButton>
             </li>
           ))}
         </ul>

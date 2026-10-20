@@ -80,14 +80,10 @@
   * {
     scrollbar-color: hsl(var(--border)) transparent;
   }
-}
-
-@layer utilities {
-  .hide-scrollbar::-webkit-scrollbar {
-    display: none;
-  }
-  .hide-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
+  /* A keyboard focus ring on every button and link, hand-built ones included (Button and the
+     form fields draw their own, which win over this). */
+  :is(button, a, summary, [role="button"]):focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
   }
 }

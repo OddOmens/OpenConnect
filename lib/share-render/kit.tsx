@@ -37,9 +37,20 @@ export function loadFonts() {
 
 // Images are inlined so a slow or flaky image host can't break the render.
 const imageCache = new Map<string, string | null>();
-export async function inlineImage(url: string | null): Promise<string | null> {
-  if (!url) return null;
-  if (imageCache.has(url)) return imageCache.get(url)!;
+// Downloads under way, so the cards that load together share one download of the same icon.
+const imageLoads = new Map<string, Promise<string | null>>();
+export function inlineImage(url: string | null): Promise<string | null> {
+  if (!url) return Promise.resolve(null);
+  if (imageCache.has(url)) return Promise.resolve(imageCache.get(url)!);
+  let load = imageLoads.get(url);
+  if (!load) {
+    load = fetchImage(url).finally(() => imageLoads.delete(url));
+    imageLoads.set(url, load);
+  }
+  return load;
+}
+
+async function fetchImage(url: string): Promise<string | null> {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const res = await fetch(url, { cache: 'no-store' });

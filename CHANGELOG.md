@@ -14,6 +14,9 @@
 - Promo cards come in five styles (**Studio**, **Light**, **Gradient**, **Bold**, **Glow**), any accent colour, and four sizes: 1:1, 4:5, 9:16 and 16:9. You can override the headline, tagline, button text and release notes, and the text is kept per app. You can also hide the App Store button or the rating.
 
 ### Changed
+- **Marketing loads much faster.** The grid's previews are drawn smaller (full size when you open or download a card), Reviews cards no longer use a costly blurred shadow, and app icons and listings download once, outside the one-at-a-time render queue.
+- **Loved By's legend** counts the countries without downloads too: "10 of 175 App Store countries · 165 not yet".
+- **A more consistent look:** every input and select shares one style (with placeholders and focus rings), status colours match in light and dark, popups use the same headings, Settings lines up with the top bar and shows "Saved" once, and every button has a keyboard focus ring. Section names in Customize match the dashboard's (History, Breakdowns).
 - **Screenshots** cards read "See Afternoon / In Action" on two lines.
 - Card images are tied to the build, so a browser never keeps showing a card drawn by an older version after an update.
 - **What's New** cards read "Version / 1.4.0 / Is Here!" on three lines, and release notes are trimmed to what fits.
@@ -21,6 +24,9 @@
 - The studio's editor and its data API are part of the dashboard app itself; the studio container only renders (slide images, previews, exports) and can be restarted without interrupting editing.
 - The dashboard's icons are on lucide-react 1.x, the same as the studio.
 - **Share is now Marketing**, at `/marketing`. The old `/share` address redirects there.
+
+### Fixed
+- **Revoking an API token** works again: Revoke asks inside the page (Revoke / Cancel) instead of a browser pop-up that some browsers block, and says so if the server refuses. Full re-sync and Reset layout ask the same way.
 
 ## 1.2.0
 

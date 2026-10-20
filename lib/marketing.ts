@@ -19,6 +19,8 @@ export interface Listing {
 // The listing changes only on an App Store release, so a few hours is plenty.
 const LISTING_TTL = 6 * 60 * 60 * 1000;
 const listingCache = new Map<string, { at: number; listing: Listing | null }>();
+// Lookups under way, so the cards that load together share one.
+const listingLoads = new Map<string, Promise<Listing | null>>();
 
 /** Screenshot URL at a size that's sharp on a 1080 px card without being a megabyte PNG. */
 function screenshotUrl(url: string) {
@@ -30,9 +32,18 @@ function ratioOf(url: string) {
   return m ? Number(m[2]) / Number(m[1]) : 2.165;
 }
 
-export async function listing(appId: string): Promise<Listing | null> {
+export function listing(appId: string): Promise<Listing | null> {
   const hit = listingCache.get(appId);
-  if (hit && Date.now() - hit.at < LISTING_TTL) return hit.listing;
+  if (hit && Date.now() - hit.at < LISTING_TTL) return Promise.resolve(hit.listing);
+  let load = listingLoads.get(appId);
+  if (!load) {
+    load = lookup(appId).finally(() => listingLoads.delete(appId));
+    listingLoads.set(appId, load);
+  }
+  return load;
+}
+
+async function lookup(appId: string): Promise<Listing | null> {
   let result: Listing | null = null;
   try {
     const res = await fetch(`https://itunes.apple.com/lookup?id=${encodeURIComponent(appId)}&country=us&entity=software`, {

@@ -14,6 +14,7 @@ import { ApiTokensSection } from "./api-tokens-section"
 import { CustomizeSettings } from "./customize-settings"
 import { Panel, Row } from "./panel"
 import type { App } from "@/components/dashboard/app-selector"
+import { inputCls } from "@/components/ui/field"
 
 export interface ServerSettings {
   credentials: { key_id: string; issuer_id: string; private_key_path: string; vendor_number: string; has_private_key: boolean }
@@ -31,9 +32,6 @@ const SECTIONS = {
   about: { label: "About", icon: Info },
 } as const
 type SectionKey = keyof typeof SECTIONS
-
-const inputCls =
-  "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60"
 
 export function SettingsView({ initial, apps: initialApps, version }: { initial: ServerSettings; apps: App[]; version: string }) {
   const [section, setSection] = React.useState<SectionKey>("general")
@@ -86,8 +84,12 @@ export function SettingsView({ initial, apps: initialApps, version }: { initial:
     <div className="min-h-screen bg-background">
       <AppNav active="settings" />
 
-      <h1 className="mx-auto max-w-5xl px-4 pt-6 text-lg font-semibold tracking-tight sm:px-6 lg:px-8">Settings</h1>
-      <div className="mx-auto max-w-5xl gap-8 px-4 py-6 sm:px-6 md:grid md:grid-cols-[200px_minmax(0,1fr)] lg:px-8">
+      {/* Lined up with the top bar, like the other pages; the Saved note shows here, once. */}
+      <div className="mx-auto flex max-w-screen-2xl items-center justify-between gap-4 px-4 pt-6 sm:px-6 lg:px-8">
+        <h1 className="text-lg font-semibold tracking-tight">Settings</h1>
+        {savedNote}
+      </div>
+      <div className="mx-auto max-w-screen-2xl gap-8 px-4 py-6 sm:px-6 md:grid md:grid-cols-[200px_minmax(0,48rem)] lg:px-8">
         <nav aria-label="Settings sections" className="mb-6 flex gap-1 overflow-x-auto md:mb-0 md:flex-col">
           {(Object.keys(SECTIONS) as SectionKey[]).map((key) => {
             const { label, icon: Icon } = SECTIONS[key]
@@ -109,8 +111,8 @@ export function SettingsView({ initial, apps: initialApps, version }: { initial:
         </nav>
 
         <main className="min-w-0 space-y-6">
-          {section === "general" && <GeneralSettings prefs={prefs} update={updatePrefs} savedNote={savedNote} />}
-          {section === "customize" && <CustomizeSettings prefs={prefs} onPrefs={updatePrefs} apps={apps} onToggleApp={toggleApp} footer={savedNote} />}
+          {section === "general" && <GeneralSettings prefs={prefs} update={updatePrefs} />}
+          {section === "customize" && <CustomizeSettings prefs={prefs} onPrefs={updatePrefs} apps={apps} onToggleApp={toggleApp} />}
           {section === "connect" && <ConnectSettings initial={initial} />}
           {section === "sync" && <SyncSettings initial={initial.sync} />}
           {section === "security" && (
@@ -134,7 +136,7 @@ export function SettingsView({ initial, apps: initialApps, version }: { initial:
 
 function Status({ ok, label }: { ok: boolean; label: string }) {
   return (
-    <span className={cn("inline-flex items-center gap-1 text-xs", ok ? "text-emerald-600 dark:text-emerald-500" : "text-red-600 dark:text-red-500")}>
+    <span className={cn("inline-flex items-center gap-1 text-xs", ok ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}>
       {ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
       {label}
     </span>
@@ -187,10 +189,10 @@ function ThemePreview({ id }: { id: ThemeId }) {
   )
 }
 
-function GeneralSettings({ prefs, update, savedNote }: { prefs: UiPrefs; update: (p: Partial<UiPrefs>) => void; savedNote: React.ReactNode }) {
+function GeneralSettings({ prefs, update }: { prefs: UiPrefs; update: (p: Partial<UiPrefs>) => void }) {
   return (
     <>
-      <Panel title="Appearance" description="Light, dark, or whatever your device is set to." footer={savedNote}>
+      <Panel title="Appearance" description="Light, dark, or whatever your device is set to.">
         <div className="grid grid-cols-3 gap-3" role="radiogroup" aria-label="Theme">
           {THEMES.map(({ id, label, icon: Icon }) => (
             <button
@@ -213,7 +215,7 @@ function GeneralSettings({ prefs, update, savedNote }: { prefs: UiPrefs; update:
         </div>
       </Panel>
 
-      <Panel title="Dashboard defaults" description="What the dashboard shows when it opens." footer={savedNote}>
+      <Panel title="Dashboard defaults" description="What the dashboard shows when it opens.">
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="space-y-1.5 text-sm">
             <span className="font-medium">Date range</span>
@@ -399,7 +401,7 @@ function SyncSettings({ initial }: { initial: SyncConfig }) {
           </select>
         </label>
         <label className="space-y-1.5 text-sm">
-          <span className="font-medium">Ratings & rankings</span>
+          <span className="font-medium">Ratings & Rankings</span>
           <select className={inputCls} value={sync.storeSyncHours} onChange={(e) => setSync({ ...sync, storeSyncHours: Number(e.target.value) })}>
             {[0, 6, 12, 24, 48, 168].map((h) => <option key={h} value={h}>{h ? (h === 168 ? "Weekly" : `Every ${h} hours`) : "Off (manual only)"}</option>)}
           </select>

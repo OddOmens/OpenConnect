@@ -7,17 +7,20 @@ import { ScreenThumb, type PromoScreens } from './screen-thumb'
 import { PromoCardEditor } from './promo-card-editor'
 import { hasOwnSettings, promoUrl, resolvePromo, type ResolvedPromo } from '@/lib/promo-settings'
 import {
-  Download, Globe, Heart, Images, LayoutDashboard, Loader2, Map as MapIcon, Maximize2, MessageSquareQuote, RefreshCw, Rocket, Smartphone, Sparkles, Star, Trophy,
+  AlertTriangle, Download, Globe, Heart, Images, LayoutDashboard, Loader2, Map as MapIcon, Maximize2, MessageSquareQuote, RefreshCw, Rocket, Smartphone, Sparkles, Star, Trophy,
 } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import { Segmented, Toggle } from '@/components/dashboard/section'
+import { EmptyState, Segmented, Toggle } from '@/components/dashboard/section'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   DEFAULT_PREFS, PROMO_ACCENTS, PROMO_FORMATS, PROMO_FRAMES, PROMO_STYLES, PROMO_TEMPLATES, PromoFormatId, PromoStyleId, PromoTemplateId,
   SHARE_HEROES, SHARE_STATS, SHARE_TEMPLATES, ShareHeroId, ShareStatId, ShareTemplateId, UiPrefs, monthRangeLabel,
 } from '@/lib/prefs'
 import type { App } from '@/components/dashboard/app-selector'
 import { cn } from '@/lib/utils'
+import { inputCls, selectCls } from '@/components/ui/field'
 
 const RANGES = {
   '30d': 'Last 30 days',
@@ -81,11 +84,6 @@ const SIZE: Record<PromoFormatId, string> = {
   '9x16': '1080x1920',
   '16x9': '1920x1080',
 }
-
-const selectCls =
-  'h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring'
-const inputCls =
-  'h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring'
 
 function slug(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
@@ -325,7 +323,8 @@ export function MarketingStudio() {
     ? mk.format === '16x9' ? 'sm:grid-cols-2' : mk.format === '9x16' ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5' : 'sm:grid-cols-2 xl:grid-cols-3'
     : format === '4x5' ? 'sm:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4'
 
-  // The previews already rendered these, so downloads come straight from the server's cache.
+  // Full size: straight from the server's cache if the card was opened, else drawn now (the grid's
+  // previews are smaller).
   const download = async (card: Card) => {
     if (!secure) {
       // No download possible here: open the full-size PNG so it can be saved from the tab.
@@ -358,8 +357,8 @@ export function MarketingStudio() {
       <AppNav
         active="marketing"
         actions={
-          <Button size="sm" onClick={() => run('all-cards', async () => { for (const c of cards) await download(c) })} disabled={!!busy || !secure || !cards.length} title={secure ? undefined : 'Needs https://'} className="gap-2">
-            {busy === 'all-cards' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          <Button size="sm" onClick={() => run('all-cards', async () => { for (const c of cards) await download(c) })} disabled={!!busy || !secure || !cards.length} title={secure ? undefined : 'Needs https://'} className="gap-1.5">
+            {busy === 'all-cards' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
             <span className="hidden sm:inline">Download all</span>
           </Button>
         }
@@ -449,8 +448,8 @@ export function MarketingStudio() {
                     style={{ background: c }}
                   />
                 ))}
-                <label className="relative h-6 w-6 cursor-pointer overflow-hidden rounded-full border border-border" title="Custom colour" style={{ background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' }}>
-                  <input type="color" value={mk.accent} onChange={(e) => updateMk({ accent: e.target.value })} className="absolute inset-0 cursor-pointer opacity-0" aria-label="Custom accent colour" />
+                <label className="relative h-6 w-6 cursor-pointer overflow-hidden rounded-full border border-border" title="Custom color" style={{ background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' }}>
+                  <input type="color" value={mk.accent} onChange={(e) => updateMk({ accent: e.target.value })} className="absolute inset-0 cursor-pointer opacity-0" aria-label="Custom accent color" />
                 </label>
               </div>
               <span className={labelCls}>iPhone</span>
@@ -572,17 +571,22 @@ export function MarketingStudio() {
 
       <main className="mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 lg:px-8">
         {!secure && (
-          <div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
-            <div className="font-medium">Downloads need https://</div>
-            <div className="mt-0.5 text-xs text-muted-foreground">
-              Your browser blocks downloads on http:// pages. Open OpenConnect at its Tailscale address
-              (https://openconnect.&lt;your-tailnet&gt;.ts.net) to download. Until then, PNG opens the full-size card
-              in a new tab: right-click it and choose Save image as.
+          <div className="mb-6 flex gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+            <div>
+              <div className="font-medium">Downloads need https://</div>
+              <div className="mt-0.5 text-xs text-muted-foreground">
+                Your browser blocks downloads on http:// pages. Open OpenConnect at its Tailscale address
+                (https://openconnect.&lt;your-tailnet&gt;.ts.net) to download. Until then, PNG opens the full-size card
+                in a new tab: right-click it and choose Save image as.
+              </div>
             </div>
           </div>
         )}
         {promo && loaded && apps.length === 0 && (
-          <div className="rounded-lg border border-border px-4 py-10 text-center text-sm text-muted-foreground">Sync your apps first: promo cards are made from an app&apos;s App Store listing.</div>
+          <div className="rounded-lg border border-border">
+            <EmptyState>Sync your apps first: promo cards are made from an app&apos;s App Store listing.</EmptyState>
+          </div>
         )}
         {promo && promoApp && (
           <p className="mb-4 text-xs text-muted-foreground">
@@ -590,16 +594,17 @@ export function MarketingStudio() {
           </p>
         )}
         <div className={cn('grid gap-6', grid)}>
+          {!loaded && [0, 1, 2].map((i) => <Skeleton key={i} className={cn('w-full rounded-lg', ASPECT[mk.format])} />)}
           {loaded && cards.map((c) => {
             const Icon = promo ? PROMO_ICONS[c.key as PromoTemplateId] : null
             return (
               <figure key={c.key} className="space-y-2">
-                <Preview src={c.url} alt={c.title} aspect={c.aspect} onOpen={() => setOpenKey(c.key)} />
+                <Preview src={`${c.url}&preview=1`} alt={c.title} aspect={c.aspect} onOpen={() => setOpenKey(c.key)} />
                 <figcaption className="flex items-center justify-between gap-2">
                   <span className="flex min-w-0 items-center gap-2 truncate text-sm font-medium">
                     {Icon && <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />}
                     {c.name}
-                    {c.edited && <span className="rounded bg-accent px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">Own settings</span>}
+                    {c.edited && <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">Own settings</Badge>}
                   </span>
                   <span className="flex shrink-0 gap-1.5">
                     {c.extra}

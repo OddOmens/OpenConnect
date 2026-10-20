@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, ListChecks, RefreshCw } from "lucide-react
 import { formatDistanceToNow } from "date-fns"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { ConfirmButton } from "@/components/ui/confirm-button"
 import { fmtDate } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import type { SyncReport } from "@/lib/sync-report"
@@ -155,13 +156,13 @@ export function SyncStatusButton({ sync }: { sync: ReturnType<typeof useSyncStat
     <SyncReportDialog reports={reports} onClose={closeReport} />
     <Dialog open={dialogOpen} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-2">
+        <Button variant="outline" size="sm" className="gap-1.5">
           {running ? (
-            <RefreshCw className="h-4 w-4 animate-spin" />
+            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
           ) : hasProblem ? (
-            <AlertTriangle className="h-4 w-4 text-amber-500" />
+            <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
           ) : (
-            <RefreshCw className="h-4 w-4" />
+            <RefreshCw className="h-3.5 w-3.5" />
           )}
           <span className="hidden sm:inline">
             {running
@@ -174,7 +175,7 @@ export function SyncStatusButton({ sync }: { sync: ReturnType<typeof useSyncStat
       </DialogTrigger>
       <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Data Sync</DialogTitle>
+          <DialogTitle>Data sync</DialogTitle>
           <DialogDescription>
             Only report dates you don&apos;t already have, or that failed before, are downloaded.
             {status && status.config.autoSyncHours > 0 && ` Runs automatically every ${status.config.autoSyncHours}h.`}
@@ -226,7 +227,7 @@ export function SyncStatusButton({ sync }: { sync: ReturnType<typeof useSyncStat
                         <td className="px-3 py-2 text-right tabular-nums">{r.ok}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{r.empty}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{r.missing - r.error}</td>
-                        <td className={cn("px-3 py-2 text-right tabular-nums", r.error > 0 && "text-red-500")} title={r.lastError || undefined}>
+                        <td className={cn("px-3 py-2 text-right tabular-nums", r.error > 0 && "text-red-600 dark:text-red-400")} title={r.lastError || undefined}>
                           {r.error}
                         </td>
                       </tr>
@@ -248,16 +249,16 @@ export function SyncStatusButton({ sync }: { sync: ReturnType<typeof useSyncStat
               <Button size="sm" variant="outline" onClick={() => start("asc", "errors")} disabled={status.jobs.asc.running}>
                 Retry failed dates
               </Button>
-              <Button
+              <ConfirmButton
                 size="sm"
                 variant="outline"
                 disabled={status.jobs.asc.running}
-                onClick={() => {
-                  if (confirm("Re-download every report from App Store Connect? Existing data is replaced, not duplicated.")) start("asc", "all")
-                }}
+                question="Re-download every report? Existing data is replaced, not duplicated."
+                confirmLabel="Re-sync everything"
+                onConfirm={() => start("asc", "all")}
               >
                 Full re-sync
-              </Button>
+              </ConfirmButton>
             </div>
           </div>
         )}
@@ -286,8 +287,8 @@ function JobCard({
           <div className="text-sm font-semibold">{title}</div>
           <div className="text-xs text-muted-foreground">{subtitle}</div>
         </div>
-        <Button size="sm" onClick={onRun} disabled={job.running}>
-          <RefreshCw className={cn("mr-2 h-3.5 w-3.5", job.running && "animate-spin")} />
+        <Button size="sm" className="gap-1.5" onClick={onRun} disabled={job.running}>
+          <RefreshCw className={cn("h-3.5 w-3.5", job.running && "animate-spin")} />
           {job.running ? "Running" : "Run now"}
         </Button>
       </div>

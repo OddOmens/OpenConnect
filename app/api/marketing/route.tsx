@@ -22,6 +22,7 @@ export const dynamic = 'force-dynamic';
 
 // Marketing cards rendered to PNG. Stats cards, styled like the dashboard:
 //   /api/marketing?app=<id|all>&t=overview|reach|map|rating|review|milestone&range=30d&format=4x5&theme=dark
+// Either kind takes &preview=1 for a smaller image (the Marketing page's grid).
 // Promo cards for one app, from its App Store listing:
 //   /api/marketing?app=<id>&t=launch|update|screens|loved|reviews|download&format=1x1|4x5|9x16|16x9&style=gradient&accent=3b82f6
 //     &badge=1&rating=1&h=<headline>&sub=<tagline>&cta=<button text>&notes=<release notes>
@@ -65,43 +66,47 @@ interface Picks {
   showList: boolean;
 }
 
-const svgToPng = async (node: React.ReactNode, format: Format | PromoFormatId) => {
+// The Marketing page's grid shows cards at a fraction of their size, so its previews are rasterised
+// smaller (about a third of the pixels, and of the time); downloads and the popup get full size.
+const PREVIEW_SCALE = 0.6;
+
+const svgToPng = async (node: React.ReactNode, format: Format | PromoFormatId, scale = 1) => {
   const { width, height } = format in FORMATS ? FORMATS[format as Format] : PROMO_SIZES[format as PromoFormatId];
   const svg = await satori(node as React.ReactElement, { width, height, fonts: loadFonts() });
-  return new Resvg(svg, { fitTo: { mode: 'original' } }).render().asPng();
+  return new Resvg(svg, { fitTo: scale === 1 ? { mode: 'original' } : { mode: 'zoom', value: scale } }).render().asPng();
 };
 
-async function render(appId: string | undefined, range: ShareRange, format: Format, theme: Theme, picks: Picks): Promise<Buffer | null> {
+async function render(appId: string | undefined, range: ShareRange, format: Format, theme: Theme, picks: Picks, scale: number): Promise<Buffer | null> {
   switch (picks.template) {
     case 'reach': {
       const data = reachShare(appId, range);
       if (!data) return null;
       const [icons, appIcons] = await Promise.all([Promise.all(data.icons.map(inlineIcon)), Promise.all(data.apps.map((a) => inlineIcon(a.icon)))]);
-      return svgToPng(<ReachCard data={data} icons={icons.length ? icons : [null]} appIcons={appIcons} format={format} theme={theme} />, format);
+      return svgToPng(<ReachCard data={data} icons={icons.length ? icons : [null]} appIcons={appIcons} format={format} theme={theme} />, format, scale);
     }
     case 'map': {
       const data = mapShare(appId, range);
       if (!data) return null;
       const icons = await Promise.all(data.icons.map(inlineIcon));
-      return svgToPng(<MapCard data={data} icons={icons.length ? icons : [null]} format={format} theme={theme} />, format);
+      return svgToPng(<MapCard data={data} icons={icons.length ? icons : [null]} format={format} theme={theme} />, format, scale);
     }
     case 'rating': {
       const data = ratingShare(appId);
       if (!data) return null;
       const icons = await Promise.all(data.icons.map(inlineIcon));
-      return svgToPng(<RatingCard data={data} icons={icons.length ? icons : [null]} format={format} theme={theme} />, format);
+      return svgToPng(<RatingCard data={data} icons={icons.length ? icons : [null]} format={format} theme={theme} />, format, scale);
     }
     case 'review': {
       const data = reviewShare(appId, picks.pick);
       if (!data) return null;
       const [icons, reviewAppIcon] = await Promise.all([Promise.all(data.icons.map(inlineIcon)), inlineIcon(data.review?.appIcon ?? null)]);
-      return svgToPng(<ReviewCard data={data} icons={icons.length ? icons : [null]} reviewAppIcon={reviewAppIcon} format={format} theme={theme} />, format);
+      return svgToPng(<ReviewCard data={data} icons={icons.length ? icons : [null]} reviewAppIcon={reviewAppIcon} format={format} theme={theme} />, format, scale);
     }
     case 'milestone': {
       const data = milestoneShare(appId);
       if (!data) return null;
       const icons = await Promise.all(data.icons.map(inlineIcon));
-      return svgToPng(<MilestoneCard data={data} icons={icons.length ? icons : [null]} format={format} theme={theme} />, format);
+      return svgToPng(<MilestoneCard data={data} icons={icons.length ? icons : [null]} format={format} theme={theme} />, format, scale);
     }
   }
   const full = shareData(appId, range, picks.hero);
@@ -114,14 +119,14 @@ async function render(appId: string | undefined, range: ShareRange, format: Form
     Promise.all(data.topApps.map((a) => inlineIcon(a.icon))),
   ]);
   const withIcons = { ...data, topApps: data.topApps.map((a, i) => ({ ...a, iconData: topIcons[i] })) };
-  return svgToPng(<OverviewCard data={withIcons} icons={icons.length ? icons : [null]} format={format} theme={theme} showList={picks.showList} />, format);
+  return svgToPng(<OverviewCard data={withIcons} icons={icons.length ? icons : [null]} format={format} theme={theme} showList={picks.showList} />, format, scale);
 }
 
-async function renderPromo(appId: string, o: PromoOptions, screenshots: { src: string; ratio: number }[]): Promise<Buffer | null> {
+/** Gets a promo card's data and icon, then returns what draws it (in the render queue). */
+async function preparePromo(appId: string, o: PromoOptions, screenshots: { src: string; ratio: number }[], scale: number) {
   const data = await promoData(appId);
-  if (!data) return null;
-  const icon = await inlineLargeIcon(data.icon);
-  return svgToPng(<PromoCard data={data} images={{ icon, screenshots }} o={o} />, o.format);
+  const icon = data ? await inlineLargeIcon(data.icon) : null;
+  return async () => (data ? svgToPng(<PromoCard data={data} images={{ icon, screenshots }} o={o} />, o.format, scale) : null);
 }
 
 const text = (v: string | null, max: number) => (v == null ? undefined : v.slice(0, max));
@@ -151,19 +156,26 @@ async function promoResponse(request: Request, q: URLSearchParams, template: Pro
   const shots = await loadPromoScreens(appId, picked.length ? picked : (await promoScreens(appId)).defaults);
   // The listing and the screenshots are part of the key, so a new release or screenshot re-renders.
   const l = await listing(appId);
-  const key = [RENDER_VERSION, 'promo', shareDataVersion(), l?.version, l?.versionDate, appId, shots.key, ...Object.values(o)].join('|');
-  return respond(request, key, () => renderPromo(appId, o, shots.images));
+  const scale = q.get('preview') === '1' ? PREVIEW_SCALE : 1;
+  const key = [RENDER_VERSION, 'promo', shareDataVersion(), l?.version, l?.versionDate, appId, shots.key, scale, ...Object.values(o)].join('|');
+  return respond(request, key, () => preparePromo(appId, o, shots.images, scale));
 }
 
-async function respond(request: Request, key: string, make: () => Promise<Buffer | null>) {
+/**
+ * The cached PNG for `key`, else `prepare`'s drawing of it. Downloads (icons, data) happen in
+ * `prepare`, before joining the one-at-a-time render queue, so a slow image host holds up only its
+ * own card; just the drawing is queued.
+ */
+async function respond(request: Request, key: string, prepare: () => Promise<() => Promise<Buffer | null>>) {
   const etag = `"${crypto.createHash('sha1').update(key).digest('hex').slice(0, 20)}"`;
   const headers = { 'Content-Type': 'image/png', ETag: etag, 'Cache-Control': 'private, no-cache' };
   if (request.headers.get('if-none-match') === etag) return new Response(null, { status: 304, headers });
 
   let png = pngCache.get(key);
   if (!png) {
+    const draw = await prepare();
     // Re-check inside the queue: an identical request may have rendered it while we waited.
-    const rendered = await serially(async () => pngCache.get(key) ?? make());
+    const rendered = await serially(async () => pngCache.get(key) ?? draw());
     if (!rendered) return new Response('Unknown app', { status: 404 });
     png = rendered;
     remember(key, png);
@@ -192,6 +204,7 @@ export async function GET(request: Request) {
     hero: (q.get('hero') && q.get('hero')! in SHARE_HEROES ? q.get('hero') : 'first_time') as ShareHeroId,
   };
 
-  const key = [RENDER_VERSION, shareDataVersion(), appId || 'all', range, format, themeId, picks.template, picks.pick, picks.hero, picks.stats.join(','), picks.showList].join('|');
-  return respond(request, key, () => render(appId, range, format, THEMES[themeId], picks));
+  const scale = q.get('preview') === '1' ? PREVIEW_SCALE : 1;
+  const key = [RENDER_VERSION, shareDataVersion(), appId || 'all', range, format, themeId, picks.template, picks.pick, picks.hero, picks.stats.join(','), picks.showList, scale].join('|');
+  return respond(request, key, async () => () => render(appId, range, format, THEMES[themeId], picks, scale));
 }

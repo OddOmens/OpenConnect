@@ -544,8 +544,9 @@ function Loved({ data, images, o, p }: Props) {
   const REACHED = '#22c55e';
   const NOT_YET = '#ef4444';
   const ring = 'rgba(0,0,0,0.55)';
+  const notYet = TERRITORIES.filter((t) => !reached.has(t.code));
   const pins = [
-    ...TERRITORIES.filter((t) => !reached.has(t.code)).map((t) => ({ code: t.code, color: NOT_YET, r: 0.5, stroke: ring })),
+    ...notYet.map((t) => ({ code: t.code, color: NOT_YET, r: 0.5, stroke: ring })),
     ...TERRITORIES.filter((t) => reached.has(t.code)).map((t) => ({ code: t.code, color: REACHED, r: 0.62, stroke: ring })),
   ];
   const legendFont = square ? 22 : tall ? 28 : 24;
@@ -559,6 +560,7 @@ function Loved({ data, images, o, p }: Props) {
         <span>of {data.storefronts} App Store countries</span>
         <div style={{ display: 'flex', width: legendFont }} />
         {legendDot(NOT_YET)}
+        <span style={{ color: p.fg, fontWeight: 600 }}>{notYet.length}</span>
         <span>not yet</span>
       </div>
     </div>
@@ -647,11 +649,17 @@ function Reviews({ data, images, o, p }: Props) {
   const frontH = Math.round(chrome(frontFs) + frontLines * frontFs * 1.4);
   const backH = Math.round(frontH * 0.88);
 
+  // The shadow is two see-through layers under the card, not a box-shadow: satori draws those as a
+  // blur filter, and blurring three big cards took resvg over five seconds.
   const card = (q: Quote, width: number, size: number, lines: number, height?: number) => (
-    <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, width, ...(height ? { height } : {}), overflow: 'hidden', gap: size * 0.55, padding: cardPad, borderRadius: size * 0.9, background: paper.bg, border: `2px solid ${paper.border}`, boxShadow: '0 24px 60px rgba(0,0,0,0.28)', color: paper.fg }}>
-      <StarRow rating={q.rating} size={size * 0.9} gap={4} empty={paper.empty} />
-      <div style={{ display: 'block', fontSize: size, lineHeight: 1.4, lineClamp: lines }}>{`“${q.body}”`}</div>
-      <div style={{ display: 'flex', fontSize: size * 0.75, color: paper.muted }}>{q.reviewer}</div>
+    <div style={{ display: 'flex', flexShrink: 0, padding: '2px 8px 18px', margin: '-2px -8px -18px', borderRadius: size * 0.9 + 8, background: 'rgba(0,0,0,0.05)' }}>
+      <div style={{ display: 'flex', flexShrink: 0, padding: '1px 4px 9px', borderRadius: size * 0.9 + 4, background: 'rgba(0,0,0,0.07)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, width, ...(height ? { height } : {}), overflow: 'hidden', gap: size * 0.55, padding: cardPad, borderRadius: size * 0.9, background: paper.bg, border: `2px solid ${paper.border}`, color: paper.fg }}>
+          <StarRow rating={q.rating} size={size * 0.9} gap={4} empty={paper.empty} />
+          <div style={{ display: 'block', fontSize: size, lineHeight: 1.4, lineClamp: lines }}>{`“${q.body}”`}</div>
+          <div style={{ display: 'flex', fontSize: size * 0.75, color: paper.muted }}>{q.reviewer}</div>
+        </div>
+      </div>
     </div>
   );
   const backCard = (q: Quote) => {

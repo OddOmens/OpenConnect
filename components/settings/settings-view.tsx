@@ -120,7 +120,7 @@ export function SettingsView({ initial, apps: initialApps, version }: { initial:
               <Panel title="Security" description="Who can open this dashboard.">
                 <SecuritySection />
               </Panel>
-              <Panel title="API tokens" description="For Claude and scripts that work with the screenshot studio.">
+              <Panel title="API tokens" description="For Claude and scripts that use the screenshot studio or Marketing.">
                 <ApiTokensSection />
               </Panel>
             </>

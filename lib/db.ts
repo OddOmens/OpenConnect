@@ -296,6 +296,9 @@ function initDb(): Database.Database {
     job_runs: {
       report: 'TEXT', // JSON change report (see lib/sync-report.ts)
     },
+    api_tokens: {
+      scopes: 'TEXT', // comma-separated (see TOKEN_SCOPES in lib/auth.ts); NULL = studio, as before scopes existed
+    },
   };
   for (const [table, columns] of Object.entries(addColumns)) {
     const existing = new Set((db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name));

@@ -14,6 +14,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { BASE, fetchExport, isLocalUrl, moveExport, serverIsLocal } from './remote.mjs';
+import * as marketing from './marketing.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CLI = path.join(ROOT, 'bin', 'appshot.mjs');
@@ -139,6 +140,10 @@ const server = new McpServer(
       'Headlines: *asterisks* highlight words, \\n breaks lines; short benefit-led phrases.',
       'Apple rules: no prices, URLs, ©/®/™, other platforms, or Apple awards; at most 10 screenshots per device.',
       'Use preview_slide to look at your work before telling the user it is ready.',
+      'Inside OpenConnect there is also Marketing (tools named marketing_*, need a token with the Marketing scope):',
+      'marketing_catalog lists apps and card options; marketing_stats gives the figures the cards show; marketing_forecast',
+      'projects downloads, impressions, page views and proceeds with what-if scenarios; marketing_card renders a stats or',
+      'promo card to PNG. Quote figures exactly as returned and call projections estimates, never promises.',
     ].join(' '),
   },
 );
@@ -883,6 +888,112 @@ server.registerTool(
     const url = a.app ? `${BASE}/?app=${await appId(a.app)}` : BASE;
     execFile('open', [url]);
     return text(`Opened ${url}`);
+  }),
+);
+
+// ---------- marketing (OpenConnect) ----------
+const mAppArg = z.string().optional().describe('OpenConnect app: id, name or bundle id; omit or "all" for all apps (stats cards and projections only)');
+
+server.registerTool(
+  'marketing_catalog',
+  {
+    title: 'Marketing: apps and options',
+    description: "OpenConnect's apps (id, name, all-time first-time downloads) and every Marketing card option: stats and promo templates, formats, styles, themes, stat tiles, ranges, projection horizons, and the HTTP endpoints.",
+    inputSchema: {},
+    annotations: { readOnlyHint: true },
+  },
+  wrap(async () => json('OpenConnect Marketing', await marketing.catalog())),
+);
+
+server.registerTool(
+  'marketing_stats',
+  {
+    title: 'Marketing: figures',
+    description: 'The figures the Marketing cards show for an app (or all apps) over a range: downloads, proceeds, impressions, page views, rating, rank, countries reached, top markets, change vs the previous period, and all-time totals. Use them to write posts and captions.',
+    inputSchema: {
+      app: mAppArg,
+      range: z.string().optional().describe('30d (default), 90d, 365d, ytd, all, or one month as m:YYYY-MM'),
+      hero: z.enum(['first_time', 'downloads', 'proceeds', 'impressions', 'page_views']).optional().describe('The headline figure (default first_time)'),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  wrap(async (a) => {
+    const s = await marketing.stats(a);
+    return json(marketing.describeStats(s), s);
+  }),
+);
+
+server.registerTool(
+  'marketing_forecast',
+  {
+    title: 'Marketing: projections',
+    description: "Projected first-time downloads, impressions, product page views and proceeds over 30, 90 or 365 days with rough 80% ranges; the impressions → page views → downloads funnel and conversion rate; what-if scenarios (more impressions, best conversion) with extra downloads and proceeds; and when the next download milestone lands. Estimates from the app's own daily history, not guarantees.",
+    inputSchema: {
+      app: mAppArg,
+      horizon: z.union([z.literal(30), z.literal(90), z.literal(365)]).optional().describe('Days ahead (default 30)'),
+      currency: z.string().optional().describe('Display currency, e.g. USD (default: the dashboard setting)'),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  wrap(async (a) => {
+    const f = await marketing.forecast(a);
+    // The daily series is long; the summary and totals are what's useful here.
+    const brief = { ...f, metrics: Object.fromEntries(Object.entries(f.metrics).map(([k, m]) => [k, { ...m, history: undefined, daily: undefined }])) };
+    return json(marketing.describeForecast(f), brief);
+  }),
+);
+
+server.registerTool(
+  'marketing_promo_material',
+  {
+    title: 'Marketing: promo card material',
+    description: "For one app's promo cards: the screenshots they can show (ids for marketing_card's shots: s:<studio slide>, a:<App Store n>), each template's default wording, and the 5-star reviews the Reviews card can quote (indexes for quotes).",
+    inputSchema: { app: z.string().describe('OpenConnect app: id, name or bundle id') },
+    annotations: { readOnlyHint: true },
+  },
+  wrap(async (a) => json('Promo card material', await marketing.promoMaterial(a))),
+);
+
+server.registerTool(
+  'marketing_card',
+  {
+    title: 'Marketing: render a card',
+    description:
+      'Render a Marketing card to PNG, saved on this Mac, and show it. Stats cards (overview, reach, map, rating, review, milestone) take range, format 4x5|9x16, theme, hero, stats, list, pick. ' +
+      'Promo cards for one app (launch, update, screens, loved, reviews, download) take format 1x1|4x5|9x16|16x9, style, accent, frame, badge, rating, headline, tagline, cta, notes, shots, quotes, reviews. Empty text uses the template wording; \\n breaks lines.',
+    inputSchema: {
+      app: mAppArg,
+      template: z.enum([...marketing.STATS_TEMPLATES, ...marketing.PROMO_TEMPLATES]),
+      format: z.enum(['1x1', '4x5', '9x16', '16x9']).optional().describe('Default 4x5. Stats cards: 4x5 or 9x16 only'),
+      range: z.string().optional().describe('Stats: 30d, 90d, 365d, ytd, all, m:YYYY-MM'),
+      theme: z.enum(['dark', 'light']).optional().describe('Stats cards'),
+      hero: z.enum(['first_time', 'downloads', 'proceeds', 'impressions', 'page_views']).optional().describe('Overview: the big number'),
+      stats: z.array(z.string()).optional().describe('Overview: tiles in order (see marketing_catalog statsCards.stats)'),
+      list: z.boolean().optional().describe('Overview: show top markets / top apps'),
+      pick: z.number().int().optional().describe('Review card: which review (0 = newest good one)'),
+      style: z.enum(['studio', 'light', 'gradient', 'bold', 'glow']).optional().describe('Promo cards'),
+      accent: z.string().optional().describe('Promo: #rrggbb'),
+      frame: z.string().optional().describe('Promo: iPhone frame #rrggbb'),
+      badge: z.boolean().optional().describe('Promo: "Download on the App Store" button'),
+      rating: z.boolean().optional().describe('Promo: show the rating'),
+      headline: z.string().optional(),
+      tagline: z.string().optional(),
+      cta: z.string().optional().describe('Promo: button text'),
+      notes: z.string().optional().describe("What's New card: release notes"),
+      shots: z.array(z.string()).optional().describe('Promo: screenshot ids from marketing_promo_material'),
+      quotes: z.array(z.number().int()).optional().describe('Reviews card: review indexes, first in front'),
+      reviews: z.union([z.literal(1), z.literal(3)]).optional().describe('Reviews card: one review or three'),
+      out: z.string().optional().describe(`Where to save the PNG (default ${marketing.OUT_DIR})`),
+    },
+  },
+  wrap(async (a) => {
+    const r = await marketing.card(a, { preview: true });
+    return {
+      content: [
+        { type: 'text', text: `Saved ${r.path} (${Math.round(r.bytes / 1024)} KB). Full size: ${r.url}` },
+        { type: 'image', data: r.preview.toString('base64'), mimeType: 'image/png' },
+      ],
+    };
   }),
 );
 

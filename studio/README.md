@@ -22,8 +22,9 @@ It starts with OpenConnect: `docker compose up -d` in the repo root runs the das
 
 ## Use it from Claude on your Mac
 
-1. In OpenConnect, **Settings → Security → API tokens**, create a token (e.g. "Claude on my Mac"). A token
-   only opens the studio, never your sales data or settings, and can be revoked any time.
+1. In OpenConnect, **Settings → Security → API tokens**, create a token (e.g. "Claude on my Mac") and tick what
+   it may open: the **Screenshot studio**, **Marketing** (see [Marketing](#marketing)), or both. No token opens
+   the dashboard, settings or other tokens, and each can be revoked any time.
 2. On the Mac, in a checkout of this repo:
 
    ```bash
@@ -117,6 +118,23 @@ There are two ways in:
 - **Claude desktop chat**: run `npm run install:desktop` once and restart the Claude app. It adds an
   MCP connector with tools to list apps, read an app's data, edit slides and app-wide style, add or
   capture screenshots, preview a slide as an image, and export.
+
+### Marketing
+
+With a token that has the **Marketing** scope, the same CLI and connector reach OpenConnect's Marketing page
+and dashboard figures, so Claude can write a launch post around real numbers and render its image:
+
+| CLI | MCP tool | What it gives |
+| --- | --- | --- |
+| `appshot marketing apps` | `marketing_catalog` | OpenConnect's apps and every card option (templates, formats, styles, stat tiles) |
+| `appshot marketing stats [app] --range 90d` | `marketing_stats` | The figures the cards show, with change vs the previous period |
+| `appshot marketing forecast [app] --horizon 90` | `marketing_forecast` | Projected downloads, impressions, page views and proceeds with ranges, the conversion funnel, what-if scenarios, the next milestone |
+| `appshot marketing promo <app>` | `marketing_promo_material` | Screenshot ids, each promo template's wording, quotable reviews |
+| `appshot marketing card [app] <template>` | `marketing_card` | A stats or promo card as PNG, saved to `~/.openappshot/marketing` (the connector also shows it) |
+
+`[app]` is OpenConnect's app id, name or bundle id, or `all`. Over HTTP it's `GET /api/marketing/catalog`,
+`/api/marketing/stats`, `/api/forecast`, `/api/marketing/promo` and `/api/marketing` (PNG), each with
+`Authorization: Bearer <token>`; the catalog lists every parameter.
 
 ### Per-app data
 

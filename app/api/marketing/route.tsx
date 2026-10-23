@@ -184,7 +184,7 @@ async function respond(request: Request, key: string, prepare: () => Promise<() 
 }
 
 export async function GET(request: Request) {
-  const denied = guard(request);
+  const denied = guard(request, { apiToken: 'marketing' });
   if (denied) return denied;
   const q = new URL(request.url).searchParams;
   const t = q.get('t');

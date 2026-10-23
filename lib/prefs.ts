@@ -3,6 +3,7 @@
 export const SECTIONS = {
   kpis: 'Key Metrics',
   history: 'History',
+  forecast: 'Projections',
   map: 'World Map',
   reach: 'Global Reach',
   breakdowns: 'Breakdowns',
@@ -216,6 +217,13 @@ export const PROMO_FRAMES = {
 
 export const PROMO_ACCENTS = ['#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#f97316', '#f59e0b', '#10b981', '#06b6d4'] as const
 
+// What an API token can open (Settings → Security → API tokens). Never the dashboard or settings.
+export const TOKEN_SCOPES = {
+  studio: { label: 'Screenshot studio', detail: 'Read and edit screenshot sets, preview and export' },
+  marketing: { label: 'Marketing', detail: 'Render stats and promo cards, read the figures on them and the projections' },
+} as const
+export type TokenScope = keyof typeof TOKEN_SCOPES
+
 export type ThemeId = 'system' | 'light' | 'dark'
 
 export interface UiPrefs {
@@ -240,6 +248,10 @@ export interface UiPrefs {
   currency: string
   mapMetric: 'downloads' | 'proceeds' | 'rating' | 'rank'
   compareToPrevious: boolean
+  forecast: {
+    horizon: 30 | 90 | 365
+    metric: 'first_time' | 'impressions' | 'page_views' | 'proceeds'
+  }
   share: {
     format: '4x5' | '9x16'
     theme: 'dark' | 'light'
@@ -288,6 +300,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   currency: 'USD',
   mapMetric: 'downloads',
   compareToPrevious: true,
+  forecast: { horizon: 90, metric: 'first_time' },
   share: {
     format: '4x5',
     theme: 'dark',
@@ -316,6 +329,7 @@ export function mergePrefs(saved: Partial<UiPrefs> | null | undefined): UiPrefs 
   const p = { ...DEFAULT_PREFS, ...(saved || {}) }
   p.share = { ...DEFAULT_PREFS.share, ...(saved?.share || {}) }
   p.marketing = { ...DEFAULT_PREFS.marketing, ...(saved?.marketing || {}) }
+  p.forecast = { ...DEFAULT_PREFS.forecast, ...(saved?.forecast || {}) }
   // Keep order valid if sections were added or removed since the prefs were saved.
   const known = Object.keys(SECTIONS) as SectionId[]
   const order = p.sectionOrder.filter((s) => known.includes(s))

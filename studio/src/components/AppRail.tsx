@@ -37,7 +37,7 @@ export function AppRail({
         <span className="brand-mark" aria-hidden>
           <Images size={16} />
         </span>
-        OpenAppShot
+        Studio
         <button className="icon-btn panel-toggle" title="Hide panel (⌘/Ctrl + \ hides all)" aria-label="Hide layers panel" onClick={onClose}>
           <PanelLeftClose size={15} />
         </button>

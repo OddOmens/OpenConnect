@@ -1,13 +1,13 @@
 # OpenConnect Studio
 
-The screenshot studio inside [OpenConnect](../README.md), formerly OpenAppShot. A studio for App Store
+The screenshot studio inside [OpenConnect](../README.md). A studio for App Store
 screenshots that Claude can drive. Drop in raw screenshots (or let Claude capture them from the Simulator),
 get styled slides with headline, rounded screenshot and stroke, style the whole set at once, and export
 pixel-exact PNGs for iPhone, iPhone Duo, iPad and Mac.
 
 It runs as its own container next to the dashboard (it needs headless Chromium to render), and the dashboard
-serves it at **`/studio`**, behind the same sign-in. The command-line tool is still `appshot` and the MCP
-server is still `openappshot`, so existing Claude setups and prompts keep working.
+serves it at **`/studio`**, behind the same sign-in. The command-line tool is `appshot` and the MCP
+server is `openappshot`, so existing Claude setups and prompts keep working.
 
 **No API credits.** The studio never calls the Claude API and needs no API key. Claude (your subscription)
 drives it through the `appshot` CLI or the MCP server, and all rendering happens on your server.

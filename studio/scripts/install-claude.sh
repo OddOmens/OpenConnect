@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Make OpenAppShot usable from Claude Code in any project:
+# Make the screenshot studio usable from Claude Code in any project:
 #   1. puts the `appshot` CLI on PATH (npm link)
 #   2. links the skill into ~/.claude/skills so Claude knows the workflow everywhere
 set -euo pipefail

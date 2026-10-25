@@ -424,6 +424,9 @@ function SyncSettings({ initial }: { initial: SyncConfig }) {
         <Row label="Customer reviews">
           <Switch checked={sync.syncReviews} onCheckedChange={(v) => setSync({ ...sync, syncReviews: v })} />
         </Row>
+        <Row label="App Store listings" hint="Name, subtitle and keywords in every locale, for ASO. Keyword ranks are checked with Ratings & Rankings.">
+          <Switch checked={sync.syncListings} onCheckedChange={(v) => setSync({ ...sync, syncListings: v })} />
+        </Row>
       </div>
 
       <div className="space-y-3 border-t border-border pt-4">

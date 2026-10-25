@@ -141,6 +141,7 @@ export interface AscApp {
   name: string;
   bundleId: string;
   sku: string;
+  primaryLocale: string | null;
 }
 
 export async function fetchApps(): Promise<AscApp[]> {
@@ -150,6 +151,7 @@ export async function fetchApps(): Promise<AscApp[]> {
     name: app.attributes.name,
     bundleId: app.attributes.bundleId,
     sku: app.attributes.sku,
+    primaryLocale: app.attributes.primaryLocale || null,
   }));
 }
 

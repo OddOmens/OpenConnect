@@ -220,7 +220,7 @@ export const PROMO_ACCENTS = ['#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#f973
 // What an API token can open (Settings → Security → API tokens). Never the dashboard or settings.
 export const TOKEN_SCOPES = {
   studio: { label: 'Screenshot studio', detail: 'Read and edit screenshot sets, preview and export' },
-  marketing: { label: 'Marketing', detail: 'Render stats and promo cards, read the figures on them and the projections' },
+  marketing: { label: 'Marketing', detail: 'Render stats and promo cards, read the figures on them, the projections and ASO' },
 } as const
 export type TokenScope = keyof typeof TOKEN_SCOPES
 
@@ -372,6 +372,7 @@ export interface SyncConfig {
   syncSubscriptions: boolean
   syncReviews: boolean
   syncAnalytics: boolean         // impressions & product page views (Analytics Reports API)
+  syncListings: boolean          // App Store listings (name, subtitle, keywords) for ASO; keyword ranks run with Ratings & Rankings
   rankCharts: ChartId[]
   rankOverall: boolean           // also check the all-categories charts
   storeCountries: 'all' | string[]
@@ -383,6 +384,7 @@ export const DEFAULT_SYNC_CONFIG: SyncConfig = {
   syncSubscriptions: true,
   syncReviews: true,
   syncAnalytics: true,
+  syncListings: true,
   rankCharts: ['topfree', 'topgrossing'],
   rankOverall: true,
   storeCountries: 'all',

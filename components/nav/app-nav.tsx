@@ -1,19 +1,20 @@
 import Link from 'next/link'
-import { Images, LayoutDashboard, Megaphone, Settings } from 'lucide-react'
+import { Images, LayoutDashboard, Megaphone, Search, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-export type NavPage = 'dashboard' | 'marketing' | 'studio' | 'settings'
+export type NavPage = 'dashboard' | 'aso' | 'marketing' | 'studio' | 'settings'
 
-// The same three places, in the same order, on every page. The studio has its own copy of this
+// The same places, in the same order, on every page. The studio has its own copy of this
 // bar in its own styles (components/studio/studio-nav.tsx); keep the two in step.
 export const NAV_ITEMS = [
   { page: 'dashboard', href: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { page: 'aso', href: '/aso', label: 'ASO', icon: Search },
   { page: 'marketing', href: '/marketing', label: 'Marketing', icon: Megaphone },
   { page: 'studio', href: '/studio', label: 'Studio', icon: Images },
 ] as const
 
 /**
- * The top bar of every page: OpenConnect, the three places, the page's own controls (`actions`),
+ * The top bar of every page: OpenConnect, its places, the page's own controls (`actions`),
  * and Settings. `children` are extra toolbar rows for the page, inside the same sticky header.
  */
 export function AppNav({ active, actions, children }: { active: NavPage; actions?: React.ReactNode; children?: React.ReactNode }) {

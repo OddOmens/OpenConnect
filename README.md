@@ -25,6 +25,7 @@ App Store Connect spreads your numbers over several slow pages and only keeps da
 - **Customer reviews:** every review from every storefront, with developer responses.
 - **Impressions & product page views** from Apple's Analytics Reports API.
 - **Ratings & rankings in 175 storefronts:** rating counts and averages per country, plus where your apps sit in the Top Free, Top Paid and Top Grossing charts, overall and by category.
+- **ASO:** daily App Store search ranks for the keywords you track in any storefront, with a popularity estimate, a difficulty score and the apps you're up against; an audit of every locale's name, subtitle and keyword field that finds wasted characters, with a keyword editor that cleans them up; your search funnel (search vs browse conversion, by storefront); and every listing change with search and downloads two weeks before and after it. See [ASO](#aso).
 - **Signal notifications:** a message the moment an app enters a top 100 chart, and a daily recap of every app (downloads, proceeds, ratings, new reviews and chart moves) at the time you pick. See [Notifications](#notifications).
 - **World map, device and territory breakdowns.**
 - **Sync report:** after every sync you get a popup that lists exactly what changed. It covers new and revised report dates, per-app deltas, new reviews, rating changes, and chart moves.
@@ -81,6 +82,8 @@ Create a **Team Key** in App Store Connect → Users and Access → Integrations
 | Sales, proceeds, IAPs, subscriptions | **Sales** (or Finance / Admin) |
 | Impressions & page views | **Admin** once, to ask Apple to start generating analytics reports. A Sales key can download them afterwards. |
 | Ratings & rankings in 175 storefronts | Nothing. Uses Apple's public lookup and top-chart feeds. |
+| App Store listings (ASO) | **App Manager**, Developer or Marketing (or Admin) |
+| Keyword ranks (ASO) | Nothing. Uses Apple's public search. |
 
 Your **Vendor Number** is in App Store Connect → Payments and Financial Reports, at the top left under your name.
 
@@ -168,6 +171,18 @@ When a sync you started finishes, a popup shows exactly what changed:
 - **Ratings & rankings**: rating count and average changes per app, plus chart positions gained, lost and moved. Biggest moves are listed first.
 
 Scheduled syncs don't pop up. Open **Sync → What changed** to see the report of the latest run of each job.
+
+## ASO
+
+The **ASO** page shows how one app does in App Store search, and what to change. Pick the app and the storefront in the top bar.
+
+- **What to do next:** plain recommendations from everything below: popular keywords missing from the listing, wasted keyword characters, search converting worse than browse, storefronts worth localizing, rank moves, and the best openings.
+- **Keyword ranks:** track up to 60 keywords per app, in any storefront. Each is searched once a day with Ratings & Rankings (and as soon as you add it) and shows your rank in the top 200, the change over 7 days and 90 days of history, whether its words are in your name, subtitle or keyword field, and the top results. Open a keyword for the top 10 now and what App Store search suggests around it. **Popularity** (0–100) is estimated from App Store search suggestions: the fewer letters someone types before the keyword is suggested, the more it's searched. **Difficulty** (0–100) comes from the ratings of the top 10 and how many have the keyword in their name. ★ marks openings: searched often, beatable, and you're not in the top 10 yet. Words that recur in your competitors' names are offered as new keywords.
+- **Listing:** the name, subtitle, keywords and promotional text of every locale, as App Store Connect holds them, on the store and for the version you're preparing. Each locale gets a score and a list of fixes: spaces after commas, repeated keywords, words already in the name or subtitle, words search adds on its own, unused room. The keyword editor runs the same checks as you type, **Clean up** removes the waste, and **Copy** puts the result on your clipboard for App Store Connect. Nothing is sent to Apple. **Locales worth adding** lists storefronts where people find you in search without a listing in their language.
+- **Search funnel:** impressions → product page views → Get taps for search, browse, other apps and websites, with conversion against the period before, by week and by storefront. From the analytics reports.
+- **Changes & impact:** keyword and description changes from each version's history (fetched once per version), name, subtitle and promotional text changes recorded at each sync, and notes you add (new screenshots, Search Ads). Each shows search impressions, tap-through, conversion, first downloads and keyword ranks in the 14 days before and after it.
+
+Ranks come from Apple's public search API, which follows App Store search closely but not exactly. Listings are fetched with **Sales & analytics**; turn that off in **Settings → Sync → App Store listings**. `GET /api/aso?app=<id>&country=US&days=30` returns everything on the page, also to API tokens with the Marketing scope.
 
 ## Notifications
 

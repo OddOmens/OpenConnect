@@ -1,5 +1,6 @@
 // Public, unauthenticated App Store endpoints: per-storefront ratings (iTunes
-// Lookup) and per-storefront top charts (iTunes RSS, top 100 per chart).
+// Lookup), per-storefront top charts (iTunes RSS, top 100 per chart), and App Store
+// search results and suggestions (for keyword ranks, see lib/aso.ts).
 
 import type { ChartId } from './prefs';
 
@@ -102,6 +103,78 @@ export async function fetchChart(country: string, chart: ChartId, genreId: strin
   const entries = body?.feed?.entry;
   if (!entries) return [];
   return [].concat(entries).map((e: any) => String(e?.id?.attributes?.['im:id'] ?? ''));
+}
+
+export interface SearchHit {
+  id: string;
+  name: string;
+  seller: string;
+  icon: string | null;
+  ratings: number;
+  rating: number | null;
+  price: number | null;
+  genre: string | null;
+  released: string | null;
+  updated: string | null;
+}
+
+/** App Store search in one storefront, in result order (index 0 = #1). Apple returns at most 200. */
+export async function searchStore(term: string, country: string): Promise<SearchHit[]> {
+  const params = new URLSearchParams({ term, country: country.toLowerCase(), entity: 'software', limit: '200' });
+  const body = await getJson(`https://itunes.apple.com/search?${params}`);
+  return (body?.results || [])
+    .filter((r: any) => r.wrapperType === 'software' || r.kind === 'software')
+    .map((r: any) => ({
+      id: String(r.trackId),
+      name: r.trackName || '',
+      seller: r.sellerName || r.artistName || '',
+      icon: r.artworkUrl100 || r.artworkUrl60 || null,
+      ratings: r.userRatingCount || 0,
+      rating: typeof r.averageUserRating === 'number' ? r.averageUserRating : null,
+      price: typeof r.price === 'number' ? r.price : null,
+      genre: r.primaryGenreName || null,
+      released: r.releaseDate || null,
+      updated: r.currentVersionReleaseDate || null,
+    }));
+}
+
+// App Store storefront ids, which the search-suggestions endpoint needs to answer per country.
+// Only storefronts whose id has been checked against localized suggestions are listed.
+export const STOREFRONT_IDS: Record<string, number> = {
+  US: 143441, FR: 143442, DE: 143443, GB: 143444, AT: 143445, BE: 143446, FI: 143447, GR: 143448, IE: 143449,
+  IT: 143450, LU: 143451, NL: 143452, PT: 143453, ES: 143454, CA: 143455, SE: 143456, NO: 143457, DK: 143458,
+  CH: 143459, AU: 143460, NZ: 143461, JP: 143462, HK: 143463, SG: 143464, CN: 143465, KR: 143466, IN: 143467,
+  MX: 143468, RU: 143469, TW: 143470, VN: 143471, ZA: 143472, MY: 143473, PH: 143474, TH: 143475, ID: 143476,
+  PK: 143477, PL: 143478, SA: 143479, TR: 143480, AE: 143481, HU: 143482, CL: 143483, CZ: 143489, IL: 143491,
+  UA: 143492, CO: 143501, BR: 143503, AR: 143505,
+};
+
+const hintGate = { next: 0 };
+
+/**
+ * What App Store search suggests as someone types `prefix`, most searched first. Empty for a
+ * storefront without a known id. Unofficial endpoint: treat an error as "no suggestions".
+ */
+export async function searchHints(prefix: string, country: string): Promise<string[]> {
+  const storefront = STOREFRONT_IDS[country.toUpperCase()];
+  if (!storefront || !prefix.trim()) return [];
+  const now = Date.now();
+  const at = Math.max(now, hintGate.next);
+  hintGate.next = at + 300;
+  if (at > now) await new Promise((r) => setTimeout(r, at - now));
+  try {
+    const res = await fetch(
+      `https://search.itunes.apple.com/WebObjects/MZSearchHints.woa/wa/hints?clientApplication=Software&term=${encodeURIComponent(prefix)}`,
+      { cache: 'no-store', headers: { 'User-Agent': 'OpenConnect/1.0', 'X-Apple-Store-Front': `${storefront}-1,29` } }
+    );
+    if (!res.ok) return [];
+    const xml = await res.text();
+    const decode = (s: string) =>
+      s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&');
+    return [...xml.matchAll(/<key>term<\/key>\s*<string>([^<]*)<\/string>/g)].map((m) => decode(m[1]).trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
 export async function fetchUsdRates(): Promise<Record<string, number> | null> {

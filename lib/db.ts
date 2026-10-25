@@ -269,6 +269,95 @@ function initDb(): Database.Database {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- ASO. The App Store listing as App Store Connect holds it, per app and locale: 'live' is what
+    -- the store shows now, 'draft' the version being prepared. Replaced on every sync.
+    CREATE TABLE IF NOT EXISTS aso_listings (
+      apple_id TEXT NOT NULL,
+      kind TEXT NOT NULL,                 -- live | draft
+      locale TEXT NOT NULL,
+      version TEXT,
+      version_state TEXT,
+      name TEXT,
+      subtitle TEXT,
+      keywords TEXT,
+      promotional_text TEXT,
+      description TEXT,
+      whats_new TEXT,
+      updated_at TEXT,
+      PRIMARY KEY (apple_id, kind, locale)
+    );
+
+    -- Released versions and their per-locale metadata, fetched once each: diffing one version
+    -- against the one before it gives the keyword and description history (see lib/aso.ts).
+    CREATE TABLE IF NOT EXISTS aso_versions (
+      id TEXT PRIMARY KEY,
+      apple_id TEXT NOT NULL,
+      version TEXT,
+      state TEXT,
+      created_date TEXT,
+      fetched INTEGER DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS aso_version_locales (
+      version_id TEXT NOT NULL,
+      locale TEXT NOT NULL,
+      keywords TEXT,
+      description TEXT,
+      PRIMARY KEY (version_id, locale)
+    );
+
+    -- Name, subtitle and promotional text changes, which no version history records: found by
+    -- comparing each sync's live listing with the last one.
+    CREATE TABLE IF NOT EXISTS aso_changes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      apple_id TEXT NOT NULL,
+      date TEXT NOT NULL,
+      locale TEXT,
+      field TEXT,
+      old_value TEXT,
+      new_value TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_aso_changes ON aso_changes(apple_id, date);
+
+    -- Your own markers on the change timeline ("new screenshots", "started Search Ads").
+    CREATE TABLE IF NOT EXISTS aso_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      apple_id TEXT NOT NULL,
+      date TEXT NOT NULL,
+      note TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Search terms tracked per app and storefront, and the app's rank for each, per day.
+    CREATE TABLE IF NOT EXISTS aso_keywords (
+      apple_id TEXT NOT NULL,
+      country TEXT NOT NULL,
+      keyword TEXT NOT NULL,              -- lowercased
+      added_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (apple_id, country, keyword)
+    );
+    CREATE TABLE IF NOT EXISTS aso_ranks (
+      apple_id TEXT NOT NULL,
+      country TEXT NOT NULL,
+      keyword TEXT NOT NULL,
+      date TEXT NOT NULL,
+      rank INTEGER,                       -- NULL = not in the top 200
+      PRIMARY KEY (apple_id, country, keyword, date)
+    );
+
+    -- One search per keyword, storefront and day, shared by every app tracking it: how many
+    -- results, the top 10 (JSON SearchHit[]), and the popularity estimate (see lib/aso.ts).
+    CREATE TABLE IF NOT EXISTS aso_searches (
+      country TEXT NOT NULL,
+      keyword TEXT NOT NULL,
+      date TEXT NOT NULL,
+      total INTEGER DEFAULT 0,
+      top TEXT,
+      popularity INTEGER,                 -- 0-100; NULL = not estimated (storefront without suggestions)
+      hint_prefix TEXT,                   -- the shortest typed prefix App Store search suggests the keyword for
+      hint_position INTEGER,              -- and where it is in those suggestions (0 = first)
+      PRIMARY KEY (country, keyword, date)
+    );
+
     CREATE TABLE IF NOT EXISTS job_runs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       job TEXT,
@@ -292,6 +381,7 @@ function initDb(): Database.Database {
       price: 'REAL',
       current_version: 'TEXT',
       release_date: 'TEXT',
+      primary_locale: 'TEXT',
     },
     job_runs: {
       report: 'TEXT', // JSON change report (see lib/sync-report.ts)

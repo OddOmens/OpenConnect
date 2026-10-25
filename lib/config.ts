@@ -85,7 +85,7 @@ export function getNotifyConfig(): NotifyConfig {
 export function setNotifyConfig(patch: Partial<NotifyConfig>) {
   const next = { ...getNotifyConfig(), ...patch };
   for (const k of ['signalUrl', 'signalNumber', 'signalTo'] as const) next[k] = String(next[k] || '').trim();
-  next.signalUrl = next.signalUrl.replace(/\/+$/, '');
+  while (next.signalUrl.endsWith('/')) next.signalUrl = next.signalUrl.slice(0, -1);
   if (next.signalUrl && !/^https?:\/\/[^/]+/i.test(next.signalUrl)) throw new Error('The Signal API address must start with http:// or https://.');
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(next.recapTime)) next.recapTime = DEFAULT_NOTIFY_CONFIG.recapTime;
   try {

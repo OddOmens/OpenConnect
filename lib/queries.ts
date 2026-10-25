@@ -37,8 +37,8 @@ function salesWhere(f: Filter, coarsest: Granularity = 'Y'): [string, any[]] {
 }
 
 const PROCEEDS_USD = `s.units * s.proceeds_per_unit / COALESCE(fx.per_usd, 1)`;
-const FX_JOIN = `LEFT JOIN fx_rates fx ON fx.currency = s.proceeds_currency`;
-const SUMS = `
+export const FX_JOIN = `LEFT JOIN fx_rates fx ON fx.currency = s.proceeds_currency`;
+export const SUMS = `
   COALESCE(SUM(CASE WHEN s.category = 'download' THEN s.units END), 0) AS first_time,
   COALESCE(SUM(CASE WHEN s.category = 'redownload' THEN s.units END), 0) AS redownloads,
   COALESCE(SUM(CASE WHEN s.category = 'update' THEN s.units END), 0) AS updates,

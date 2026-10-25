@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
 import { guard } from '@/lib/auth';
 import {
+  getNotifyConfig,
   getSyncConfig,
   getUiPrefs,
+  setNotifyConfig,
   setSetting,
   setSyncConfig,
   setUiPrefs,
@@ -22,7 +24,7 @@ export async function GET(request: Request) {
   }
 }
 
-/** Body may contain any of: { credentials: {...}, sync: {...}, prefs: {...} } */
+/** Body may contain any of: { credentials: {...}, sync: {...}, prefs: {...}, notify: {...} } */
 export async function POST(request: Request) {
   const denied = guard(request);
   if (denied) return denied;
@@ -49,7 +51,13 @@ export async function POST(request: Request) {
     }
     const sync = body.sync ? setSyncConfig(body.sync) : getSyncConfig();
     const prefs = body.prefs ? setUiPrefs(body.prefs) : getUiPrefs();
-    return NextResponse.json({ success: true, sync, prefs });
+    let notify;
+    try {
+      notify = body.notify ? setNotifyConfig(body.notify) : getNotifyConfig();
+    } catch (error: any) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    return NextResponse.json({ success: true, sync, prefs, notify });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

@@ -7,6 +7,7 @@ import { TERRITORIES } from './territories';
 import type { ChartId } from './prefs';
 import { syncEngagement } from './analytics';
 import { buildReport, NO_FIGURES, Revision, salesFigures, SyncReport, takeSnapshot } from './sync-report';
+import { notifyChartEntries } from './notify';
 
 export type JobId = 'asc' | 'store';
 
@@ -95,6 +96,7 @@ export function startJob(id: JobId, trigger: string): boolean {
       state.running = false;
       state.phase = 'done';
       console.log(`[sync:${id}] finished (${status}) ${state.summary || ''}`);
+      if (id === 'store') notifyChartEntries().catch((err) => console.error('[notify] chart entries:', err?.message || err));
     });
   return true;
 }

@@ -25,6 +25,7 @@ App Store Connect spreads your numbers over several slow pages and only keeps da
 - **Customer reviews:** every review from every storefront, with developer responses.
 - **Impressions & product page views** from Apple's Analytics Reports API.
 - **Ratings & rankings in 175 storefronts:** rating counts and averages per country, plus where your apps sit in the Top Free, Top Paid and Top Grossing charts, overall and by category.
+- **Signal notifications:** a message the moment an app enters a top 100 chart, and a daily recap of every app (downloads, proceeds, ratings, new reviews and chart moves) at the time you pick. See [Notifications](#notifications).
 - **World map, device and territory breakdowns.**
 - **Sync report:** after every sync you get a popup that lists exactly what changed. It covers new and revised report dates, per-app deltas, new reviews, rating changes, and chart moves.
 - **Projections:** where first-time downloads, impressions, page views and proceeds are heading over the next 30, 90 or 365 days, with likely ranges, your impressions → page views → downloads funnel, a what-if for more impressions or a better conversion rate, and when you'll pass your next download milestone.
@@ -167,6 +168,21 @@ When a sync you started finishes, a popup shows exactly what changed:
 - **Ratings & rankings**: rating count and average changes per app, plus chart positions gained, lost and moved. Biggest moves are listed first.
 
 Scheduled syncs don't pop up. Open **Sync → What changed** to see the report of the latest run of each job.
+
+## Notifications
+
+OpenConnect can message you on Signal through a [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) server you run, with a Signal account linked to it. Set it up in **Settings → Notifications**:
+
+- **Signal API address:** where OpenConnect reaches that server, e.g. `http://signal-api:8080` when both containers share a Docker network.
+- **Send from:** the account linked to the server, as `+15551234567`.
+- **Send to:** a phone number, or the name of a group that account is in (e.g. `Apple Apps`).
+
+Then pick what to send:
+
+- **When an app enters a chart:** right after each ratings & rankings check, one message listing every top 100 chart an app wasn't in at the check before, e.g. `#17 Top Free Productivity · Austria`. Each entry is sent once. Chart checks run as often as **Settings → Sync → Ratings & Rankings** says, so set that to every 24 hours (or less) for timely alerts.
+- **Daily recap:** at the time and time zone you choose, for each app: its last reported day of first-time downloads and proceeds (with the 7-day average), ratings, reviews since the last recap, and chart moves: entered, up, down and left the top 100. Apps with nothing to report are listed on one line. `GET /api/notify` returns the same recap as text (also open to API tokens with the Marketing scope).
+
+**Save & send a test** checks the setup, and **Send the recap now** shows what the recap looks like.
 
 ## HTTPS with Tailscale
 

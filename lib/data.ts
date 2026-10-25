@@ -2,7 +2,7 @@
 // both read the same (cached) data. Nothing here talks to Apple: it's all local SQLite.
 
 import { cached } from './cache';
-import { credentialSources, getCredentials, getSyncConfig, getUiPrefs } from './config';
+import { credentialSources, getCredentials, getNotifyConfig, getSyncConfig, getUiPrefs } from './config';
 import { resolveRange } from './dates';
 import { availableMonths, dashboard, dataBounds, HistoryGranularity, listApps, reach, storePresence } from './queries';
 
@@ -20,6 +20,7 @@ export function settingsResponse() {
     sources: credentialSources(),
     sync: getSyncConfig(),
     prefs: getUiPrefs(),
+    notify: getNotifyConfig(),
   };
 }
 

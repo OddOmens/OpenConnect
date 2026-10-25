@@ -387,3 +387,24 @@ export const DEFAULT_SYNC_CONFIG: SyncConfig = {
   rankOverall: true,
   storeCountries: 'all',
 }
+
+/** Messages sent through a signal-cli-rest-api server. */
+export interface NotifyConfig {
+  signalUrl: string              // the REST API, e.g. http://signal-api:8080
+  signalNumber: string           // the Signal account it sends from
+  signalTo: string               // a phone number, a group.… id, or a group's name
+  chartEntries: boolean          // as soon as an app enters a top 100 chart
+  recap: boolean                 // a daily recap of every app
+  recapTime: string              // HH:MM, in `timezone`
+  timezone: string               // IANA, e.g. America/Chicago
+}
+
+export const DEFAULT_NOTIFY_CONFIG: NotifyConfig = {
+  signalUrl: '',
+  signalNumber: '',
+  signalTo: '',
+  chartEntries: true,
+  recap: true,
+  recapTime: '08:00',
+  timezone: 'UTC',
+}

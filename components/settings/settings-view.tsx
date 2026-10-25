@@ -1,11 +1,11 @@
 "use client"
 
 import * as React from "react"
-import { CheckCircle2, Info, KeyRound, LayoutDashboard, Loader2, Monitor, Moon, Palette, RefreshCw, Shield, Sun, XCircle } from "lucide-react"
+import { Bell, CheckCircle2, Info, KeyRound, LayoutDashboard, Loader2, Monitor, Moon, Palette, RefreshCw, Shield, Sun, XCircle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
-import { CHARTS, CURRENCIES, ChartId, RANGES, RangeId, SyncConfig, ThemeId, UiPrefs } from "@/lib/prefs"
+import { CHARTS, CURRENCIES, ChartId, NotifyConfig, RANGES, RangeId, SyncConfig, ThemeId, UiPrefs } from "@/lib/prefs"
 import { applyTheme } from "@/lib/theme"
 import { cn } from "@/lib/utils"
 import { SecuritySection } from "./security-section"
@@ -21,6 +21,7 @@ export interface ServerSettings {
   sources: Record<"key_id" | "issuer_id" | "private_key_path" | "private_key" | "vendor_number", "env" | "settings" | "unset">
   sync: SyncConfig
   prefs: UiPrefs
+  notify: NotifyConfig
 }
 
 const SECTIONS = {
@@ -28,6 +29,7 @@ const SECTIONS = {
   customize: { label: "Customize", icon: LayoutDashboard },
   connect: { label: "App Store Connect", icon: KeyRound },
   sync: { label: "Sync", icon: RefreshCw },
+  notifications: { label: "Notifications", icon: Bell },
   security: { label: "Security", icon: Shield },
   about: { label: "About", icon: Info },
 } as const
@@ -115,6 +117,7 @@ export function SettingsView({ initial, apps: initialApps, version }: { initial:
           {section === "customize" && <CustomizeSettings prefs={prefs} onPrefs={updatePrefs} apps={apps} onToggleApp={toggleApp} />}
           {section === "connect" && <ConnectSettings initial={initial} />}
           {section === "sync" && <SyncSettings initial={initial.sync} />}
+          {section === "notifications" && <NotifySettings initial={initial.notify} />}
           {section === "security" && (
             <>
               <Panel title="Security" description="Who can open this dashboard.">
@@ -447,6 +450,103 @@ function SyncSettings({ initial }: { initial: SyncConfig }) {
   )
 }
 
+// --- Notifications: chart entries and the daily recap, sent to Signal -----------------------
+
+function NotifySettings({ initial }: { initial: NotifyConfig }) {
+  // Never set up yet: start the recap in this browser's time zone.
+  const [notify, setNotify] = React.useState<NotifyConfig>(() =>
+    initial.signalUrl ? initial : { ...initial, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || initial.timezone }
+  )
+  const [busy, setBusy] = React.useState<"save" | "test" | "recap" | null>(null)
+  const [done, setDone] = React.useState<string | null>(null)
+  const [error, setError] = React.useState<string | null>(null)
+  const set = (patch: Partial<NotifyConfig>) => setNotify((n) => ({ ...n, ...patch }))
+
+  const run = async (what: "save" | "test" | "recap") => {
+    setBusy(what)
+    setDone(null)
+    setError(null)
+    try {
+      await postSettings({ notify })
+      if (what !== "save") {
+        const res = await fetch("/api/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: what }) })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok || data.error) throw new Error(data.error || "Couldn’t send.")
+      }
+      setDone(what === "save" ? "Saved" : "Sent")
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setBusy(null)
+    }
+  }
+  const ready = !!(notify.signalUrl && notify.signalNumber && notify.signalTo)
+  const button = (what: "save" | "test" | "recap", label: string, variant?: "outline") => (
+    <Button size="sm" variant={variant} onClick={() => run(what)} disabled={!!busy || (what !== "save" && !ready)}>
+      {busy === what && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+      {label}
+    </Button>
+  )
+
+  return (
+    <Panel
+      title="Notifications"
+      description={
+        <>
+          Sent to Signal through a{" "}
+          <a href="https://github.com/bbernhard/signal-cli-rest-api" target="_blank" rel="noreferrer" className="underline underline-offset-2">
+            signal-cli-rest-api
+          </a>{" "}
+          server you run, with a Signal account linked to it. Nothing is sent anywhere else.
+        </>
+      }
+      footer={
+        <>
+          {button("save", "Save")}
+          {button("test", "Save & send a test", "outline")}
+          {button("recap", "Send the recap now", "outline")}
+          {done && !error && <span className="text-xs text-muted-foreground">{done}</span>}
+          {error && <span className="text-xs text-red-600 dark:text-red-400">{error}</span>}
+        </>
+      }
+    >
+      <label className="block space-y-1.5 text-sm">
+        <span className="font-medium">Signal API address</span>
+        <input value={notify.signalUrl} onChange={(e) => set({ signalUrl: e.target.value })} placeholder="http://signal-api:8080" className={inputCls} autoComplete="off" spellCheck={false} />
+      </label>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="space-y-1.5 text-sm">
+          <span className="font-medium">Send from</span>
+          <input value={notify.signalNumber} onChange={(e) => set({ signalNumber: e.target.value })} placeholder="+15551234567" className={inputCls} autoComplete="off" spellCheck={false} />
+        </label>
+        <label className="space-y-1.5 text-sm">
+          <span className="font-medium">Send to</span>
+          <input value={notify.signalTo} onChange={(e) => set({ signalTo: e.target.value })} placeholder="A group’s name, or a phone number" className={inputCls} autoComplete="off" spellCheck={false} />
+        </label>
+      </div>
+
+      <div className="space-y-3 border-t border-border pt-4">
+        <Row label="When an app enters a chart" hint="Right after each ratings & rankings check: every top 100 chart an app wasn’t in at the check before.">
+          <Switch checked={notify.chartEntries} onCheckedChange={(chartEntries) => set({ chartEntries })} />
+        </Row>
+        <Row label="Daily recap" hint="Each app’s last reported day of downloads and proceeds, its ratings, new reviews and chart moves.">
+          <Switch checked={notify.recap} onCheckedChange={(recap) => set({ recap })} />
+        </Row>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="space-y-1.5 text-sm">
+            <span className="font-medium">Recap at</span>
+            <input type="time" value={notify.recapTime} disabled={!notify.recap} onChange={(e) => set({ recapTime: e.target.value })} className={inputCls} />
+          </label>
+          <label className="space-y-1.5 text-sm">
+            <span className="font-medium">Time zone</span>
+            <input value={notify.timezone} disabled={!notify.recap} onChange={(e) => set({ timezone: e.target.value })} placeholder="America/Chicago" className={inputCls} autoComplete="off" spellCheck={false} />
+          </label>
+        </div>
+      </div>
+    </Panel>
+  )
+}
+
 // --- About ------------------------------------------------------------------------------
 
 function About({ version }: { version: string }) {
@@ -461,7 +561,7 @@ function About({ version }: { version: string }) {
           folder.
         </dd>
         <dt className="text-muted-foreground">Leaves this server</dt>
-        <dd>Only requests to Apple (App Store Connect, App Store ratings and charts) and to an exchange-rate service.</dd>
+        <dd>Only requests to Apple (App Store Connect, App Store ratings and charts), to an exchange-rate service and, if you set up notifications, to your Signal API server.</dd>
       </dl>
     </Panel>
   )

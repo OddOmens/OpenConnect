@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// appshot — command-line client for a running OpenAppShot server (npm run dev).
+// appshot — command-line client for a running screenshot studio server (npm run dev).
 // Designed to be driven by Claude: every command prints a short human summary, or JSON with --json.
 
 import fs from 'node:fs';
@@ -10,7 +10,7 @@ import { BASE, fetchExport, fetchPreviews, moveExport, serverIsLocal } from './r
 import * as marketing from './marketing.mjs';
 
 
-const HELP = `appshot — drive OpenAppShot from the terminal
+const HELP = `appshot — drive the screenshot studio from the terminal
 
 Server: ${BASE}  (OpenConnect: set OPENCONNECT_URL and OPENCONNECT_TOKEN; or APPSHOT_URL, or "npm run dev" here)
 <app> is an app id, exact name, bundle id, or "." for the app linked to the current folder.
@@ -223,7 +223,7 @@ async function http(method, url, body) {
   try {
     res = await fetch(BASE + url, init);
   } catch {
-    die(`can't reach the OpenAppShot server at ${BASE}. Start it with "npm run dev" in the OpenAppShot folder.`);
+    die(`can't reach the screenshot studio server at ${BASE}. Start it with "npm run dev" in the studio folder.`);
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -481,7 +481,7 @@ const commands = {
 
   async here() {
     const res = await fetch(`${BASE}/api/lookup?path=${enc(process.cwd())}`).catch(() =>
-      die(`can't reach the OpenAppShot server at ${BASE}. Start it with "npm run dev" in the OpenAppShot folder.`),
+      die(`can't reach the screenshot studio server at ${BASE}. Start it with "npm run dev" in the studio folder.`),
     );
     if (!res.ok) {
       return out({ app: null }, `No app is linked to ${process.cwd()}.\nLink one with: appshot profile <app> --project .`);
@@ -940,7 +940,7 @@ const commands = {
   async emoji() {
     const q = pos.join(' ');
     const r = await http('GET', `/api/emoji?q=${enc(q)}&limit=40`);
-    if (!r.available) die('emoji are not downloaded on the server; run "npm run setup:emoji" in OpenAppShot');
+    if (!r.available) die('emoji are not downloaded on the server; run "npm run setup:emoji" in the studio folder');
     const head = r.font ? `Styles: 3d, color, flat, apple (${r.font.source})\n` : '';
     out(r, () => (r.emoji.length ? head + r.emoji.map((e) => `${e.glyph}  ${e.slug}  (${e.group})`).join('\n') + (r.total > 40 ? `\n… ${r.total - 40} more` : '') : 'No emoji found.'));
   },

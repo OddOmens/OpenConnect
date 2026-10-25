@@ -274,7 +274,7 @@ function StickerPicker({ onPick, onClose }: { onPick: (s: Pick<Sticker, 'kind' |
         {tab === 'emoji' ? (
           data && !data.available ? (
             <p className="muted">
-              Emoji aren’t downloaded yet. Run <code>npm run setup:emoji</code> in the OpenAppShot folder, then rebuild.
+              Emoji aren’t downloaded yet. Run <code>npm run setup:emoji</code> in the studio folder, then rebuild.
             </p>
           ) : (
             <>
@@ -305,14 +305,14 @@ function StickerPicker({ onPick, onClose }: { onPick: (s: Pick<Sticker, 'kind' |
                 </button>
               )}
               {look === 'apple' ? (
-                <p className="muted small">Apple emoji from your {data?.font?.source}. Not bundled with OpenAppShot.</p>
+                <p className="muted small">Apple emoji from your {data?.font?.source}. Not bundled with the studio.</p>
               ) : (
                 <p className="muted small">
                   Fluent Emoji by Microsoft, MIT licensed. Bundled locally.
                   {!data?.font &&
                     (data?.fontError
                       ? ` Emoji font: ${data.fontError}.`
-                      : ' For Apple’s emoji, copy “Apple Color Emoji.ttc” from a Mac (/System/Library/Fonts) into the fonts folder of the OpenAppShot data directory and restart.')}
+                      : ' For Apple’s emoji, copy “Apple Color Emoji.ttc” from a Mac (/System/Library/Fonts) into the fonts folder of the studio data directory and restart.')}
                 </p>
               )}
             </>

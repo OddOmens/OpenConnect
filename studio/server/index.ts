@@ -270,5 +270,5 @@ if (!isProd) {
 }
 
 server.listen(PORT, HOST, () => {
-  console.log(`\n  OpenAppShot running at ${BASE_URL}\n`);
+  console.log(`\n  Screenshot studio running at ${BASE_URL}\n`);
 });

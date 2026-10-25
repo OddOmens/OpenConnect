@@ -1,4 +1,4 @@
-# Handoff: run OpenAppShot in Docker on a Linux server
+# Handoff: run the screenshot studio in Docker on a Linux server
 
 Status (October 2026): done — items 1–4 are implemented (`Dockerfile`, `docker-compose*.yml`, `bin/remote.mjs`).
 Access control (5) is left to the network: LAN/tailnet only, or the Tailscale HTTPS sidecar. Data moves (6)
@@ -7,7 +7,7 @@ Read `CLAUDE.md` and `README.md` first.
 
 ## Target setup
 
-- Linux server runs the OpenAppShot server (editor, API, storage, PNG export) in Docker.
+- Linux server runs the studio server (editor, API, storage, PNG export) in Docker.
 - The Mac opens the editor at `http://<server>:4317` (LAN/Tailscale) or `http://localhost:4317` through
   `ssh -L 4317:localhost:4317 user@server`.
 - Capture stays on the Mac: `bin/appshot.mjs capture` needs Xcode (`xcrun simctl`) and macOS

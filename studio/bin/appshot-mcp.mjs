@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// OpenAppShot MCP server — lets the Claude desktop/chat app read and edit your screenshot sets.
-// It runs on this Mac and talks to the local OpenAppShot server (starting it if needed).
+// Screenshot studio MCP server — lets the Claude desktop/chat app read and edit your screenshot sets.
+// It runs on this Mac and talks to the local studio server (starting it if needed).
 // No Anthropic API calls: Claude uses these tools from your normal subscription.
 //
 // stdout belongs to the MCP protocol; log only to stderr.
@@ -41,7 +41,7 @@ let starting = null;
 async function ensureServer() {
   if (await healthy()) return;
   // A server on another machine (e.g. Docker) can't be started from here.
-  if (!isLocalUrl(BASE)) throw new Error(`Can't reach the OpenAppShot server at ${BASE}. Is it running?`);
+  if (!isLocalUrl(BASE)) throw new Error(`Can't reach the screenshot studio server at ${BASE}. Is it running?`);
   starting ??= (async () => {
     const dataDir = process.env.APPSHOT_DATA ?? path.join(os.homedir(), '.openappshot');
     fs.mkdirSync(dataDir, { recursive: true });
@@ -59,7 +59,7 @@ async function ensureServer() {
       if (await healthy()) return;
       await new Promise((r) => setTimeout(r, 250));
     }
-    throw new Error(`OpenAppShot server didn't start. See ${path.join(dataDir, 'server.log')}`);
+    throw new Error(`The screenshot studio server didn't start. See ${path.join(dataDir, 'server.log')}`);
   })().finally(() => (starting = null));
   return starting;
 }
@@ -131,7 +131,7 @@ const server = new McpServer(
   { name: 'openappshot', version: '0.1.0' },
   {
     instructions: [
-      'OpenAppShot is the user\'s local studio for App Store screenshots (iPhone, iPhone Duo, iPad, Mac).',
+      'The screenshot studio is where the user designs App Store screenshots (iPhone, iPhone Duo, iPad, Mac).',
       'Start with list_apps or get_app: get_app returns each app\'s remembered profile, app-wide style, per-device',
       'screenshot counts, and per-slide data (headline, subtitle, screen shown, screenshot size and source).',
       'Slides hold only words and screenshots. All styling (layout, colors, font, alignment, sizes, frame) is app-wide:',
@@ -583,7 +583,7 @@ server.registerTool(
   },
   wrap(async (a) => {
     const r = await http('GET', `/api/emoji?q=${enc(a.query)}&limit=30`);
-    if (!r.available) throw new Error('Emoji are not downloaded on the server; run "npm run setup:emoji" in OpenAppShot.');
+    if (!r.available) throw new Error('Emoji are not downloaded on the server; run "npm run setup:emoji" in the studio folder.');
     const head = r.font ? `Emoji font installed (${r.font.source}): style "apple" works.\n` : 'No emoji font installed: use style 3d, color or flat.\n';
     return text(r.emoji.length ? head + r.emoji.map((e) => `${e.glyph} ${e.slug} (${e.group})`).join('\n') : 'No emoji found.');
   }),
@@ -882,7 +882,7 @@ server.registerTool(
 
 server.registerTool(
   'open_editor',
-  { title: 'Open editor', description: 'Open the app in the OpenAppShot editor in the browser.', inputSchema: { app: appArg.optional() } },
+  { title: 'Open editor', description: 'Open the app in the screenshot studio editor in the browser.', inputSchema: { app: appArg.optional() } },
   wrap(async (a) => {
     await ensureServer();
     const url = a.app ? `${BASE}/?app=${await appId(a.app)}` : BASE;

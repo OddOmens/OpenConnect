@@ -1,11 +1,11 @@
 ---
 name: openappshot
-description: Build, revise and export App Store screenshots with the OpenConnect screenshot studio (formerly OpenAppShot), and use OpenConnect Marketing. Use when the user asks to make, update or export App Store / Mac App Store screenshots, capture screenshots of their iOS/iPad/Mac app for the store, write screenshot headlines, or change the style of an app's screenshots in OpenAppShot; or to make social/marketing cards or posts for their app, or to read its App Store figures (downloads, proceeds, impressions, conversion) and projections from OpenConnect.
+description: Build, revise and export App Store screenshots with the OpenConnect screenshot studio, and use OpenConnect Marketing. Use when the user asks to make, update or export App Store / Mac App Store screenshots, capture screenshots of their iOS/iPad/Mac app for the store, write screenshot headlines, or change the style of an app's screenshots in the studio; or to make social/marketing cards or posts for their app, or to read its App Store figures (downloads, proceeds, impressions, conversion) and projections from OpenConnect.
 ---
 
-# OpenAppShot
+# Screenshot Studio
 
-OpenAppShot (now OpenConnect's screenshot studio, at `<OpenConnect>/studio`) is a web studio that turns raw app screenshots into
+OpenConnect's screenshot studio (at `<OpenConnect>/studio`) is a web app that turns raw app screenshots into
 App Store marketing slides: a colored background, a headline, and the screenshot with rounded corners and a
 thin stroke. The user edits in the browser; you drive it with the `appshot` CLI.
 

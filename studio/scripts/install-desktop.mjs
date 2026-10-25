@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Adds OpenAppShot to the Claude desktop app as a local MCP connector.
+// Adds the screenshot studio to the Claude desktop app as a local MCP connector.
 // Edits ~/Library/Application Support/Claude/claude_desktop_config.json (a backup is written first).
 // Restart the Claude app afterwards.
 import fs from 'node:fs';
@@ -30,4 +30,4 @@ config.mcpServers.openappshot = {
 fs.mkdirSync(path.dirname(file), { recursive: true });
 fs.writeFileSync(file, JSON.stringify(config, null, 2) + '\n');
 console.log(`✓ Added "openappshot" to ${file}`);
-console.log('  Restart the Claude app, then ask: "What screenshots does <app> have in OpenAppShot?"');
+console.log('  Restart the Claude app, then ask: "What screenshots does <app> have in the screenshot studio?"');

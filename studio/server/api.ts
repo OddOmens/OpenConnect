@@ -129,7 +129,7 @@ route('GET', '/health', (c) => json({ ok: true, name: 'openappshot', url: c.host
 route('GET', '/meta', () => json({ presets: PRESETS, devices: DEVICES }));
 route('GET', '/', () =>
   json({
-    name: 'OpenConnect screenshot studio API (formerly OpenAppShot)',
+    name: 'OpenConnect screenshot studio API',
     note: 'No Anthropic API calls, no credits. Slide, style, render, preview, export and creative routes take ?set=<id or name> for a screenshot set; without it they use the primary set. They also take ?lang=<code> for a translation language: reads show that language, headline/subtitle/screenshot writes go to its translation.',
     endpoints: {
       'GET /api/data': 'Every app as a clean record: style, devices, screenshot counts, per-slide data',

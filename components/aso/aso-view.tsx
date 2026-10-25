@@ -1,8 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, ArrowRight, CheckCircle2, Lightbulb, Loader2, RefreshCw } from 'lucide-react'
+import { AlertTriangle, ArrowRight, CheckCircle2, Info, Lightbulb, Loader2, RefreshCw } from 'lucide-react'
 import { AppNav } from '@/components/nav/app-nav'
+import { AppSelector, type App } from '@/components/dashboard/app-selector'
+import { SyncStatusButton, useSyncStatus } from '@/components/dashboard/sync-status'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Section } from '@/components/dashboard/section'
@@ -11,18 +13,18 @@ import { cn } from '@/lib/utils'
 import { fmtCompact, fmtDate } from '@/lib/format'
 import { TERRITORIES, countryToFlag, territoryName } from '@/lib/territories'
 import { auditListing, keywordCoverage } from '@/lib/aso-audit'
-import type { AsoOverview } from '@/lib/aso'
-import type { App } from '@/components/dashboard/app-selector'
+import type { AsoOverview, PortfolioApp } from '@/lib/aso'
 import { KeywordsPanel } from './keywords-panel'
 import { ListingPanel } from './listing-panel'
 import { FunnelPanel } from './funnel-panel'
 import { ChangesPanel } from './changes-panel'
+import { PortfolioPanel } from './portfolio-panel'
 
 export type Days = 7 | 30 | 90
 
 const STORAGE_KEY = 'openconnect.aso'
 
-function saved(): { app?: string; country?: string } {
+function saved(): { app?: string; countries?: Record<string, string> } {
   try {
     return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
   } catch {
@@ -40,30 +42,37 @@ export async function asoAction(body: Record<string, unknown>) {
   return data
 }
 
-export function AsoView({ apps }: { apps: App[] }) {
-  const visible = useMemo(() => apps.filter((a) => !a.hidden).sort((a, b) => b.first_time_downloads - a.first_time_downloads), [apps])
-  const [appId, setAppId] = useState<string | null>(visible[0]?.apple_id ?? null)
-  const [country, setCountry] = useState('US')
+export function AsoView({ initialApps, initialPortfolio, sidebar }: { initialApps: App[]; initialPortfolio: PortfolioApp[]; sidebar: 'left' | 'right' }) {
+  const [apps, setApps] = useState(initialApps)
+  const visible = useMemo(() => apps.filter((a) => !a.hidden), [apps])
+  // null = All Apps, as on the dashboard.
+  const [appId, setAppId] = useState<string | null>(null)
+  // The storefront per app: its primary language's until you pick another.
+  const [countries, setCountries] = useState<Record<string, string>>({})
+  const country = (appId && countries[appId]) || 'US'
   const [days, setDays] = useState<Days>(30)
   const [data, setData] = useState<{ query: string; overview: AsoOverview | null; error?: string } | null>(null)
+  const [portfolio, setPortfolio] = useState<{ days: number; apps: PortfolioApp[] }>({ days: 30, apps: initialPortfolio })
   const [refreshing, setRefreshing] = useState(false)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [notice, setNotice] = useState<{ tone: 'info' | 'warn'; text: string } | null>(null)
 
-  // ?app=<id> (links from elsewhere), else the last app and storefront in this browser.
+  // ?app=<id> (links from elsewhere), else the last selection in this browser.
   useEffect(() => {
     const s = saved()
     const linked = new URLSearchParams(window.location.search).get('app')
     const app = [linked, s.app].find((id) => id && visible.some((a) => a.apple_id === id))
     if (app) setAppId(app)
-    if (s.country && TERRITORIES.some((t) => t.code === s.country)) setCountry(s.country)
-  }, [visible])
+    if (s.countries) setCountries(Object.fromEntries(Object.entries(s.countries).filter(([, c]) => TERRITORIES.some((t) => t.code === c))))
+    // Only on first load: later changes to the app list don't move the selection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ app: appId, country }))
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ app: appId, countries }))
     } catch {
       // private window
     }
-  }, [appId, country])
+  }, [appId, countries])
 
   const query = appId ? `app=${appId}&country=${country}&days=${days}` : ''
   // Bumped to load the same query again after a change; resolves `load()`'s promise once it's in.
@@ -72,6 +81,7 @@ export function AsoView({ apps }: { apps: App[] }) {
   useEffect(() => {
     if (!query) return
     let live = true
+    const app = appId!
     fetch(`/api/aso?${query}`)
       .then(async (res) => ({ res, body: await res.json().catch(() => null) }))
       .catch(() => ({ res: null, body: null }))
@@ -79,11 +89,14 @@ export function AsoView({ apps }: { apps: App[] }) {
         if (!live) return
         setData({ query, overview: res?.ok ? body : null, error: res?.ok ? undefined : body?.error || 'Couldn’t load ASO data.' })
         pending.current.splice(0).forEach((resolve) => resolve())
+        // First visit to this app: switch to its primary language's storefront.
+        const first = (body as AsoOverview | null)?.markets?.[0]?.country
+        if (res?.ok && first) setCountries((c) => (c[app] ? c : { ...c, [app]: first }))
       })
     return () => {
       live = false
     }
-  }, [query, version])
+  }, [query, version, appId])
   const load = useCallback(
     () =>
       new Promise<void>((resolve) => {
@@ -93,6 +106,24 @@ export function AsoView({ apps }: { apps: App[] }) {
     []
   )
 
+  const [portfolioVersion, setPortfolioVersion] = useState(0)
+  useEffect(() => {
+    if (!portfolioVersion && days === 30) return // the server rendered this one
+    let live = true
+    fetch(`/api/aso?app=all&days=${days}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => live && d?.apps && setPortfolio({ days: d.days, apps: d.apps }), () => {})
+    return () => {
+      live = false
+    }
+  }, [days, portfolioVersion])
+  const loadPortfolio = useCallback(() => setPortfolioVersion((v) => v + 1), [])
+
+  const sync = useSyncStatus(() => {
+    loadPortfolio()
+    if (appId) load()
+  })
+
   const overview = data?.overview ?? null
   const stale = data?.query !== query
 
@@ -101,21 +132,49 @@ export function AsoView({ apps }: { apps: App[] }) {
     setRefreshing(true)
     setNotice(null)
     try {
-      const r = await asoAction({ action: 'refresh', app: appId })
-      if (r.error) setNotice(r.error)
+      const r = await asoAction({ action: 'refresh', app: appId, country })
+      if (r.error) setNotice({ tone: 'warn', text: r.error })
+      else if (r.queued) setNotice({ tone: 'info', text: `Ranked ${r.checked} keyword${r.checked === 1 ? '' : 's'} in ${territoryName(country)}. The other ${r.queued} storefronts’ keywords are being checked in the background; switch storefront in a minute or two to see them.` })
       await load()
+      loadPortfolio()
     } catch (err: any) {
-      setNotice(err.message)
+      setNotice({ tone: 'warn', text: err.message })
     } finally {
       setRefreshing(false)
     }
   }
 
-  const countries = useMemo(() => {
-    const tracked = new Map((overview?.keywordCountries || []).map((c) => [c.country, c.count]))
-    const sorted = [...TERRITORIES].sort((a, b) => a.name.localeCompare(b.name))
-    return { tracked: sorted.filter((t) => tracked.has(t.code)).map((t) => ({ ...t, count: tracked.get(t.code)! })), rest: sorted.filter((t) => !tracked.has(t.code)) }
-  }, [overview?.keywordCountries])
+  const toggleApp = async (id: string) => {
+    // A hidden app leaves the sidebar, so don't stay on it.
+    if (id === appId) setAppId(null)
+    await fetch('/api/apps', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apple_id: id }) })
+    const r = await fetch('/api/apps').then((res) => res.json()).catch(() => null)
+    if (r?.apps) setApps(r.apps)
+    loadPortfolio()
+  }
+
+  const select = (id: string | null) => {
+    setNotice(null)
+    setAppId(id)
+  }
+
+  const countryOptions = useMemo(() => {
+    const markets = overview?.markets || []
+    const listed = new Set(markets.map((m) => m.country))
+    return {
+      markets,
+      rest: [...TERRITORIES].sort((a, b) => a.name.localeCompare(b.name)).filter((t) => !listed.has(t.code)),
+    }
+  }, [overview?.markets])
+
+  const byApp = useMemo(() => new Map(portfolio.apps.map((p) => [p.apple_id, p])), [portfolio.apps])
+  const appDetail = (a: App) => {
+    const p = byApp.get(a.apple_id)
+    if (!p || p.score == null) return 'Listing not fetched yet'
+    return `Score ${p.score}${p.keywords ? ` · ${p.top10}/${p.keywords} in top 10` : ''}`
+  }
+  const allTop10 = portfolio.apps.reduce((n, p) => n + p.top10, 0)
+  const allKeywords = portfolio.apps.reduce((n, p) => n + p.keywords, 0)
 
   if (!visible.length) {
     return (
@@ -132,49 +191,79 @@ export function AsoView({ apps }: { apps: App[] }) {
         active="aso"
         actions={
           <>
-            <select value={appId ?? ''} onChange={(e) => setAppId(e.target.value)} className={cn(selectCls, 'min-w-0 max-w-[14rem]')} aria-label="App">
-              {visible.map((a) => <option key={a.apple_id} value={a.apple_id}>{a.name.split(':')[0]}</option>)}
-            </select>
-            <select value={country} onChange={(e) => setCountry(e.target.value)} className={cn(selectCls, 'max-w-[11rem]')} aria-label="Storefront for keyword ranks">
-              {countries.tracked.length > 0 && (
-                <optgroup label="Tracking keywords">
-                  {countries.tracked.map((t) => <option key={t.code} value={t.code}>{countryToFlag(t.code)} {t.name} ({t.count})</option>)}
+            {appId && (
+              <select value={country} onChange={(e) => setCountries((c) => ({ ...c, [appId]: e.target.value }))} className={cn(selectCls, 'max-w-[13rem]')} aria-label="Storefront">
+                {countryOptions.markets.length > 0 && (
+                  <optgroup label="Your listing’s languages">
+                    {countryOptions.markets.map((m) => (
+                      <option key={m.country} value={m.country}>
+                        {countryToFlag(m.country)} {m.country_name}{m.locale_name ? ` · ${m.locale_name}` : ''} ({m.keywords})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                <optgroup label={countryOptions.markets.length ? 'Other storefronts' : 'Storefront'}>
+                  {countryOptions.rest.map((t) => <option key={t.code} value={t.code}>{countryToFlag(t.code)} {t.name}</option>)}
                 </optgroup>
-              )}
-              <optgroup label={countries.tracked.length ? 'Other storefronts' : 'Storefront'}>
-                {countries.rest.map((t) => <option key={t.code} value={t.code}>{countryToFlag(t.code)} {t.name}</option>)}
-              </optgroup>
-            </select>
-            <Button variant="outline" size="sm" onClick={refresh} disabled={refreshing} title="Fetch the listing from App Store Connect and check this app’s keyword ranks now">
-              {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              <span className="ml-2 hidden md:inline">Refresh</span>
-            </Button>
+              </select>
+            )}
+            {appId && (
+              <Button variant="outline" size="sm" onClick={refresh} disabled={refreshing} title="Fetch the listing from App Store Connect and check this app’s keyword ranks now">
+                {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                <span className="ml-2 hidden md:inline">Refresh</span>
+              </Button>
+            )}
+            <SyncStatusButton sync={sync} />
           </>
         }
       />
 
-      <main className="mx-auto max-w-screen-2xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
-        {notice && (
-          <div className="flex gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-            <div>{notice}</div>
+      <div className={`mx-auto max-w-screen-2xl gap-6 px-4 py-6 sm:px-6 lg:grid lg:px-8 ${sidebar === 'right' ? 'lg:grid-cols-[minmax(0,1fr)_240px]' : 'lg:grid-cols-[240px_minmax(0,1fr)]'}`}>
+        <aside className={`mb-6 lg:mb-0 ${sidebar === 'right' ? 'lg:order-2' : ''}`}>
+          <div className="lg:sticky lg:top-[88px] lg:max-h-[calc(100vh-112px)] lg:overflow-y-auto">
+            <AppSelector
+              apps={apps}
+              selectedAppId={appId}
+              onSelect={select}
+              onToggleVisibility={toggleApp}
+              detail={appDetail}
+              allDetail={allKeywords ? `${allTop10}/${allKeywords} keywords in top 10` : `${portfolio.apps.length} apps`}
+            />
           </div>
-        )}
-        {!data ? (
-          <Loading />
-        ) : !overview ? (
-          <div className="rounded-lg border border-border px-4 py-10 text-center text-sm text-muted-foreground">{data.error}</div>
-        ) : (
-          <div className={cn('space-y-6 transition-opacity', stale && 'opacity-60')}>
-            <Summary overview={overview} />
-            <NextSteps overview={overview} />
-            <KeywordsPanel key={`${overview.app.apple_id}:${overview.country}`} overview={overview} onChange={load} />
-            <ListingPanel key={overview.app.apple_id} overview={overview} onRefresh={refresh} refreshing={refreshing} />
-            <FunnelPanel overview={overview} days={days} onDays={setDays} />
-            <ChangesPanel overview={overview} onChange={load} />
-          </div>
-        )}
-      </main>
+        </aside>
+
+        <main className="min-w-0 space-y-6">
+          {notice && (
+            <div className={cn('flex gap-3 rounded-lg border px-4 py-3 text-sm', notice.tone === 'warn' ? 'border-amber-500/30 bg-amber-500/10' : 'border-border bg-card')}>
+              {notice.tone === 'warn' ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" /> : <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />}
+              <div>{notice.text}</div>
+            </div>
+          )}
+          {!appId ? (
+            <PortfolioPanel apps={portfolio.apps} days={days} onDays={setDays} onSelect={select} />
+          ) : !data || (stale && data.overview?.app.apple_id !== appId) ? (
+            <Loading />
+          ) : !overview ? (
+            <div className="rounded-lg border border-border px-4 py-10 text-center text-sm text-muted-foreground">{data.error}</div>
+          ) : (
+            <div className={cn('space-y-6 transition-opacity', stale && 'opacity-60')}>
+              <Summary overview={overview} />
+              <NextSteps overview={overview} />
+              <KeywordsPanel
+                key={`${overview.app.apple_id}:${overview.country}`}
+                overview={overview}
+                onChange={load}
+                onCountry={(c) => setCountries((m) => ({ ...m, [overview.app.apple_id]: c }))}
+                onRefresh={refresh}
+                refreshing={refreshing}
+              />
+              <ListingPanel key={overview.app.apple_id} overview={overview} onRefresh={refresh} refreshing={refreshing} onSaved={load} />
+              <FunnelPanel overview={overview} days={days} onDays={setDays} />
+              <ChangesPanel overview={overview} onChange={load} />
+            </div>
+          )}
+        </main>
+      </div>
     </div>
   )
 }
@@ -311,7 +400,12 @@ function NextSteps({ overview: o }: { overview: AsoOverview }) {
     steps.push({ tone: 'do', text: <>Best openings: {easy.slice(0, 3).map((k) => `“${k.keyword}”`).join(', ')}. Searched often, and the apps ranking for {easy.length === 1 ? 'it' : 'them'} are beatable. Put {easy.length === 1 ? 'it' : 'them'} in the subtitle or name.</> })
   }
   if (!o.keywords.length) {
-    steps.push({ tone: 'do', text: <>Start by tracking 10–20 keywords people would type to find this app in {where}. Each gets a daily rank, a popularity estimate and a difficulty score.</> })
+    steps.push({
+      tone: 'do',
+      text: listing?.keywords.trim()
+        ? <>The {listing.locale_name} keyword field’s terms are tracked in {where} once the listing is fetched again: press <b>Refresh</b>.</>
+        : <>Nothing in the keyword field to track in {where}. Fill the {listing?.locale_name ?? 'listing’s'} keyword field in App Store Connect, or track 10–20 keywords people would type to find this app.</>,
+    })
   }
 
   if (!steps.length) return null

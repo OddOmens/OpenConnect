@@ -8,6 +8,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { BASE, fetchExport, fetchPreviews, moveExport, serverIsLocal } from './remote.mjs';
 import * as marketing from './marketing.mjs';
+import * as aso from './aso.mjs';
 
 
 const HELP = `appshot — drive the screenshot studio from the terminal
@@ -135,6 +136,22 @@ Marketing (OpenConnect; the token needs the Marketing scope. [app] is OpenConnec
                                          [--format 1x1|4x5|9x16|16x9] [--style studio|light|gradient|bold|glow]
                                          [--accent #hex] [--frame #hex] [--badge on|off] [--rating on|off] [--headline s]
                                          [--tagline s] [--cta s] [--notes s] [--shots s:id,a:1] [--quotes 0,2] [--reviews 1|3]
+
+ASO (OpenConnect; reading needs the Marketing or ASO changes scope, the rest ASO changes. <app> is an id or name)
+  aso apps [--days 7|30|90]            Every app: listing score, wasted keyword characters, keywords in the top 10,
+                                       search impressions and conversion, storefronts to localize
+  aso show <app> [--country DE] [--days 30]
+                                       One app: listing per locale, tracked keywords (rank, popularity, difficulty),
+                                       search funnel, locale gaps, keyword ideas, changes with before/after impact
+  aso keyword <term> [--country US]    Search it now: top 25 apps, App Store suggestions, difficulty
+  aso track <app> <kw,kw> [--country US] [--remove]
+                                       Track keywords (keyword-field terms are tracked automatically)
+  aso update <app> <locale> [--keywords s] [--subtitle s] [--name s] [--promo s] [--description s] [--whats-new s] [--apply]
+                                       Plan a listing change in App Store Connect; --apply makes it. Keywords, name,
+                                       subtitle and description need a version being prepared; promotional text doesn't
+  aso refresh <app> [--country US]     Fetch the listing from App Store Connect again and rank its keywords
+  aso note <app> <text> [--date YYYY-MM-DD]
+                                       Note a change (new screenshots, icon…) on the timeline
 
 Output
   preview <app> --creative header|search   Render the asset to a PNG and print its path
@@ -1058,6 +1075,61 @@ const commands = {
       die(e.message);
     }
     die('usage: appshot marketing apps|stats|forecast|promo|card (see appshot help)');
+  },
+
+  async aso() {
+    const [sub, ...rest] = pos;
+    const str = (v) => (v === undefined || v === true ? undefined : String(v));
+    try {
+      if (sub === 'apps') {
+        const r = await aso.portfolio({ days: str(flags.days) });
+        return out(r, () => r.apps.map((a) => {
+          const conv = a.searchImpressions ? ` · search conversion ${((a.searchGets / a.searchImpressions) * 100).toFixed(1)}%` : '';
+          return `${a.name.split(':')[0]}  (id ${a.apple_id})  ${a.score == null ? 'listing not fetched' : `score ${a.score}, ${a.wasted} wasted / ${a.unused} unused keyword chars, ${a.locales} languages`} · ${a.top10}/${a.keywords} keywords in top 10 · ${a.searchImpressions} search impressions${conv}${a.gaps ? ` · ${a.gaps} to localize` : ''}`;
+        }).join('\n'));
+      }
+      if (sub === 'show') {
+        if (!rest[0]) die('usage: appshot aso show <app> [--country DE] [--days 30]');
+        const o = await aso.overview({ app: rest[0], country: str(flags.country), days: str(flags.days) });
+        return out(o, () => JSON.stringify(o, null, 2));
+      }
+      if (sub === 'keyword') {
+        if (!rest[0]) die('usage: appshot aso keyword <term> [--country US]');
+        const k = await aso.keyword({ keyword: rest.join(' '), country: str(flags.country) });
+        return out(k, () => [
+          `"${k.keyword}" in ${k.country}: ${k.total}${k.total >= 200 ? '+' : ''} apps match, difficulty ${k.difficulty ?? '—'}`,
+          ...k.top.slice(0, 10).map((h, i) => `  ${i + 1}. ${h.name} (${h.ratings} ratings)`),
+          k.suggestions.length ? `Suggestions: ${k.suggestions.join(', ')}` : '',
+        ].join('\n'));
+      }
+      if (sub === 'track') {
+        if (!rest[1]) die('usage: appshot aso track <app> <kw,kw> [--country US] [--remove]');
+        const r = await aso.track({ app: rest[0], keywords: rest.slice(1).join(' ').split(','), country: str(flags.country), remove: !!flags.remove });
+        return out(r, () => (flags.remove ? r.removed.join('\n') : `Tracking ${r.added} new keyword${r.added === 1 ? '' : 's'}${r.failed?.length ? `; couldn't search ${r.failed.join(', ')} yet` : ''}.`));
+      }
+      if (sub === 'update') {
+        if (!rest[1]) die('usage: appshot aso update <app> <locale> [--keywords s] [--subtitle s] [--name s] [--promo s] [--description s] [--whats-new s] [--apply]');
+        const p = await aso.update({
+          app: rest[0], locale: rest[1], apply: !!flags.apply,
+          keywords: str(flags.keywords), subtitle: str(flags.subtitle), name: str(flags.name), promotional_text: str(flags.promo),
+          description: str(flags.description), whats_new: str(flags['whats-new']),
+        });
+        return out(p, aso.describePlan);
+      }
+      if (sub === 'refresh') {
+        if (!rest[0]) die('usage: appshot aso refresh <app> [--country US]');
+        const r = await aso.refresh({ app: rest[0], country: str(flags.country) });
+        return out(r, () => `${r.error ? `Listing: ${r.error}\n` : 'Listing fetched.\n'}Ranked ${r.checked} keywords now; ${r.queued} more in the background.`);
+      }
+      if (sub === 'note') {
+        if (!rest[1]) die('usage: appshot aso note <app> <text> [--date YYYY-MM-DD]');
+        const r = await aso.note({ app: rest[0], note: rest.slice(1).join(' '), date: str(flags.date) });
+        return out(r, 'Noted.');
+      }
+    } catch (e) {
+      die(e.message);
+    }
+    die('usage: appshot aso apps|show|keyword|track|update|refresh|note (see appshot help)');
   },
 
   async open() {

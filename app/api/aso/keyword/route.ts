@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 /** One keyword, searched live: GET /api/aso/keyword?term=focus%20timer&country=US. */
 export async function GET(request: Request) {
-  const denied = guard(request, { apiToken: 'marketing' });
+  const denied = guard(request, { apiToken: ['marketing', 'aso'] });
   if (denied) return denied;
   const q = new URL(request.url).searchParams;
   const term = (q.get('term') || '').trim();

@@ -15,6 +15,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { BASE, fetchExport, isLocalUrl, moveExport, serverIsLocal } from './remote.mjs';
 import * as marketing from './marketing.mjs';
+import * as aso from './aso.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CLI = path.join(ROOT, 'bin', 'appshot.mjs');
@@ -144,6 +145,10 @@ const server = new McpServer(
       'marketing_catalog lists apps and card options; marketing_stats gives the figures the cards show; marketing_forecast',
       'projects downloads, impressions, page views and proceeds with what-if scenarios; marketing_card renders a stats or',
       'promo card to PNG. Quote figures exactly as returned and call projections estimates, never promises.',
+      'ASO (tools named aso_*): aso_overview without an app compares every app, with one gives its listing per locale,',
+      'keyword ranks, search funnel and change history; aso_keyword searches a keyword live. To improve a listing, plan it',
+      'with aso_update_listing (apply false), show the user the old and new text and score, and apply only after they agree.',
+      'Ranks, popularity, difficulty and the listing score are estimates; listing text and analytics figures are Apple\'s.',
     ].join(' '),
   },
 );
@@ -995,6 +1000,99 @@ server.registerTool(
       ],
     };
   }),
+);
+
+// ---------- ASO (OpenConnect) ----------
+const asoApp = z.string().describe('OpenConnect app: id or name');
+const asoCountry = z.string().optional().describe("Storefront, ISO code like US, DE, JP (default: the app's primary language's storefront)");
+
+server.registerTool(
+  'aso_overview',
+  {
+    title: 'ASO: apps or one app',
+    description:
+      'Without app: every app side by side (listing score, wasted/unused keyword characters, listing languages, keywords in the top 10 now and a week ago, App Store search impressions and conversion vs the period before, storefronts to localize). ' +
+      "With app: one app in one storefront: its listing in every locale as App Store Connect holds it (live, and the version being prepared with whether it's editable), " +
+      'tracked keywords (every keyword-field term is tracked in its language\'s storefront automatically; source "listing" vs "manual") with rank (null = not in top 200), rank 7/30 days ago, popularity and difficulty 0-100, top 5 apps; ' +
+      'markets (storefronts per listing language), the search funnel by source and storefront, locale gaps, keyword ideas from competitors, and the change timeline with search/downloads 14 days before and after each change. ' +
+      'Listing text, funnel and change figures are from Apple; ranks follow App Store search closely but not exactly; popularity, difficulty and the score are OpenConnect estimates.',
+    inputSchema: {
+      app: z.string().optional().describe('OpenConnect app: id or name; omit for all apps'),
+      country: asoCountry,
+      days: z.union([z.literal(7), z.literal(30), z.literal(90)]).optional().describe('Funnel period (default 30)'),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  wrap(async (a) => (a.app ? json('ASO overview', await aso.overview(a)) : json('ASO: all apps', await aso.portfolio(a)))),
+);
+
+server.registerTool(
+  'aso_keyword',
+  {
+    title: 'ASO: search a keyword',
+    description: 'Search App Store for a keyword in a storefront now: the top 25 apps (ratings, rating, genre), how many apps match, what App Store search suggests around it, and a difficulty estimate. Use it to judge a keyword before putting it in a listing.',
+    inputSchema: { keyword: z.string(), country: z.string().optional().describe('Storefront, ISO code (default US)') },
+    annotations: { readOnlyHint: true },
+  },
+  wrap(async (a) => json(`"${a.keyword}" in ${a.country ?? 'US'}`, await aso.keyword(a))),
+);
+
+server.registerTool(
+  'aso_track_keywords',
+  {
+    title: 'ASO: track keywords',
+    description: "Track keywords for an app in a storefront (ranked right away, then daily), or stop tracking ones added this way (remove: true). Keyword-field terms are tracked automatically and follow the field; they can't be removed here. Needs a token with the ASO changes scope.",
+    inputSchema: { app: asoApp, keywords: z.array(z.string()).min(1).max(30), country: z.string().optional().describe('Storefront, ISO code (default US)'), remove: z.boolean().optional() },
+  },
+  wrap(async (a) => json(a.remove ? 'Stopped tracking' : 'Tracking', await aso.track(a))),
+);
+
+server.registerTool(
+  'aso_update_listing',
+  {
+    title: 'ASO: change the App Store listing',
+    description:
+      'Change one locale of an app\'s listing in App Store Connect: keywords (comma-separated, 100 characters), subtitle and name (30 each), promotional text (170), description and whats_new (4000). ' +
+      "Apple only allows keywords, description, What's New, name and subtitle on a version being prepared (check listing.draftVersion.editable in aso_overview); promotional text changes on the live version at once. " +
+      'ALWAYS call with apply false first (the default): it sends nothing to Apple and returns old → new for each field, where it would be written, anything that can\'t change and why, and the listing score before and after. ' +
+      'Show that to the user and call again with apply: true only after they say yes. Needs a token with the ASO changes scope and an App Store Connect key with the App Manager role.',
+    inputSchema: {
+      app: asoApp,
+      locale: z.string().describe('Listing locale as App Store Connect names it: en-US, de-DE, ja, zh-Hans…'),
+      keywords: z.string().optional(),
+      subtitle: z.string().optional(),
+      name: z.string().optional(),
+      promotional_text: z.string().optional(),
+      description: z.string().optional(),
+      whats_new: z.string().optional(),
+      apply: z.boolean().optional().describe('false (default): plan only. true: write to App Store Connect'),
+    },
+    annotations: { destructiveHint: true },
+  },
+  wrap(async (a) => {
+    const plan = await aso.update(a);
+    return json(aso.describePlan(plan), plan);
+  }),
+);
+
+server.registerTool(
+  'aso_refresh',
+  {
+    title: 'ASO: refresh from App Store Connect',
+    description: "Fetch an app's listing from App Store Connect again (the keyword-field tracking follows it) and rank its keywords: the storefront's now, the others in the background.",
+    inputSchema: { app: asoApp, country: asoCountry },
+  },
+  wrap(async (a) => json('Refreshed', await aso.refresh(a))),
+);
+
+server.registerTool(
+  'aso_note',
+  {
+    title: 'ASO: note a change',
+    description: "Add a note to an app's ASO change timeline (new screenshots, icon, Search Ads campaign…) so its before/after impact is measured like a listing change.",
+    inputSchema: { app: asoApp, note: z.string().max(300), date: z.string().optional().describe('YYYY-MM-DD (default today)') },
+  },
+  wrap(async (a) => json('Noted', await aso.note(a))),
 );
 
 await server.connect(new StdioServerTransport());

@@ -277,16 +277,18 @@ export function crossSite(req: Request): boolean {
 
 /**
  * For API routes: a Response to return when the request isn't allowed, otherwise null.
- * `apiToken`: an API token with this scope is accepted instead of a session.
+ * `apiToken`: an API token with this scope (or any of these) is accepted instead of a session.
  */
-export function guard(req: Request, opts: { apiToken?: TokenScope } = {}): Response | null {
+export function guard(req: Request, opts: { apiToken?: TokenScope | TokenScope[] } = {}): Response | null {
   // A browser can't attach an Authorization header from another site without CORS, which
   // this server never grants, so token requests need no cross-site check.
   if (opts.apiToken && authEnabled() && req.headers.has('authorization')) {
+    const wanted = ([] as TokenScope[]).concat(opts.apiToken);
     const scopes = apiTokenScopes(req);
     if (!scopes) return Response.json({ error: 'Invalid or revoked API token.' }, { status: 401 });
-    if (!scopes.includes(opts.apiToken)) {
-      return Response.json({ error: `This API token doesn't have the ${TOKEN_SCOPES[opts.apiToken].label} scope. Create one that does in Settings → Security → API tokens.` }, { status: 403 });
+    if (!wanted.some((w) => scopes.includes(w))) {
+      const names = wanted.map((w) => TOKEN_SCOPES[w].label).join(' or ');
+      return Response.json({ error: `This API token doesn't have the ${names} scope. Create one that does in Settings → Security → API tokens.` }, { status: 403 });
     }
     return null;
   }

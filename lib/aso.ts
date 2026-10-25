@@ -7,15 +7,18 @@
 //   keyword history back to before OpenConnect was installed.
 // - Ranks come from Apple's public search API, once a day with Ratings & Rankings. It follows
 //   App Store search closely, not exactly. One search per keyword and storefront serves every app.
+//   Every term in a locale's keyword field is tracked in that locale's storefront without asking
+//   (German in Germany, Japanese in Japan…), and follows the field as it changes.
 // - Popularity is estimated from App Store search suggestions: the fewer letters someone has to
 //   type before the keyword is suggested, the more it is searched.
 
 import { getDb } from './db';
-import { AscError, ascGetAll } from './asc-client';
+import { getSyncConfig } from './config';
+import { AscError, ascGetAll, ascPatch } from './asc-client';
 import { mapLimit, searchHints, searchStore, SearchHit, STOREFRONT_IDS } from './itunes-client';
 import { addDays, pacificToday } from './dates';
 import { territoryName } from './territories';
-import { isGenericWord, words } from './aso-audit';
+import { auditListing, isGenericWord, LIMITS, splitKeywords, words, type AuditResult } from './aso-audit';
 import type { JobState } from './sync';
 
 // ---------------------------------------------------------------------------
@@ -189,6 +192,7 @@ export async function syncListing(appId: string) {
         insert.run(appId, kind, r.locale, r.version, r.version_state, r.name, r.subtitle, r.keywords, r.promotional_text, r.description, r.whats_new, now);
       }
     }
+    syncListingKeywords(appId);
   })();
 }
 
@@ -215,6 +219,152 @@ export async function syncListings(state: JobState, appIds: string[]) {
 }
 
 // ---------------------------------------------------------------------------
+// Changing the listing in App Store Connect
+// ---------------------------------------------------------------------------
+
+export type EditField = 'name' | 'subtitle' | 'keywords' | 'promotional_text' | 'description' | 'whats_new';
+export type ListingEdit = Partial<Record<EditField, string>>;
+
+const EDIT_LIMITS: Record<EditField, number> = { ...LIMITS, whats_new: 4000 };
+const VERSION_ATTR: Partial<Record<EditField, string>> = { keywords: 'keywords', promotional_text: 'promotionalText', description: 'description', whats_new: 'whatsNew' };
+
+export interface EditPlanItem {
+  field: EditField;
+  /** Where it's written: the version being prepared, or (promotional text only) the live one too. */
+  target: string;
+  old: string;
+  new: string;
+  length: number;
+  limit: number;
+}
+
+export interface EditPlan {
+  app: string;
+  locale: string;
+  locale_name: string;
+  items: EditPlanItem[];
+  /** Fields that can't be written now, and why. */
+  blocked: { field: EditField; reason: string }[];
+  before: AuditResult | null;
+  after: AuditResult | null;
+  applied: boolean;
+}
+
+const len = (s: string) => [...s].length;
+
+async function localizationIds(path: string) {
+  const { data } = await ascGetAll(path);
+  return new Map(data.map((l) => [l.attributes.locale as string, { id: l.id as string, attributes: l.attributes }]));
+}
+
+/**
+ * Plans (and with `apply`, makes) a change to one locale's listing in App Store Connect.
+ * Apple only lets keywords, description and What's New change on a version being prepared, and
+ * name and subtitle with it; promotional text can change on the live version at any time. Fields
+ * that can't be written now come back in `blocked` with the reason; nothing is written unless
+ * every requested field can be. Needs an API key with the App Manager role (or Admin).
+ */
+export async function editListing(appId: string, locale: string, edit: ListingEdit, apply: boolean): Promise<EditPlan> {
+  const fields = (Object.keys(edit) as EditField[]).filter((f) => f in EDIT_LIMITS && typeof edit[f] === 'string');
+  if (!fields.length) throw new Error('Nothing to change: give at least one of name, subtitle, keywords, promotional_text, description, whats_new.');
+  const [versions, { data: infos }] = await Promise.all([fetchVersions(appId), ascGetAll(`/v1/apps/${appId}/appInfos?limit=10`)]);
+  const live = versions.find((v) => RELEASED.has(v.state));
+  const draft = versions.find((v) => EDITABLE.has(v.state) && (!live || v.created > live.created));
+  const liveInfo = infos.find((i) => i.attributes.state === 'READY_FOR_DISTRIBUTION' || i.attributes.appStoreState === 'READY_FOR_SALE');
+  const draftInfo = infos.find((i) => i !== liveInfo && EDITABLE.has(i.attributes.state || i.attributes.appStoreState));
+  // A newer version that's in review (or waiting for release) can't be edited either.
+  const pending = !draft ? versions.find((v) => !RELEASED.has(v.state) && (!live || v.created > live.created)) : undefined;
+  const newVersion = pending
+    ? `Version ${pending.version} is ${pending.state.toLowerCase().replace(/_/g, ' ')}: wait for it to be released, or pull it from review in App Store Connect`
+    : 'Create a new version in App Store Connect first';
+
+  const [draftLocs, liveLocs, draftInfoLocs, liveInfoLocs] = await Promise.all([
+    draft ? localizationIds(`/v1/appStoreVersions/${draft.id}/appStoreVersionLocalizations?limit=50`) : null,
+    live ? localizationIds(`/v1/appStoreVersions/${live.id}/appStoreVersionLocalizations?limit=50`) : null,
+    draftInfo ? localizationIds(`/v1/appInfos/${draftInfo.id}/appInfoLocalizations?limit=50`) : null,
+    liveInfo ? localizationIds(`/v1/appInfos/${liveInfo.id}/appInfoLocalizations?limit=50`) : null,
+  ]);
+
+  // The text as it stands: the version being prepared if there is one, else the live one.
+  const current = (field: EditField): string => {
+    const info = field === 'name' || field === 'subtitle';
+    const loc = info ? (draftInfoLocs ?? liveInfoLocs)?.get(locale) : (draftLocs ?? liveLocs)?.get(locale);
+    const attr = info ? field : VERSION_ATTR[field]!;
+    return loc?.attributes?.[attr] || '';
+  };
+  const known = [draftLocs, liveLocs, draftInfoLocs, liveInfoLocs].some((m) => m?.has(locale));
+  if (!known) throw new Error(`The listing has no ${localeName(locale)} (${locale}) localization. Add the language in App Store Connect first.`);
+
+  const items: EditPlanItem[] = [];
+  const blocked: EditPlan['blocked'] = [];
+  const writes: { path: string; type: string; id: string; attributes: Record<string, string> }[] = [];
+  const write = (type: string, id: string, attr: string, value: string) => {
+    let w = writes.find((x) => x.id === id);
+    if (!w) writes.push((w = { path: `/v1/${type}/${id}`, type, id, attributes: {} }));
+    w.attributes[attr] = value;
+  };
+  const prepare = draft ? `version ${draft.version} (being prepared)` : null;
+
+  for (const field of fields) {
+    const value = field === 'keywords' ? splitKeywords(edit[field]!).join(',') : edit[field]!.trim();
+    const old = current(field);
+    const limit = EDIT_LIMITS[field];
+    if (len(value) > limit) {
+      blocked.push({ field, reason: `${len(value)} characters; Apple allows ${limit}.` });
+      continue;
+    }
+    if (value === old) continue;
+    if (field === 'name' || field === 'subtitle') {
+      const loc = draftInfoLocs?.get(locale);
+      if (!draftInfo || !loc) {
+        blocked.push({ field, reason: `The name and subtitle can only change together with a new version. ${newVersion}.` });
+        continue;
+      }
+      write('appInfoLocalizations', loc.id, field, value);
+      items.push({ field, target: prepare ?? 'the app info being prepared', old, new: value, length: len(value), limit });
+    } else if (field === 'promotional_text') {
+      const targets: string[] = [];
+      const liveLoc = liveLocs?.get(locale);
+      if (liveLoc) {
+        write('appStoreVersionLocalizations', liveLoc.id, VERSION_ATTR[field]!, value);
+        targets.push(`live version ${live!.version}`);
+      }
+      // Also on the version being prepared, so the release doesn't put the old text back.
+      const draftLoc = draftLocs?.get(locale);
+      if (draftLoc) {
+        write('appStoreVersionLocalizations', draftLoc.id, VERSION_ATTR[field]!, value);
+        targets.push(prepare!);
+      }
+      if (!targets.length) blocked.push({ field, reason: 'No version has this localization.' });
+      else items.push({ field, target: targets.join(' and '), old, new: value, length: len(value), limit });
+    } else {
+      const loc = draftLocs?.get(locale);
+      if (!draft || !loc) {
+        blocked.push({ field, reason: `${field === 'keywords' ? 'Keywords' : field === 'description' ? 'The description' : 'What’s New'} can only change on a version being prepared. ${draft ? `Add ${localeName(locale)} to version ${draft.version} in App Store Connect first` : newVersion}.` });
+        continue;
+      }
+      write('appStoreVersionLocalizations', loc.id, VERSION_ATTR[field]!, value);
+      items.push({ field, target: prepare!, old, new: value, length: len(value), limit });
+    }
+  }
+
+  const listing = (pick: (f: EditField) => string) => ({
+    name: pick('name'), subtitle: pick('subtitle'), keywords: pick('keywords'), promotional_text: pick('promotional_text'), description: pick('description'),
+  });
+  const category = (getDb().prepare(`SELECT primary_genre FROM apps WHERE apple_id = ?`).get(appId) as { primary_genre: string | null } | undefined)?.primary_genre ?? null;
+  const before = auditListing(listing(current), { category });
+  const after = auditListing(listing((f) => items.find((i) => i.field === f)?.new ?? current(f)), { category });
+
+  const plan: EditPlan = { app: appId, locale, locale_name: localeName(locale), items, blocked, before, after, applied: false };
+  if (!apply || !items.length || blocked.length) return plan;
+  for (const w of writes) await ascPatch(w.path, { data: { type: w.type, id: w.id, attributes: w.attributes } });
+  plan.applied = true;
+  // Read it back, so the page, the change timeline and the tracked keywords follow.
+  await syncListing(appId).catch(() => {});
+  return plan;
+}
+
+// ---------------------------------------------------------------------------
 // Keyword ranks and popularity
 // ---------------------------------------------------------------------------
 
@@ -222,6 +372,52 @@ export const MAX_KEYWORDS_PER_APP = 60;
 
 export function normalizeKeyword(k: string): string {
   return k.toLowerCase().normalize('NFKC').replace(/\s+/g, ' ').trim().slice(0, 100);
+}
+
+// The storefront each listing locale is written for: its keyword field is tracked there.
+export const LOCALE_STOREFRONT: Record<string, string> = {
+  'en-US': 'US', 'en-GB': 'GB', 'en-AU': 'AU', 'en-CA': 'CA', 'fr-FR': 'FR', 'fr-CA': 'CA', 'de-DE': 'DE', 'es-ES': 'ES', 'es-MX': 'MX',
+  it: 'IT', 'pt-BR': 'BR', 'pt-PT': 'PT', ja: 'JP', ko: 'KR', 'zh-Hans': 'CN', 'zh-Hant': 'TW', ru: 'RU', uk: 'UA', tr: 'TR', pl: 'PL',
+  sv: 'SE', no: 'NO', da: 'DK', fi: 'FI', cs: 'CZ', sk: 'SK', hu: 'HU', ro: 'RO', el: 'GR', hr: 'HR', he: 'IL', 'ar-SA': 'SA', th: 'TH',
+  vi: 'VN', id: 'ID', ms: 'MY', hi: 'IN', 'nl-NL': 'NL', ur: 'PK',
+};
+
+/** The listing search reads: the live one, or before the first release the one being prepared. */
+function searchedListing(appId: string): ListingRow[] {
+  const rows = getDb().prepare(`SELECT * FROM aso_listings WHERE apple_id = ?`).all(appId) as (ListingRow & { kind: string })[];
+  const live = rows.filter((r) => r.kind === 'live');
+  return live.length ? live : rows.filter((r) => r.kind === 'draft');
+}
+
+/**
+ * Tracks every term in each locale's keyword field in that locale's storefront, and stops
+ * tracking terms that left the field (their rank history stays). Keywords added by hand are
+ * never touched. With "Track keyword fields" off in Settings, the listing ones are dropped.
+ */
+export function syncListingKeywords(appId: string) {
+  const db = getDb();
+  const want = new Map<string, { country: string; keyword: string; locale: string }>();
+  if (getSyncConfig().trackListingKeywords) {
+    for (const r of searchedListing(appId)) {
+      const country = LOCALE_STOREFRONT[r.locale];
+      if (!country) continue;
+      for (const keyword of splitKeywords(r.keywords).map(normalizeKeyword).filter(Boolean)) {
+        want.set(`${country}|${keyword}`, { country, keyword, locale: r.locale });
+      }
+    }
+  }
+  const have = db.prepare(`SELECT country, keyword FROM aso_keywords WHERE apple_id = ? AND source = 'listing'`).all(appId) as { country: string; keyword: string }[];
+  const drop = db.prepare(`DELETE FROM aso_keywords WHERE apple_id = ? AND country = ? AND keyword = ? AND source = 'listing'`);
+  const add = db.prepare(`
+    INSERT INTO aso_keywords (apple_id, country, keyword, source, locale) VALUES (?, ?, ?, 'listing', ?)
+    ON CONFLICT(apple_id, country, keyword) DO UPDATE SET locale = excluded.locale WHERE source = 'listing'`);
+  let added = 0;
+  let removed = 0;
+  db.transaction(() => {
+    for (const h of have) if (!want.has(`${h.country}|${h.keyword}`)) removed += drop.run(appId, h.country, h.keyword).changes;
+    for (const w of want.values()) added += add.run(appId, w.country, w.keyword, w.locale).changes;
+  })();
+  return { added, removed };
 }
 
 interface Popularity {
@@ -266,7 +462,7 @@ async function estimatePopularity(keyword: string, country: string): Promise<Pop
  * Searches one keyword in one storefront (once a day) and records the rank of every app tracking
  * it there. Popularity is re-estimated weekly.
  */
-export async function checkKeyword(country: string, keyword: string) {
+export async function checkKeyword(country: string, keyword: string, budget?: { estimates: number }) {
   const db = getDb();
   const today = pacificToday();
   const trackers = db.prepare(`SELECT apple_id FROM aso_keywords WHERE country = ? AND keyword = ?`).all(country, keyword) as { apple_id: string }[];
@@ -283,7 +479,9 @@ export async function checkKeyword(country: string, keyword: string) {
     .prepare(`SELECT popularity, hint_prefix, hint_position, date FROM aso_searches WHERE country = ? AND keyword = ? AND popularity IS NOT NULL ORDER BY date DESC LIMIT 1`)
     .get(country, keyword) as { popularity: number; hint_prefix: string | null; hint_position: number | null; date: string } | undefined;
   let pop: Popularity | null = last && last.date >= addDays(today, -7) ? { popularity: last.popularity, prefix: last.hint_prefix, position: last.hint_position } : null;
-  if (!pop) pop = await estimatePopularity(keyword, country).catch(() => null);
+  if (!pop && (!budget || budget.estimates-- > 0)) pop = await estimatePopularity(keyword, country).catch(() => null);
+  // Out of budget: keep last week's figure until the next run gets to it.
+  if (!pop && last) pop = { popularity: last.popularity, prefix: last.hint_prefix, position: last.hint_position };
 
   db.transaction(() => {
     db.prepare(`
@@ -295,17 +493,26 @@ export async function checkKeyword(country: string, keyword: string) {
   })();
 }
 
+// Popularity estimates per run (about five suggestion requests each): enough to re-estimate a
+// thousand keywords weekly without hammering the endpoint when many are added at once.
+const ESTIMATES_PER_RUN = 250;
+
 /** Part of the Ratings & Rankings sync: every tracked keyword, once a day. */
 export async function syncKeywordRanks(state: JobState) {
-  const pairs = getDb().prepare(`SELECT DISTINCT country, keyword FROM aso_keywords`).all() as { country: string; keyword: string }[];
+  // Keywords without a popularity estimate yet go first, so new ones fill in soonest.
+  const pairs = getDb().prepare(`
+    SELECT DISTINCT k.country, k.keyword FROM aso_keywords k
+    ORDER BY EXISTS (SELECT 1 FROM aso_searches s WHERE s.country = k.country AND s.keyword = k.keyword AND s.popularity IS NOT NULL), k.country, k.keyword`)
+    .all() as { country: string; keyword: string }[];
   if (!pairs.length) return 0;
   state.phase = `Checking ${pairs.length} keyword rank${pairs.length === 1 ? '' : 's'}`;
   state.total = pairs.length;
   state.done = 0;
   let failures = 0;
+  const budget = { estimates: ESTIMATES_PER_RUN };
   await mapLimit(pairs, 2, async (p) => {
     try {
-      await checkKeyword(p.country, p.keyword);
+      await checkKeyword(p.country, p.keyword, budget);
     } catch {
       failures++;
     }
@@ -315,9 +522,20 @@ export async function syncKeywordRanks(state: JobState) {
   return pairs.length - failures;
 }
 
+/** Ranks one app's keywords now: the given storefront's before the call returns, the others after. */
+export async function rankAppKeywords(appId: string, country: string) {
+  const pairs = getDb().prepare(`SELECT country, keyword FROM aso_keywords WHERE apple_id = ?`).all(appId) as { country: string; keyword: string }[];
+  const here = pairs.filter((p) => p.country === country);
+  await mapLimit(here, 2, (p) => checkKeyword(p.country, p.keyword).catch(() => {}));
+  const budget = { estimates: 60 };
+  void mapLimit(pairs.filter((p) => p.country !== country), 2, (p) => checkKeyword(p.country, p.keyword, budget).catch(() => {}));
+  return { checked: here.length, queued: pairs.length - here.length };
+}
+
+/** Keywords added by hand, on top of the ones from the keyword fields (which don't count). */
 export async function addKeywords(appId: string, country: string, keywords: string[]) {
   const db = getDb();
-  const have = (db.prepare(`SELECT COUNT(*) AS n FROM aso_keywords WHERE apple_id = ?`).get(appId) as { n: number }).n;
+  const have = (db.prepare(`SELECT COUNT(*) AS n FROM aso_keywords WHERE apple_id = ? AND source = 'manual'`).get(appId) as { n: number }).n;
   const fresh = [...new Set(keywords.map(normalizeKeyword).filter(Boolean))]
     .filter((k) => !db.prepare(`SELECT 1 FROM aso_keywords WHERE apple_id = ? AND country = ? AND keyword = ?`).get(appId, country, k))
     .slice(0, Math.max(0, MAX_KEYWORDS_PER_APP - have));
@@ -329,11 +547,13 @@ export async function addKeywords(appId: string, country: string, keywords: stri
   return { added: fresh.length, failed };
 }
 
-export function removeKeyword(appId: string, country: string, keyword: string) {
+/** Stops tracking a keyword added by hand. Ones from a keyword field follow the field instead: false. */
+export function removeKeyword(appId: string, country: string, keyword: string): boolean {
   const db = getDb();
-  db.transaction(() => {
-    db.prepare(`DELETE FROM aso_keywords WHERE apple_id = ? AND country = ? AND keyword = ?`).run(appId, country, keyword);
+  return db.transaction(() => {
+    if (!db.prepare(`DELETE FROM aso_keywords WHERE apple_id = ? AND country = ? AND keyword = ? AND source = 'manual'`).run(appId, country, keyword).changes) return false;
     db.prepare(`DELETE FROM aso_ranks WHERE apple_id = ? AND country = ? AND keyword = ?`).run(appId, country, keyword);
+    return true;
   })();
 }
 
@@ -383,6 +603,9 @@ const lang = (locale: string) => locale.split('-')[0];
 
 /** The listing locale App Store search most likely uses in a storefront. */
 export function localeForCountry(country: string, locales: string[], primary: string | null): string | null {
+  // A locale written for this storefront (Hindi for India) is the one its keywords are tracked against.
+  const own = locales.find((l) => LOCALE_STOREFRONT[l] === country);
+  if (own) return own;
   const wanted = STOREFRONT_LOCALES[country] || [];
   for (const w of wanted) if (locales.includes(w)) return w;
   for (const w of wanted) {
@@ -398,6 +621,9 @@ export interface ListingLocale extends ListingRow {
 
 export interface KeywordRow {
   keyword: string;
+  /** listing: from the keyword field of `locale`, kept in step with it; manual: added on the page. */
+  source: 'listing' | 'manual';
+  locale: string | null;
   rank: number | null;
   /** Rank 7 and 30 days ago; undefined = not tracked back then. */
   rank7: number | null | undefined;
@@ -460,7 +686,8 @@ export interface AsoOverview {
   };
   localeGaps: { country: string; country_name: string; locale: string; locale_name: string; impressions: number; reason: 'missing' | 'secondary' }[];
   keywords: KeywordRow[];
-  keywordCountries: { country: string; count: number }[];
+  /** Storefronts with tracked keywords: each listing locale's own, plus any with keywords added by hand. */
+  markets: Market[];
   ideas: { word: string; count: number; apps: string[] }[];
   funnel: {
     start: string | null;
@@ -471,6 +698,18 @@ export interface AsoOverview {
   };
   changes: ChangeEvent[];
   storefrontsWithSuggestions: string[];
+}
+
+export interface Market {
+  country: string;
+  country_name: string;
+  /** The listing locale search uses there. */
+  locale: string | null;
+  locale_name: string | null;
+  keywords: number;
+  fromListing: number;
+  top10: number;
+  ranked: number;
 }
 
 const IMPACT_DAYS = 14;
@@ -674,11 +913,13 @@ function localeGaps(appId: string, locales: string[]): AsoOverview['localeGaps']
 function keywordRows(appId: string, country: string): KeywordRow[] {
   const db = getDb();
   const today = pacificToday();
-  const tracked = db.prepare(`SELECT keyword FROM aso_keywords WHERE apple_id = ? AND country = ? ORDER BY added_at, keyword`).all(appId, country) as { keyword: string }[];
+  const tracked = db
+    .prepare(`SELECT keyword, source, locale FROM aso_keywords WHERE apple_id = ? AND country = ? ORDER BY source = 'manual', added_at, keyword`)
+    .all(appId, country) as { keyword: string; source: 'listing' | 'manual'; locale: string | null }[];
   const history = db.prepare(`SELECT date, rank FROM aso_ranks WHERE apple_id = ? AND country = ? AND keyword = ? AND date >= ? ORDER BY date`);
   const best = db.prepare(`SELECT MIN(rank) AS r FROM aso_ranks WHERE apple_id = ? AND country = ? AND keyword = ?`);
   const search = db.prepare(`SELECT date, total, top, popularity, hint_prefix, hint_position FROM aso_searches WHERE country = ? AND keyword = ? ORDER BY date DESC LIMIT 1`);
-  return tracked.map(({ keyword }) => {
+  return tracked.map(({ keyword, source, locale }) => {
     const h = history.all(appId, country, keyword, addDays(today, -90)) as { date: string; rank: number | null }[];
     const at = (days: number) => {
       const target = addDays(today, -days);
@@ -690,6 +931,8 @@ function keywordRows(appId: string, country: string): KeywordRow[] {
     const last = h[h.length - 1];
     return {
       keyword,
+      source: source === 'listing' ? 'listing' : 'manual',
+      locale,
       rank: last?.rank ?? null,
       rank7: at(7),
       rank30: at(30),
@@ -733,6 +976,98 @@ function keywordIdeas(appId: string, rows: KeywordRow[], indexed: Set<string>): 
     .map(([word, c]) => ({ word, count: c.count, apps: [...c.apps].slice(0, 4) }));
 }
 
+/** Latest rank per tracked keyword: { country, keyword, rank, source }. */
+function latestRanks(appId: string) {
+  return getDb().prepare(`
+    SELECT k.country, k.keyword, k.source,
+      (SELECT r.rank FROM aso_ranks r WHERE r.apple_id = k.apple_id AND r.country = k.country AND r.keyword = k.keyword ORDER BY r.date DESC LIMIT 1) AS rank,
+      (SELECT r.rank FROM aso_ranks r WHERE r.apple_id = k.apple_id AND r.country = k.country AND r.keyword = k.keyword AND r.date <= ? ORDER BY r.date DESC LIMIT 1) AS rank7
+    FROM aso_keywords k WHERE k.apple_id = ?`)
+    .all(addDays(pacificToday(), -7), appId) as { country: string; keyword: string; source: string; rank: number | null; rank7: number | null }[];
+}
+
+function markets(appId: string, locales: string[], primary: string | null): Market[] {
+  const byCountry = new Map<string, Market>();
+  const market = (country: string) => {
+    if (!byCountry.has(country)) {
+      const locale = localeForCountry(country, locales, primary);
+      byCountry.set(country, { country, country_name: territoryName(country), locale, locale_name: locale ? localeName(locale) : null, keywords: 0, fromListing: 0, top10: 0, ranked: 0 });
+    }
+    return byCountry.get(country)!;
+  };
+  // Every listing language's storefront, even before its keywords are ranked.
+  locales.forEach((l) => LOCALE_STOREFRONT[l] && market(LOCALE_STOREFRONT[l]));
+  for (const r of latestRanks(appId)) {
+    const m = market(r.country);
+    m.keywords++;
+    if (r.source === 'listing') m.fromListing++;
+    if (r.rank != null) m.ranked++;
+    if (r.rank != null && r.rank <= 10) m.top10++;
+  }
+  const order = (m: Market) => (m.locale === primary && LOCALE_STOREFRONT[primary || ''] === m.country ? 0 : 1);
+  return [...byCountry.values()].sort((a, b) => order(a) - order(b) || b.keywords - a.keywords || a.country_name.localeCompare(b.country_name));
+}
+
+export interface PortfolioApp {
+  apple_id: string;
+  name: string;
+  icon_url: string | null;
+  /** Listing locales, and the primary one's audit (null = listing not fetched yet). */
+  locales: number;
+  score: number | null;
+  wasted: number;
+  unused: number;
+  keywords: number;
+  ranked: number;
+  top10: number;
+  /** In the top 10 a week ago, for the same keywords. */
+  top10Before: number;
+  searchImpressions: number;
+  searchGets: number;
+  previousImpressions: number | null;
+  previousGets: number | null;
+  gaps: number;
+}
+
+/** One row per visible app for the All Apps view: listing, keyword and search health side by side. */
+export function asoPortfolio(days: number): PortfolioApp[] {
+  const db = getDb();
+  const apps = db.prepare(`SELECT apple_id, name, icon_url, primary_genre, primary_locale FROM apps WHERE hidden = 0 OR hidden IS NULL`).all() as
+    { apple_id: string; name: string; icon_url: string | null; primary_genre: string | null; primary_locale: string | null }[];
+  const search = db.prepare(`
+    SELECT COALESCE(SUM(CASE WHEN lower(event) = 'impression' THEN counts END), 0) AS impressions,
+      COALESCE(SUM(CASE WHEN lower(event) = 'tap' AND lower(engagement_type) = 'get' THEN counts END), 0) AS gets
+    FROM engagement WHERE apple_id = ? AND granularity = 'D' AND date BETWEEN ? AND ? AND lower(source_type) = 'app store search'`);
+  return apps.map((a) => {
+    const listing = searchedListing(a.apple_id);
+    const locales = listing.map((l) => l.locale);
+    const main = listing.find((l) => l.locale === (a.primary_locale || 'en-US')) ?? listing[0];
+    const audit = main ? auditListing(main, { category: a.primary_genre }) : null;
+    const ranks = latestRanks(a.apple_id);
+    const end = engagementEnd(a.apple_id);
+    const cur = end ? (search.get(a.apple_id, addDays(end, -(days - 1)), end) as { impressions: number; gets: number }) : null;
+    const prev = end ? (search.get(a.apple_id, addDays(end, -(2 * days - 1)), addDays(end, -days)) as { impressions: number; gets: number }) : null;
+    return {
+      apple_id: a.apple_id,
+      name: a.name,
+      icon_url: a.icon_url,
+      locales: locales.length,
+      score: audit?.score ?? null,
+      wasted: audit?.wastedChars ?? 0,
+      unused: audit?.unusedChars ?? 0,
+      keywords: ranks.length,
+      ranked: ranks.filter((r) => r.rank != null).length,
+      top10: ranks.filter((r) => r.rank != null && r.rank <= 10).length,
+      top10Before: ranks.filter((r) => r.rank7 != null && r.rank7 <= 10).length,
+      searchImpressions: cur?.impressions ?? 0,
+      searchGets: cur?.gets ?? 0,
+      previousImpressions: prev && prev.impressions ? prev.impressions : null,
+      previousGets: prev && prev.impressions ? prev.gets : null,
+      gaps: localeGaps(a.apple_id, locales).filter((g) => g.reason === 'missing').length,
+    };
+  });
+}
+
 export function asoOverview(appId: string, country: string, days: number): AsoOverview | null {
   const db = getDb();
   const app = db
@@ -774,7 +1109,7 @@ export function asoOverview(appId: string, country: string, days: number): AsoOv
     },
     localeGaps: localeGaps(appId, locales),
     keywords,
-    keywordCountries: db.prepare(`SELECT country, COUNT(*) AS count FROM aso_keywords WHERE apple_id = ? GROUP BY country ORDER BY count DESC`).all(appId) as { country: string; count: number }[],
+    markets: markets(appId, locales, app.primary_locale),
     ideas: keywordIdeas(appId, keywords, indexed),
     funnel: funnel(appId, days, (cc) => {
       const wanted = STOREFRONT_LOCALES[cc];

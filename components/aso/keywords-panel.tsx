@@ -1,7 +1,7 @@
 'use client'
 
 import { Fragment, useEffect, useMemo, useState } from 'react'
-import { ArrowDown, ArrowUp, ChevronDown, Loader2, Plus, Sparkles, Star, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronDown, Loader2, Plus, RefreshCw, Sparkles, Star, X } from 'lucide-react'
 import { Section, EmptyState } from '@/components/dashboard/section'
 import { Button } from '@/components/ui/button'
 import { inputCls } from '@/components/ui/field'
@@ -109,7 +109,19 @@ function AppIcon({ src, size = 28 }: { src: string | null; size?: number }) {
   )
 }
 
-export function KeywordsPanel({ overview: o, onChange }: { overview: AsoOverview; onChange: () => Promise<void> | void }) {
+export function KeywordsPanel({
+  overview: o,
+  onChange,
+  onCountry,
+  onRefresh,
+  refreshing,
+}: {
+  overview: AsoOverview
+  onChange: () => Promise<void> | void
+  onCountry: (country: string) => void
+  onRefresh: () => void
+  refreshing: boolean
+}) {
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -125,7 +137,7 @@ export function KeywordsPanel({ overview: o, onChange }: { overview: AsoOverview
     setError(null)
     try {
       const r = await asoAction({ action: 'add-keywords', app: o.app.apple_id, country: o.country, keywords: list })
-      if (!r.added && list.length) setError(`Already tracked, or the limit of 60 keywords per app is reached.`)
+      if (!r.added && list.length) setError(`Already tracked, or the limit of 60 keywords added by hand per app is reached.`)
       if (r.failed?.length) setError(`Couldn’t search ${r.failed.join(', ')} right now (Apple throttling); it’s checked again with the next Ratings & Rankings sync.`)
       setInput('')
       await onChange()
@@ -137,7 +149,8 @@ export function KeywordsPanel({ overview: o, onChange }: { overview: AsoOverview
   }
 
   const remove = async (keyword: string) => {
-    await asoAction({ action: 'remove-keyword', app: o.app.apple_id, country: o.country, keyword }).catch(() => {})
+    setError(null)
+    await asoAction({ action: 'remove-keyword', app: o.app.apple_id, country: o.country, keyword }).catch((err) => setError(err.message))
     await onChange()
   }
 
@@ -172,6 +185,9 @@ export function KeywordsPanel({ overview: o, onChange }: { overview: AsoOverview
   )
 
   const lastChecked = o.keywords.map((k) => k.checked).filter(Boolean).sort().pop()
+  const fromField = o.keywords.filter((k) => k.source === 'listing').length
+  const unranked = o.keywords.filter((k) => !k.checked).length
+  const fieldTerms = listing?.keywords.split(/[,，、]/).filter((t) => t.trim()).length ?? 0
 
   return (
     <Section
@@ -179,10 +195,32 @@ export function KeywordsPanel({ overview: o, onChange }: { overview: AsoOverview
       description={
         <>
           Where {o.app.name.split(':')[0]} shows up in App Store search, checked daily with Ratings & Rankings{lastChecked ? `, last on ${fmtDate(lastChecked, { month: 'short', day: 'numeric' })}` : ''}.
-          {listing ? ` Coverage is against the ${listing.locale_name} listing.` : ''}
+          {listing ? ` Every term in the ${listing.locale_name} keyword field is tracked here automatically, and follows the field when you change it in App Store Connect.` : ''}
         </>
       }
     >
+      {o.markets.length > 1 && (
+        <div className="-mx-1 mb-4 flex flex-wrap gap-1.5" role="tablist" aria-label="Listing language">
+          {o.markets.map((m) => (
+            <button
+              key={m.country}
+              role="tab"
+              aria-selected={m.country === o.country}
+              onClick={() => onCountry(m.country)}
+              title={`${m.country_name}${m.locale_name ? `: searched against the ${m.locale_name} listing` : ''}. ${m.keywords} keywords tracked, ${m.top10} in the top 10.`}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors',
+                m.country === o.country ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:bg-accent hover:text-foreground'
+              )}
+            >
+              <span>{countryToFlag(m.country)}</span>
+              <span className="font-medium">{m.locale_name ?? m.country_name}</span>
+              <span className="tabular-nums">{m.keywords ? `${m.top10}/${m.keywords}` : '—'}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       <form
         className="mb-4 flex gap-2"
         onSubmit={(e) => {
@@ -193,7 +231,7 @@ export function KeywordsPanel({ overview: o, onChange }: { overview: AsoOverview
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Track keywords, comma-separated: focus timer, pomodoro, study app"
+          placeholder={fromField ? 'Track more, comma-separated: phrases people search, competitors’ words…' : 'Track keywords, comma-separated: focus timer, pomodoro, study app'}
           className={inputCls}
           aria-label="Keywords to track"
         />
@@ -204,8 +242,22 @@ export function KeywordsPanel({ overview: o, onChange }: { overview: AsoOverview
       </form>
       {error && <p className="mb-3 text-xs text-red-600 dark:text-red-400">{error}</p>}
 
+      {unranked > 0 && o.keywords.length > 0 && (
+        <p className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          {unranked} keyword{unranked === 1 ? ' hasn’t' : 's haven’t'} been ranked yet: that happens with the next Ratings & Rankings sync.
+          <button onClick={onRefresh} disabled={refreshing} className="inline-flex items-center gap-1 font-medium text-foreground hover:underline">
+            {refreshing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />} Rank now
+          </button>
+        </p>
+      )}
       {!o.keywords.length ? (
-        <EmptyState>No keywords tracked in {territoryName(o.country)} yet. Add the words people would type to find this app.</EmptyState>
+        <EmptyState>
+          {fieldTerms
+            ? `The ${fieldTerms} terms in the ${listing!.locale_name} keyword field are tracked here once the listing is fetched again. Press Refresh.`
+            : listing
+              ? `The ${listing.locale_name} keyword field is empty, so nothing is tracked in ${territoryName(o.country)} automatically. Add the words people would type to find this app.`
+              : `No keywords tracked in ${territoryName(o.country)} yet. Add the words people would type to find this app.`}
+        </EmptyState>
       ) : (
         <div className="-mx-6 overflow-x-auto">
           <table className="w-full min-w-[820px] text-sm">
@@ -236,6 +288,9 @@ export function KeywordsPanel({ overview: o, onChange }: { overview: AsoOverview
                           {k.keyword}
                           {opening && <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" aria-label="Opening: searched often and beatable" />}
                         </button>
+                        <div className="pl-5 text-[11px] text-muted-foreground">
+                          {k.source === 'listing' ? `${k.locale && k.locale !== listing?.locale ? `${k.locale} ` : ''}keyword field` : 'added by you'}
+                        </div>
                       </td>
                       <td className="px-3 py-2" title={k.best ? `Best: ${k.best}` : undefined}><RankBadge rank={k.rank} /></td>
                       <td className="px-3 py-2"><Delta value={delta(k.rank, k.rank7)} /></td>
@@ -255,9 +310,11 @@ export function KeywordsPanel({ overview: o, onChange }: { overview: AsoOverview
                         </span>
                       </td>
                       <td className="py-2 pr-6 text-right">
-                        <button onClick={() => remove(k.keyword)} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="Stop tracking" aria-label={`Stop tracking ${k.keyword}`}>
-                          <X className="h-3.5 w-3.5" />
-                        </button>
+                        {k.source === 'manual' && (
+                          <button onClick={() => remove(k.keyword)} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="Stop tracking" aria-label={`Stop tracking ${k.keyword}`}>
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </td>
                     </tr>
                     {expanded && (

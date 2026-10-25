@@ -11,6 +11,8 @@ import {
 } from '@/lib/config';
 import { resetTokenCache } from '@/lib/asc-client';
 import { settingsResponse } from '@/lib/data';
+import { syncListingKeywords } from '@/lib/aso';
+import { getDb } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,7 +51,13 @@ export async function POST(request: Request) {
       if (c.clear_private_key === true) setSetting('private_key', null);
       resetTokenCache();
     }
+    const tracking = getSyncConfig().trackListingKeywords;
     const sync = body.sync ? setSyncConfig(body.sync) : getSyncConfig();
+    // Turning keyword-field tracking on or off applies to the listings already fetched.
+    if (sync.trackListingKeywords !== tracking) {
+      const apps = getDb().prepare(`SELECT DISTINCT apple_id FROM aso_listings`).all() as { apple_id: string }[];
+      apps.forEach((a) => syncListingKeywords(a.apple_id));
+    }
     const prefs = body.prefs ? setUiPrefs(body.prefs) : getUiPrefs();
     let notify;
     try {

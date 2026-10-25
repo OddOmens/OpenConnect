@@ -327,12 +327,16 @@ function initDb(): Database.Database {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Search terms tracked per app and storefront, and the app's rank for each, per day.
+    -- Search terms tracked per app and storefront, and the app's rank for each, per day. Terms in
+    -- a locale's keyword field are tracked in that locale's storefront automatically (source
+    -- 'listing', kept in step with App Store Connect); 'manual' ones are added on the ASO page.
     CREATE TABLE IF NOT EXISTS aso_keywords (
       apple_id TEXT NOT NULL,
       country TEXT NOT NULL,
       keyword TEXT NOT NULL,              -- lowercased
       added_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      source TEXT DEFAULT 'manual',       -- manual | listing
+      locale TEXT,                        -- listing: the locale whose keyword field it is in
       PRIMARY KEY (apple_id, country, keyword)
     );
     CREATE TABLE IF NOT EXISTS aso_ranks (
@@ -388,6 +392,10 @@ function initDb(): Database.Database {
     },
     api_tokens: {
       scopes: 'TEXT', // comma-separated (see TOKEN_SCOPES in lib/auth.ts); NULL = studio, as before scopes existed
+    },
+    aso_keywords: {
+      source: "TEXT DEFAULT 'manual'",
+      locale: 'TEXT',
     },
   };
   for (const [table, columns] of Object.entries(addColumns)) {

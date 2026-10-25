@@ -221,6 +221,7 @@ export const PROMO_ACCENTS = ['#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#f973
 export const TOKEN_SCOPES = {
   studio: { label: 'Screenshot studio', detail: 'Read and edit screenshot sets, preview and export' },
   marketing: { label: 'Marketing', detail: 'Render stats and promo cards, read the figures on them, the projections and ASO' },
+  aso: { label: 'ASO changes', detail: 'Read ASO, track keywords and change App Store listings (keywords, subtitle, promotional text…) in App Store Connect' },
 } as const
 export type TokenScope = keyof typeof TOKEN_SCOPES
 
@@ -373,6 +374,7 @@ export interface SyncConfig {
   syncReviews: boolean
   syncAnalytics: boolean         // impressions & product page views (Analytics Reports API)
   syncListings: boolean          // App Store listings (name, subtitle, keywords) for ASO; keyword ranks run with Ratings & Rankings
+  trackListingKeywords: boolean  // track every keyword-field term in its locale's storefront
   rankCharts: ChartId[]
   rankOverall: boolean           // also check the all-categories charts
   storeCountries: 'all' | string[]
@@ -385,6 +387,7 @@ export const DEFAULT_SYNC_CONFIG: SyncConfig = {
   syncReviews: true,
   syncAnalytics: true,
   syncListings: true,
+  trackListingKeywords: true,
   rankCharts: ['topfree', 'topgrossing'],
   rankOverall: true,
   storeCountries: 'all',

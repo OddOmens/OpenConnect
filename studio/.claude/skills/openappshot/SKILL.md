@@ -333,6 +333,31 @@ appshot marketing card "My App" launch --style glow --format 1x1 --headline "Mee
 - The what-if scenarios answer "what could we get": more impressions at today's conversion, or converting like
   the best 28 days again. Conversion work (screenshots, product page) is where the studio comes in.
 
+## ASO (OpenConnect)
+
+App Store search for OpenConnect's apps. Reading needs the **Marketing** or **ASO changes** scope; tracking
+keywords and changing listings need **ASO changes**. `<app>` is OpenConnect's app id or name.
+
+```bash
+appshot aso apps                                        # every app side by side: score, waste, top 10, search
+appshot aso show "My App" --country US                  # listing per locale, keyword ranks, funnel, changes
+appshot aso keyword "habit tracker" --country US        # live top 25, suggestions, difficulty
+appshot aso track "My App" "habit tracker,routine" --country US
+appshot aso update "My App" en-US --keywords "habit,routine,streak,goals"     # plan only
+appshot aso update "My App" en-US --keywords "habit,routine,streak,goals" --apply
+```
+
+- Start with `aso apps`, then `aso show` for the app. Every keyword-field term is already tracked in its
+  language's storefront; `markets` lists them.
+- A better keyword field: no spaces after commas, no word twice, nothing already in the name or subtitle
+  (they're indexed together), no "app" or the category name, singular forms, all 100 characters used. Prefer
+  words with popularity ≥ 35 and difficulty ≤ 45, and check doubtful ones with `aso keyword`.
+- **Never write to App Store Connect without the user's yes.** Run `aso update` without `--apply`, show the user
+  every old → new line and the score change, and add `--apply` only after they agree. If it says a field
+  can't change (no version being prepared), tell them what to do in App Store Connect instead.
+- Ranks, popularity, difficulty and the score are estimates; listing text, the funnel and before/after figures
+  are Apple's. Say so when it matters, and judge a change after two weeks (`changes` shows the impact).
+
 ## API
 
 Everything the CLI does is plain HTTP on the same server (`/api/apps`, `/api/apps/:app/slides/:slide`,

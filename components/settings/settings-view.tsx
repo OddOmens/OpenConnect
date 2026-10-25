@@ -427,6 +427,9 @@ function SyncSettings({ initial }: { initial: SyncConfig }) {
         <Row label="App Store listings" hint="Name, subtitle and keywords in every locale, for ASO. Keyword ranks are checked with Ratings & Rankings.">
           <Switch checked={sync.syncListings} onCheckedChange={(v) => setSync({ ...sync, syncListings: v })} />
         </Row>
+        <Row label="Track keyword fields" hint="Rank every term in each locale's keyword field in that locale's storefront (German in Germany, Japanese in Japan), following the field as it changes. About one search per term a day.">
+          <Switch checked={sync.trackListingKeywords} disabled={!sync.syncListings} onCheckedChange={(v) => setSync({ ...sync, trackListingKeywords: v })} />
+        </Row>
       </div>
 
       <div className="space-y-3 border-t border-border pt-4">

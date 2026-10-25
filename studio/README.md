@@ -23,7 +23,8 @@ It starts with OpenConnect: `docker compose up -d` in the repo root runs the das
 ## Use it from Claude on your Mac
 
 1. In OpenConnect, **Settings → Security → API tokens**, create a token (e.g. "Claude on my Mac") and tick what
-   it may open: the **Screenshot studio**, **Marketing** (see [Marketing](#marketing)), or both. No token opens
+   it may open: the **Screenshot studio**, **Marketing** (see [Marketing](#marketing)), **ASO changes** (see
+   [ASO](#aso)), or several. No token opens
    the dashboard, settings or other tokens, and each can be revoked any time.
 2. On the Mac, in a checkout of this repo:
 
@@ -135,6 +136,26 @@ and dashboard figures, so Claude can write a launch post around real numbers and
 `[app]` is OpenConnect's app id, name or bundle id, or `all`. Over HTTP it's `GET /api/marketing/catalog`,
 `/api/marketing/stats`, `/api/forecast`, `/api/marketing/promo` and `/api/marketing` (PNG), each with
 `Authorization: Bearer <token>`; the catalog lists every parameter.
+
+### ASO
+
+The same CLI and connector read OpenConnect's ASO page and can change App Store listings. Reading works with
+the **Marketing** or **ASO changes** scope; tracking keywords and changing listings need **ASO changes**:
+
+| CLI | MCP tool | What it gives |
+| --- | --- | --- |
+| `appshot aso apps` | `aso_overview` (no app) | Every app: listing score, wasted keyword characters, keywords in the top 10, search impressions and conversion, storefronts to localize |
+| `appshot aso show <app> --country DE` | `aso_overview` | One app: listing per locale (live and the version being prepared), tracked keywords with rank, popularity and difficulty, search funnel, locale gaps, keyword ideas, changes with before/after impact |
+| `appshot aso keyword "<term>" --country US` | `aso_keyword` | A live search: top 25 apps, App Store suggestions, difficulty |
+| `appshot aso track <app> kw,kw --country US` | `aso_track_keywords` | Track more keywords (keyword-field terms are tracked automatically) |
+| `appshot aso update <app> en-US --keywords "…" [--apply]` | `aso_update_listing` | Plan a listing change (old → new, score before and after); with apply, write it to App Store Connect |
+| `appshot aso refresh <app>` | `aso_refresh` | Fetch the listing again and rank its keywords |
+| `appshot aso note <app> "New icon"` | `aso_note` | A note on the change timeline, measured before/after like a listing change |
+
+Listing changes are always planned first and written only with `--apply` / `apply: true`, after you agree.
+Apple lets keywords, the description, name and subtitle change only on a version being prepared; promotional
+text changes on the live version at once. Writing needs an App Store Connect key with the App Manager role.
+Over HTTP: `GET /api/aso` and `POST /api/aso` (`{ action: 'update-listing', app, locale, changes, apply }`).
 
 ### Per-app data
 

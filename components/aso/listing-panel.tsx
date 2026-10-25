@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { AlertCircle, AlertTriangle, Check, Copy, Globe, Info, Loader2, RefreshCw, RotateCcw, Wand2 } from 'lucide-react'
+import { AlertCircle, AlertTriangle, Check, Copy, Globe, Info, Loader2, RefreshCw, RotateCcw, Upload, Wand2 } from 'lucide-react'
 import { Section, Segmented, EmptyState } from '@/components/dashboard/section'
 import { Button } from '@/components/ui/button'
 import { selectSmCls, textareaCls } from '@/components/ui/field'
@@ -10,6 +10,7 @@ import { fmtCompact, fmtDate } from '@/lib/format'
 import { countryToFlag } from '@/lib/territories'
 import { LIMITS, auditListing, cleanKeywords, keywordCoverage, words, type AuditIssue, type KeywordTerm } from '@/lib/aso-audit'
 import type { AsoOverview, ListingLocale } from '@/lib/aso'
+import { asoAction } from './aso-view'
 
 const SEVERITY = {
   error: { icon: AlertCircle, cls: 'text-red-600 dark:text-red-400' },
@@ -84,7 +85,7 @@ function Issues({ issues }: { issues: AuditIssue[] }) {
   )
 }
 
-export function ListingPanel({ overview: o, onRefresh, refreshing }: { overview: AsoOverview; onRefresh: () => void; refreshing: boolean }) {
+export function ListingPanel({ overview: o, onRefresh, refreshing, onSaved }: { overview: AsoOverview; onRefresh: () => void; refreshing: boolean; onSaved: () => Promise<void> | void }) {
   const [kind, setKind] = useState<'live' | 'draft'>(o.listing.live.length ? 'live' : 'draft')
   const rows = (kind === 'draft' && o.listing.draft.length) || !o.listing.live.length ? o.listing.draft : o.listing.live
   const [locale, setLocale] = useState<string | null>(o.countryLocale)
@@ -127,11 +128,20 @@ export function ListingPanel({ overview: o, onRefresh, refreshing }: { overview:
       {draft && (
         <div className={cn('mb-4 rounded-md border px-3 py-2 text-xs', draft.editable ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-border bg-muted/40')}>
           Version {draft.version} is {STATE_LABEL[draft.state || ''] || draft.state?.toLowerCase().replace(/_/g, ' ')}.{' '}
-          {draft.editable ? 'Its keywords, subtitle and description can be changed in App Store Connect now.' : 'Keywords can change again with the version after it.'}
+          {draft.editable ? 'Its keywords, subtitle and description can be changed now: here, from Claude, or in App Store Connect.' : 'Keywords can change again with the version after it.'}
         </div>
       )}
 
-      {current && <LocaleDetail key={`${kind}:${current.locale}`} listing={current} overview={o} category={category} />}
+      {current && (
+        <LocaleDetail
+          key={`${kind}:${current.locale}`}
+          listing={current}
+          overview={o}
+          category={category}
+          saveTo={draft?.editable && o.listing.draft.some((l) => l.locale === current.locale) ? draft.version : null}
+          onSaved={onSaved}
+        />
+      )}
 
       <LocaleTable rows={rows} category={category} selected={current?.locale ?? null} onSelect={setLocale} />
       <LocaleGaps overview={o} />
@@ -139,9 +149,24 @@ export function ListingPanel({ overview: o, onRefresh, refreshing }: { overview:
   )
 }
 
-function LocaleDetail({ listing, overview: o, category }: { listing: ListingLocale; overview: AsoOverview; category: string | null }) {
+function LocaleDetail({
+  listing,
+  overview: o,
+  category,
+  saveTo,
+  onSaved,
+}: {
+  listing: ListingLocale
+  overview: AsoOverview
+  category: string | null
+  /** The version being prepared, when its keywords can be changed; null otherwise. */
+  saveTo: string | null
+  onSaved: () => Promise<void> | void
+}) {
   const [draft, setDraft] = useState(listing.keywords)
   const [copied, setCopied] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState<{ ok: boolean; text: string } | null>(null)
   const edited = { ...listing, keywords: draft }
   const audit = useMemo(() => auditListing(edited, { category }), [draft, listing, category]) // eslint-disable-line react-hooks/exhaustive-deps
   const original = useMemo(() => auditListing(listing, { category }), [listing, category])
@@ -167,6 +192,24 @@ function LocaleDetail({ listing, overview: o, category }: { listing: ListingLoca
       setTimeout(() => setCopied(false), 1500)
     } catch {
       // clipboard blocked
+    }
+  }
+
+  const save = async () => {
+    if (!saveTo || !window.confirm(`Change the ${listing.locale_name} keywords of version ${saveTo} in App Store Connect to:\n\n${draft}`)) return
+    setSaving(true)
+    setSaved(null)
+    try {
+      const plan = await asoAction({ action: 'update-listing', app: o.app.apple_id, locale: listing.locale, changes: { keywords: draft }, apply: true })
+      if (plan.blocked?.length) setSaved({ ok: false, text: plan.blocked.map((b: { reason: string }) => b.reason).join(' ') })
+      else {
+        setSaved({ ok: true, text: plan.applied ? `Saved to version ${saveTo}. It goes live when that version is released.` : 'Already the same in App Store Connect.' })
+        await onSaved()
+      }
+    } catch (err: any) {
+      setSaved({ ok: false, text: err.message })
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -217,15 +260,23 @@ function LocaleDetail({ listing, overview: o, category }: { listing: ListingLoca
             <Button size="sm" variant="outline" className="h-8" onClick={copy}>
               {copied ? <Check className="mr-1.5 h-3.5 w-3.5" /> : <Copy className="mr-1.5 h-3.5 w-3.5" />} {copied ? 'Copied' : 'Copy'}
             </Button>
+            {changed && saveTo && (
+              <Button size="sm" className="h-8" onClick={save} disabled={saving || len(draft) > LIMITS.keywords} title={`Write these keywords to version ${saveTo} in App Store Connect`}>
+                {saving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Upload className="mr-1.5 h-3.5 w-3.5" />} Save to {saveTo}
+              </Button>
+            )}
             {changed && (
               <Button size="sm" variant="ghost" className="h-8" onClick={() => setDraft(listing.keywords)}>
                 <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Reset
               </Button>
             )}
             <span className="text-xs text-muted-foreground">
-              {changed ? <>Score {original.score} → <b className="text-foreground">{audit.score}</b>. Paste it into App Store Connect with your next version.</> : 'Edit here to try changes; nothing is sent to Apple.'}
+              {changed ? (
+                <>Score {original.score} → <b className="text-foreground">{audit.score}</b>. {saveTo ? 'Nothing is sent to Apple until you save.' : 'Paste it into App Store Connect with your next version.'}</>
+              ) : saveTo ? 'Edit to try changes; Save writes them to the version being prepared.' : 'Edit here to try changes; nothing is sent to Apple.'}
             </span>
           </div>
+          {saved && <p className={cn('text-xs', saved.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400')}>{saved.text}</p>}
         </div>
 
         <Field label="Promotional text" value={listing.promotional_text} max={LIMITS.promotional_text} hint="Not indexed. Can be changed any time without a new version." />

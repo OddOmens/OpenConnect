@@ -65,7 +65,7 @@
     "react-dom": "^19.3.0",
     "recharts": "^2.15.0",
     "roughjs": "^4.6.6",
-    "satori": "^0.12.2",
+    "satori": "^0.33.5",
     "tailwind-merge": "^2.6.0"
   },
   "devDependencies": {

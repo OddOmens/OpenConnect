@@ -31,7 +31,7 @@ const nextConfig = {
   // The app never uses next/image; turning the optimizer off keeps its endpoint (and its
   // known advisories) out of reach.
   images: { unoptimized: true },
-  serverExternalPackages: ['better-sqlite3', '@resvg/resvg-js'],
+  serverExternalPackages: ['better-sqlite3', '@resvg/resvg-js', 'satori'],
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },

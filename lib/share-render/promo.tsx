@@ -97,7 +97,7 @@ function colours(style: PromoStyleId, accent: string): Omit<Palette, 'frame'> {
     }
     case 'glow':
       return {
-        background: '#050507', image: `radial-gradient(circle at 50% 0%, ${rgba(accent, 0.55)} 0%, ${rgba(accent, 0.12)} 45%, rgba(5,5,7,0) 75%)`,
+        background: '#050507', image: `radial-gradient(circle at 50% 50%, ${rgba(accent, 0.55)} 0%, ${rgba(accent, 0.12)} 45%, rgba(5,5,7,0) 75%)`,
         fg: '#fafafa', muted: '#a1a1aa', accent: mix(accent, '#ffffff', 0.25), onAccent: '#09090b', surface: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.12)',
         badgeBg: '#fafafa', badgeFg: '#09090b',
       };

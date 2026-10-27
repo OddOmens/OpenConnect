@@ -28,6 +28,7 @@
 ### Security
 - **Next.js 16.4.3**, fixing a critical remote code execution in the image optimizer (OpenConnect has it turned off) and a denial of service in Server Actions. Next.js now refuses to build 16.4.0.
 - The screenshot studio's dependencies: body-parser (denial of service), fast-uri, ip-address and zod; zod and postcss-selector-parser in the dashboard too. The studio container moves to **Playwright 1.64.1** and its Chromium.
+- **satori 0.33.5**, the card layout engine, which escapes text properly in the SVG it draws (GHSA-wx4j-mvgx-mqwp): review text, app names and descriptions come from other people. Cards look the same apart from headlines wrapping more evenly.
 - Every other dependency is on its latest compatible release (React 19.3.1, Radix UI, Lucide, Express 5.3, Vite 8.3.5, dotted-map 3).
 
 ### Fixed

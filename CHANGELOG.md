@@ -31,6 +31,11 @@
 - The dashboard's icons are on lucide-react 1.x, the same as the studio.
 - **Share is now Marketing**, at `/marketing`. The old `/share` address redirects there.
 
+### Security
+- **Next.js 16.4.3**, fixing a critical remote code execution in the image optimizer (OpenConnect has it turned off) and a denial of service in Server Actions. Next.js now refuses to build 16.4.0.
+- The screenshot studio's dependencies: body-parser (denial of service), fast-uri, ip-address and zod; zod and postcss-selector-parser in the dashboard too. The studio container moves to **Playwright 1.64.1** and its Chromium.
+- Every other dependency is on its latest compatible release (React 19.3.1, Radix UI, Lucide, Express 5.3, Vite 8.3.5, dotted-map 3).
+
 ### Fixed
 - **Revoking an API token** works again: Revoke asks inside the page (Revoke / Cancel) instead of a browser pop-up that some browsers block, and says so if the server refuses. Full re-sync and Reset layout ask the same way.
 

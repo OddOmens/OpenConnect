@@ -76,8 +76,9 @@ export function InteractiveMap({ points, focus, onFocus, renderTooltip }: {
       points.flatMap((p) => {
         const t = TERRITORY_BY_CODE[p.code]
         if (!t) return []
-        const { x, y } = MAP.getPin({ lat: t.lat, lng: t.lng })
-        return [{ ...p, x, y, r: 0.35 + p.weight * 0.85 }]
+        const pin = MAP.getPin({ lat: t.lat, lng: t.lng })
+        if (!pin) return []
+        return [{ ...p, x: pin.x, y: pin.y, r: 0.35 + p.weight * 0.85 }]
       }),
     [points]
   )

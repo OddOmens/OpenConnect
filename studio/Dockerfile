@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # OpenConnect's screenshot studio. Playwright's image ships the headless Chromium (and its system
 # libraries) that rendering needs. Keep the tag in step with "playwright" in package-lock.json.
-FROM mcr.microsoft.com/playwright:v1.64.0-noble
+FROM mcr.microsoft.com/playwright:v1.64.1-noble
 
 WORKDIR /app
 COPY package.json package-lock.json ./

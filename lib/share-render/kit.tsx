@@ -275,8 +275,9 @@ export function DottedWorld({ width, pins, theme, dotColor, dotOpacity = 1 }: { 
       {pins.map((p) => {
         const t = TERRITORY_BY_CODE[p.code];
         if (!t) return null;
-        const { x, y } = WORLD.getPin({ lat: t.lat, lng: t.lng });
-        return <circle key={p.code} cx={x} cy={y} r={p.r} fill={p.color} fillOpacity={p.opacity ?? 1} {...(p.stroke ? { stroke: p.stroke, strokeWidth: 0.16 } : {})} />;
+        const pin = WORLD.getPin({ lat: t.lat, lng: t.lng });
+        if (!pin) return null;
+        return <circle key={p.code} cx={pin.x} cy={pin.y} r={p.r} fill={p.color} fillOpacity={p.opacity ?? 1} {...(p.stroke ? { stroke: p.stroke, strokeWidth: 0.16 } : {})} />;
       })}
     </svg>
   );

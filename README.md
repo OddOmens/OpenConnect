@@ -25,10 +25,13 @@ App Store Connect spreads your numbers over several slow pages and only keeps da
 - **Customer reviews:** every review from every storefront, with developer responses.
 - **Impressions & product page views** from Apple's Analytics Reports API.
 - **Ratings & rankings in 175 storefronts:** rating counts and averages per country, plus where your apps sit in the Top Free, Top Paid and Top Grossing charts, overall and by category.
+- **ASO:** daily App Store search ranks for the keywords you track in any storefront, with a popularity estimate, a difficulty score and the apps you're up against; an audit of every locale's name, subtitle and keyword field that finds wasted characters, with a keyword editor that cleans them up; your search funnel (search vs browse conversion, by storefront); and every listing change with search and downloads two weeks before and after it. See [ASO](#aso).
+- **Signal notifications:** a message the moment an app enters a top 100 chart, and a daily recap of every app (downloads, proceeds, ratings, new reviews and chart moves) at the time you pick. See [Notifications](#notifications).
 - **World map, device and territory breakdowns.**
 - **Sync report:** after every sync you get a popup that lists exactly what changed. It covers new and revised report dates, per-app deltas, new reviews, rating changes, and chart moves.
+- **Projections:** where first-time downloads, impressions, page views and proceeds are heading over the next 30, 90 or 365 days, with likely ranges, your impressions → page views → downloads funnel, a what-if for more impressions or a better conversion rate, and when you'll pass your next download milestone.
 - **Marketing:** render PNG stats cards to post anywhere, plus promo cards for one app (launch, what's new, screenshots, reviews, download) built from its App Store listing, in five styles, any accent colour and four sizes.
-- **Screenshot studio:** design, localize and export App Store screenshots for iPhone, iPad and Mac at `/studio` (see [studio/README.md](studio/README.md)). Claude can drive it through its CLI and MCP server with an API token, from your Mac.
+- **Screenshot studio:** design, localize and export App Store screenshots for iPhone, iPad and Mac at `/studio` (see [studio/README.md](studio/README.md)). Claude can drive it, and Marketing, through its CLI and MCP server with an API token, from your Mac.
 - **Fully customizable:** show, hide or reorder every section, metric, column and chart series. Light, dark or system theme.
 - **Incremental sync:** a routine sync takes a handful of requests, not a 365-day backfill.
 - **Private by default:** one password protects everything, and the container runs read-only with no Linux capabilities.
@@ -79,6 +82,8 @@ Create a **Team Key** in App Store Connect → Users and Access → Integrations
 | Sales, proceeds, IAPs, subscriptions | **Sales** (or Finance / Admin) |
 | Impressions & page views | **Admin** once, to ask Apple to start generating analytics reports. A Sales key can download them afterwards. |
 | Ratings & rankings in 175 storefronts | Nothing. Uses Apple's public lookup and top-chart feeds. |
+| App Store listings (ASO) | **App Manager**, Developer or Marketing (or Admin) |
+| Keyword ranks (ASO) | Nothing. Uses Apple's public search. |
 
 Your **Vendor Number** is in App Store Connect → Payments and Financial Reports, at the top left under your name.
 
@@ -167,6 +172,37 @@ When a sync you started finishes, a popup shows exactly what changed:
 
 Scheduled syncs don't pop up. Open **Sync → What changed** to see the report of the latest run of each job.
 
+## ASO
+
+The **ASO** page shows how your apps do in App Store search, and what to change. It has the dashboard's app sidebar: **All Apps** compares every app (listing score, wasted keyword characters, keywords in the top 10, search impressions and conversion, storefronts to localize) and says what to do first in each; pick an app for the details, and its storefront in the top bar.
+
+- **What to do next:** plain recommendations from everything below: popular keywords missing from the listing, wasted keyword characters, search converting worse than browse, storefronts worth localizing, rank moves, and the best openings.
+- **Keyword ranks:** every term in each locale's keyword field is tracked automatically in that language's storefront (English (U.S.) in the U.S., German in Germany, Japanese in Japan…) and follows the field when you change it in App Store Connect; tabs switch between the listing's languages. Add up to 60 more per app by hand, in any storefront. Each is searched once a day with Ratings & Rankings (and as soon as you add it) and shows your rank in the top 200, the change over 7 days and 90 days of history, whether its words are in your name, subtitle or keyword field, and the top results. Open a keyword for the top 10 now and what App Store search suggests around it. **Popularity** (0–100) is estimated from App Store search suggestions: the fewer letters someone types before the keyword is suggested, the more it's searched. **Difficulty** (0–100) comes from the ratings of the top 10 and how many have the keyword in their name. ★ marks openings: searched often, beatable, and you're not in the top 10 yet. Words that recur in your competitors' names are offered as new keywords.
+- **Listing:** the name, subtitle, keywords and promotional text of every locale, as App Store Connect holds them, on the store and for the version you're preparing. Each locale gets a score and a list of fixes: spaces after commas, repeated keywords, words already in the name or subtitle, words search adds on its own, unused room. The keyword editor runs the same checks as you type, **Clean up** removes the waste, and **Copy** puts the result on your clipboard. While a version is being prepared, **Save** writes the keywords to it in App Store Connect (after you confirm); otherwise nothing is sent to Apple. **Locales worth adding** lists storefronts where people find you in search without a listing in their language.
+- **Search funnel:** impressions → product page views → Get taps for search, browse, other apps and websites, with conversion against the period before, by week and by storefront. From the analytics reports.
+- **Changes & impact:** keyword and description changes from each version's history (fetched once per version), name, subtitle and promotional text changes recorded at each sync, and notes you add (new screenshots, Search Ads). Each shows search impressions, tap-through, conversion, first downloads and keyword ranks in the 14 days before and after it.
+
+**Where the numbers come from.** Listing text, the search funnel and the before/after figures are Apple's own, from the App Store Connect API and its analytics reports. Ranks come from Apple's public search API, which follows App Store search closely but not exactly (it isn't personalized and has no Search Ads). Popularity, difficulty and the listing score are OpenConnect's estimates: Apple only publishes keyword popularity in Search Ads, and has no listing score.
+
+Listings are fetched with **Sales & analytics**; turn that off in **Settings → Sync → App Store listings**, and the automatic keyword-field tracking (about one search per term a day) in **Track keyword fields**. `GET /api/aso?app=<id>&country=US&days=30` returns everything on the page, and without `app` the All Apps comparison, to API tokens with the Marketing or ASO changes scope.
+
+**ASO from Claude.** The `appshot` CLI and MCP connector have ASO tools (`aso_overview`, `aso_keyword`, `aso_track_keywords`, `aso_update_listing`, `aso_refresh`, `aso_note`; `appshot aso …`), so Claude on your Mac can read all of this and propose listing changes. `aso_update_listing` plans first and shows old → new text and the score before and after; it writes to App Store Connect only when called again with `apply`, which Claude is told to do only after you agree. Changing listings needs a token with the **ASO changes** scope and an App Store Connect key with the App Manager role (or Admin). Apple only lets keywords, the description, name and subtitle change on a version being prepared; promotional text changes on the live version straight away.
+
+## Notifications
+
+OpenConnect can message you on Signal through a [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) server you run, with a Signal account linked to it. Set it up in **Settings → Notifications**:
+
+- **Signal API address:** where OpenConnect reaches that server, e.g. `http://signal-api:8080` when both containers share a Docker network.
+- **Send from:** the account linked to the server, as `+15551234567`.
+- **Send to:** a phone number, or the name of a group that account is in (e.g. `Apple Apps`).
+
+Then pick what to send:
+
+- **When an app enters a chart:** right after each ratings & rankings check, one message listing every top 100 chart an app wasn't in at the check before, e.g. `#17 Top Free Productivity · Austria`. Each entry is sent once. Chart checks run as often as **Settings → Sync → Ratings & Rankings** says, so set that to every 24 hours (or less) for timely alerts.
+- **Daily recap:** at the time and time zone you choose, for each app: its last reported day of first-time downloads and proceeds (with the 7-day average), ratings, reviews since the last recap, and chart moves: entered, up, down and left the top 100. Apps with nothing to report are listed on one line. `GET /api/notify` returns the same recap as text (also open to API tokens with the Marketing scope).
+
+**Save & send a test** checks the setup, and **Send the recap now** shows what the recap looks like.
+
 ## HTTPS with Tailscale
 
 Browsers block some features (like downloading marketing cards) on plain `http://` pages that aren't `localhost`. To get HTTPS on your tailnet at `https://openconnect.<tailnet>.ts.net`:
@@ -182,7 +218,7 @@ This needs MagicDNS and HTTPS certificates enabled for your tailnet (admin conso
 
 The studio runs as a second container, `openconnect-studio`, which includes headless Chromium for rendering. It has no port of its own: the dashboard serves it at **`/studio`**, behind the same sign-in. Its projects, uploads and exports live in `./data/studio`.
 
-**Claude on your Mac.** Create a token in **Settings → Security → API tokens**. A token only opens the studio, never your sales data or settings. Then set `OPENCONNECT_URL` (your OpenConnect address) and `OPENCONNECT_TOKEN` on the Mac and install the CLI, skill and MCP connector. The steps are in [studio/README.md](studio/README.md#use-it-from-claude-on-your-mac).
+**Claude on your Mac.** Create a token in **Settings → Security → API tokens** and tick what it may open: the **Screenshot studio**, **Marketing**, **ASO changes**, or several. A Marketing token can render cards and read the figures they show, the projections and ASO (`/api/marketing/*`, `/api/forecast`, `/api/aso`); an ASO changes token can also track keywords and change App Store listings (see [ASO](#aso)); no token opens the dashboard, settings or other tokens. Tokens made before scopes existed open the studio only. Then set `OPENCONNECT_URL` (your OpenConnect address) and `OPENCONNECT_TOKEN` on the Mac and install the CLI, skill and MCP connector. The steps are in [studio/README.md](studio/README.md#use-it-from-claude-on-your-mac).
 
 ## Updating, backups and data
 

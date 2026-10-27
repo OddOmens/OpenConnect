@@ -1,6 +1,6 @@
 ---
 name: openappshot
-description: Build, revise and export App Store screenshots with the OpenConnect screenshot studio. Use when the user asks to make, update or export App Store / Mac App Store screenshots, capture screenshots of their iOS/iPad/Mac app for the store, write screenshot headlines, or change the style of an app's screenshots in the studio.
+description: Build, revise and export App Store screenshots with the OpenConnect screenshot studio, and use OpenConnect Marketing. Use when the user asks to make, update or export App Store / Mac App Store screenshots, capture screenshots of their iOS/iPad/Mac app for the store, write screenshot headlines, or change the style of an app's screenshots in the studio; or to make social/marketing cards or posts for their app, or to read its App Store figures (downloads, proceeds, impressions, conversion) and projections from OpenConnect.
 ---
 
 # Screenshot Studio
@@ -309,6 +309,54 @@ Each device renders every export size chosen in the editor (App tab), natively, 
 iPhone Large 1320×2868 **and** Medium 1206×2622 (Medium is required), iPhone Duo inner 2007×2853
 (required from April 2027 for iOS 27.1 SDK apps), iPad 13" 2064×2752, Mac 2880×1800. Landscape sizes are
 available too.
+
+## Marketing (OpenConnect)
+
+OpenConnect's Marketing page and dashboard figures, through the same CLI. The token needs the **Marketing**
+scope (Settings → Security → API tokens); if a command says it doesn't have it, ask the user for one that does.
+`[app]` is OpenConnect's app id, name or bundle id, or `all` (not the studio's app id).
+
+```bash
+appshot marketing apps                                  # apps, card templates, formats, styles, stat tiles
+appshot marketing stats "My App" --range 90d            # the figures the cards show, vs the previous period
+appshot marketing forecast "My App" --horizon 90        # projections, funnel, what-if, next milestone
+appshot marketing promo "My App"                        # screenshot ids, default wording, quotable reviews
+appshot marketing card "My App" overview --range 30d --format 9x16
+appshot marketing card "My App" launch --style glow --format 1x1 --headline "Meet\nMy App" --shots s:abc,a:1
+```
+
+- Read `stats` (and `forecast` when talking about the future) before writing a post, and quote figures exactly
+  as returned. Projections are estimates with a range, never promises: say "on track for about X".
+- Stats cards: overview, reach, map, rating, review, milestone (4x5 or 9x16). Promo cards for one app: launch,
+  update, screens, loved, reviews, download (1x1, 4x5, 9x16, 16x9). Open the PNG it prints and look at it
+  before handing it over.
+- The what-if scenarios answer "what could we get": more impressions at today's conversion, or converting like
+  the best 28 days again. Conversion work (screenshots, product page) is where the studio comes in.
+
+## ASO (OpenConnect)
+
+App Store search for OpenConnect's apps. Reading needs the **Marketing** or **ASO changes** scope; tracking
+keywords and changing listings need **ASO changes**. `<app>` is OpenConnect's app id or name.
+
+```bash
+appshot aso apps                                        # every app side by side: score, waste, top 10, search
+appshot aso show "My App" --country US                  # listing per locale, keyword ranks, funnel, changes
+appshot aso keyword "habit tracker" --country US        # live top 25, suggestions, difficulty
+appshot aso track "My App" "habit tracker,routine" --country US
+appshot aso update "My App" en-US --keywords "habit,routine,streak,goals"     # plan only
+appshot aso update "My App" en-US --keywords "habit,routine,streak,goals" --apply
+```
+
+- Start with `aso apps`, then `aso show` for the app. Every keyword-field term is already tracked in its
+  language's storefront; `markets` lists them.
+- A better keyword field: no spaces after commas, no word twice, nothing already in the name or subtitle
+  (they're indexed together), no "app" or the category name, singular forms, all 100 characters used. Prefer
+  words with popularity ≥ 35 and difficulty ≤ 45, and check doubtful ones with `aso keyword`.
+- **Never write to App Store Connect without the user's yes.** Run `aso update` without `--apply`, show the user
+  every old → new line and the score change, and add `--apply` only after they agree. If it says a field
+  can't change (no version being prepared), tell them what to do in App Store Connect instead.
+- Ranks, popularity, difficulty and the score are estimates; listing text, the funnel and before/after figures
+  are Apple's. Say so when it matters, and judge a change after two weeks (`changes` shows the impact).
 
 ## API
 

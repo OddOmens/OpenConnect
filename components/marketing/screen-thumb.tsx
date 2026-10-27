@@ -10,6 +10,7 @@ export interface PromoScreens {
   defaults: string[]
   copy: Record<PromoTemplateId, { headline: string; tagline: string; cta: string; notes: string }>
   quotes: { index: number; body: string; reviewer: string; rating: number }[]
+  version: string // goes in the cards' URLs, so the browser can keep them
 }
 
 /** A screenshot as a small iPhone, numbered when the cards use it. */

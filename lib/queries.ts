@@ -37,8 +37,8 @@ function salesWhere(f: Filter, coarsest: Granularity = 'Y'): [string, any[]] {
 }
 
 const PROCEEDS_USD = `s.units * s.proceeds_per_unit / COALESCE(fx.per_usd, 1)`;
-const FX_JOIN = `LEFT JOIN fx_rates fx ON fx.currency = s.proceeds_currency`;
-const SUMS = `
+export const FX_JOIN = `LEFT JOIN fx_rates fx ON fx.currency = s.proceeds_currency`;
+export const SUMS = `
   COALESCE(SUM(CASE WHEN s.category = 'download' THEN s.units END), 0) AS first_time,
   COALESCE(SUM(CASE WHEN s.category = 'redownload' THEN s.units END), 0) AS redownloads,
   COALESCE(SUM(CASE WHEN s.category = 'update' THEN s.units END), 0) AS updates,
@@ -364,6 +364,32 @@ export function appLeaderboard(f: Filter, currency: string) {
   return (getDb()
     .prepare(`SELECT s.apple_id, ${SUMS} FROM sales s ${FX_JOIN} WHERE ${where} GROUP BY s.apple_id ORDER BY first_time DESC`)
     .all(...params) as any[]).map((r) => ({ apple_id: r.apple_id as string, first_time: r.first_time as number, proceeds: r.proceeds_usd * rate }));
+}
+
+/**
+ * Daily sales and engagement sums for the last `days` days Apple has reported (daily rows only),
+ * plus the last day reported for each across all apps: a day without rows up to then is a zero.
+ */
+export function dailyMetrics(appId: string | undefined, days: number) {
+  const db = getDb();
+  const last = (table: string) => (db.prepare(`SELECT MAX(date) AS d FROM ${table} WHERE granularity = 'D'`).get() as { d: string | null }).d;
+  const salesLast = last('sales');
+  const engagementLast = last('engagement');
+  const latest = [salesLast, engagementLast].filter((d): d is string => !!d).sort().pop();
+  const from = latest ? addDays(latest, -days) : pacificToday();
+  const [where, params] = salesWhere({ appId, start: from }, 'D');
+  const sales = db.prepare(`SELECT s.date, ${SUMS} FROM sales s ${FX_JOIN} WHERE ${where} GROUP BY s.date`).all(...params) as
+    ({ date: string } & Record<'first_time' | 'redownloads' | 'updates' | 'iap' | 'proceeds_usd', number>)[];
+  const [eWhere, eParams] = engagementWhere({ appId, start: from }, 'D');
+  const engagement = db.prepare(`SELECT e.date, ${ENGAGEMENT_SUMS} FROM engagement e WHERE ${eWhere} GROUP BY e.date`).all(...eParams) as
+    { date: string; impressions: number; page_views: number }[];
+  return { sales, engagement, salesLast, engagementLast };
+}
+
+/** First-time downloads of all time (daily, monthly and yearly history). */
+export function lifetimeDownloads(appId?: string): number {
+  const [app, params] = appClause(appId);
+  return (getDb().prepare(`SELECT COALESCE(SUM(units), 0) AS n FROM sales WHERE ${app} AND category = 'download'`).get(...params) as { n: number }).n;
 }
 
 // ---------------------------------------------------------------------------

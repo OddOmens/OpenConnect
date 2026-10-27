@@ -10,7 +10,7 @@ const STUDIO = (process.env.OPENCONNECT_STUDIO_URL || '').replace(/\/+$/, '');
  * page signed out goes to sign-in and comes back.
  */
 export function studioGuard(request: Request): Response | null {
-  const denied = guard(request, { apiToken: true });
+  const denied = guard(request, { apiToken: 'studio' });
   if (!denied) return null;
   if (denied.status === 401 && request.method === 'GET' && !request.headers.has('authorization') && (request.headers.get('accept') || '').includes('text/html')) {
     const url = new URL(request.url);

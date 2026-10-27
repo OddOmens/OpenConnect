@@ -1,9 +1,10 @@
-// Marketing promo cards: Launch, What's New, Screenshots, Loved By, Reviews and Download. Unlike the
+// Marketing promo cards: Launch, What's New, Screenshots, Features, App Store Page, Loved By,
+// Reviews, Top Rated, Milestone and Download. Unlike the
 // stats cards these are made to sell the app, so they come in several styles and an accent
 // colour, and their wording can be overridden.
 
 import type { PromoFormatId, PromoStyleId, PromoTemplateId } from '@/lib/prefs';
-import { defaultCopy, noteBullets, type PromoData } from '@/lib/marketing';
+import { defaultCopy, featureList, noteBullets, type PromoData } from '@/lib/marketing';
 import { DottedWorld, Icon, STAR_PATH, STAR_COLOR, WORLD_H, WORLD_W, fmtCompact, fmtDay } from './kit';
 import { TERRITORIES } from '@/lib/territories';
 
@@ -206,6 +207,20 @@ function Chip({ children, p, size = 26 }: { children: React.ReactNode; p: Palett
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: size * 0.4, height: size * 2.3, padding: `0 ${size * 0.9}px`, borderRadius: size * 1.15, background: p.surface, border: `2px solid ${p.border}`, fontSize: size, fontWeight: 600, color: p.fg }}>
       {children}
+    </div>
+  );
+}
+
+/** A tick in an accent circle and its line of text: release notes and features. */
+function CheckItem({ text, size, p }: { text: string; size: number; p: Palette }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 22 }}>
+      <div style={{ display: 'flex', flexShrink: 0, alignItems: 'center', justifyContent: 'center', width: size * 1.25, height: size * 1.25, marginTop: size * 0.06, borderRadius: size, background: p.accent }}>
+        <svg width={size * 0.8} height={size * 0.8} viewBox="0 0 24 24" fill="none" stroke={p.onAccent} strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M20 6 9 17l-5-5" />
+        </svg>
+      </div>
+      <div style={{ display: 'block', flex: 1, fontSize: size, lineHeight: 1.35, lineClamp: 2 }}>{text}</div>
     </div>
   );
 }
@@ -429,16 +444,7 @@ function Update({ data, images, o, p }: Props) {
   const items = fitting(all, (b) => textLines(b, fs, bulletW, 2) * fs * 1.35, bulletGap, budget, 1);
   const notes = (
     <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, gap: bulletGap, padding: notesPad, borderRadius: 32, background: p.surface, border: `2px solid ${p.border}` }}>
-      {items.map((b, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 22 }}>
-          <div style={{ display: 'flex', flexShrink: 0, alignItems: 'center', justifyContent: 'center', width: fs * 1.25, height: fs * 1.25, marginTop: fs * 0.06, borderRadius: fs, background: p.accent }}>
-            <svg width={fs * 0.8} height={fs * 0.8} viewBox="0 0 24 24" fill="none" stroke={p.onAccent} strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M20 6 9 17l-5-5" />
-            </svg>
-          </div>
-          <div style={{ display: 'block', flex: 1, fontSize: fs, lineHeight: 1.35, lineClamp: 2 }}>{b}</div>
-        </div>
-      ))}
+      {items.map((b, i) => <CheckItem key={i} text={b} size={fs} p={p} />)}
     </div>
   );
   const footer = (
@@ -749,6 +755,333 @@ function Download({ data, images, o, p }: Props) {
   );
 }
 
+/** App icon and name on the left, the App Store button on the right. */
+function Footer({ data, icon, o, p, size }: { data: PromoData; icon: string | null; o: PromoOptions; p: Palette; size: number }) {
+  return (
+    <div style={{ display: 'flex', flexShrink: 0, alignItems: 'center', justifyContent: 'space-between', gap: 24 }}>
+      <AppLine data={data} icon={icon} p={p} size={size} />
+      {o.showBadge && <Badge p={p} cta={o.cta} scale={size / 88} />}
+    </div>
+  );
+}
+
+function Feature({ data, images, o, p }: Props) {
+  const { format } = o;
+  const landscape = format === '16x9';
+  const tall = format === '9x16';
+  const square = format === '1x1';
+  const { width: W, height: H } = PROMO_SIZES[format];
+  const pad = landscape ? 96 : tall ? 88 : 72;
+  const headline = headlineOf(data, o);
+  const sub = tagline(data, o);
+  const shot = images.screenshots[0];
+  const footerSize = square ? 64 : tall ? 88 : 80;
+  // The phone stands beside the text, or under it on 9:16 (where it runs off the bottom).
+  const phoneW = shot ? (landscape ? 430 : tall ? 560 : square ? 290 : 350) : 0;
+  const colW = landscape ? 1040 : tall || !shot ? W - pad * 2 : W - pad * 2 - phoneW - (square ? 44 : 56);
+  const headSize = square ? 70 : landscape ? 96 : tall ? 120 : 84;
+  const subSize = square ? 26 : tall ? 36 : 30;
+  const fs = square ? 26 : tall ? 38 : landscape ? 34 : 30;
+  const gap = square ? 22 : tall ? 36 : 30;
+  const itemGap = square ? 14 : 22;
+  const all = noteBullets(o.notes ?? featureList(data.listing?.description ?? '').join('\n'), 6);
+  // As many features as fit under the headline and tagline.
+  const textH = (tall ? H * 0.5 : H - pad * 2 - footerSize - 40) - (tall ? footerSize + gap : 0);
+  const budget = textH - headlineHeight(headline, headSize, colW, 3) - gap - (sub ? textLines(sub, subSize, colW, 3) * subSize * 1.35 + gap : 0);
+  const items = fitting(all, (f) => textLines(f, fs, colW - fs * 1.25 - 22, 2) * fs * 1.35, itemGap, budget);
+  const text = (
+    <div style={{ display: 'flex', flexDirection: 'column', width: colW, gap }}>
+      <Headline text={headline} size={headSize} p={p} lines={3} />
+      <Tagline text={sub} size={subSize} p={p} lines={3} />
+      {items.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: itemGap }}>
+          {items.map((f, i) => <CheckItem key={i} text={f} size={fs} p={p} />)}
+        </div>
+      )}
+    </div>
+  );
+  const phone = shot ? <Phone shot={shot} width={phoneW} p={p} /> : <AppIcon src={images.icon} size={landscape ? 380 : 300} p={p} />;
+  if (tall) {
+    return (
+      <Canvas format={format} p={p} pad={pad}>
+        <Footer data={data} icon={images.icon} o={o} p={p} size={footerSize} />
+        <div style={{ display: 'flex', marginTop: gap * 1.6 }}>{text}</div>
+        <div style={{ display: 'flex', flex: 1, justifyContent: 'center', alignItems: shot ? 'flex-start' : 'center', marginTop: 64, marginBottom: shot ? -pad - 600 : 0 }}>{phone}</div>
+      </Canvas>
+    );
+  }
+  return (
+    <Canvas format={format} p={p} pad={pad}>
+      <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'space-between', gap: 56 }}>
+        {text}
+        {(shot || landscape) && <div style={{ display: 'flex', flex: 1, justifyContent: 'center' }}>{phone}</div>}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', paddingTop: 40, ...(landscape ? { width: colW } : {}) }}>
+        <Footer data={data} icon={images.icon} o={o} p={p} size={footerSize} />
+      </div>
+    </Canvas>
+  );
+}
+
+/** An App Store product page, as it looks on an iPhone: icon, name, Get button, the numbers, screenshots. */
+function Store({ data, images, o, p }: Props) {
+  const { format } = o;
+  const landscape = format === '16x9';
+  const tall = format === '9x16';
+  const square = format === '1x1';
+  const { width: W } = PROMO_SIZES[format];
+  const pad = landscape ? 96 : tall ? 88 : 72;
+  const headline = headlineOf(data, o);
+  const paper = reviewPaper(o.style, p);
+  const leftW = 640; // 16:9: headline on the left, the page on the right
+  const sheetW = landscape ? W - pad * 2 - leftW : W - pad * 2;
+  const sp = square ? 36 : 44;          // the page's padding
+  const u = square ? 0.86 : tall ? 1.1 : 1; // type and icon scale
+  const iconSize = Math.round(150 * u);
+  const sub = tagline(data, o) || data.listing?.genre || '';
+  const paid = data.listing?.price && data.listing.price !== 'Free' ? data.listing.price : null;
+  const get = o.cta || paid || 'Get';
+  const dl = downloadsLabel(data.downloads);
+  const hasRating = o.showRating && data.rating != null && data.ratingCount > 0;
+  // The info strip under the title, as on the App Store.
+  const facts: { top: string; value: React.ReactNode; bottom: React.ReactNode }[] = [];
+  if (hasRating) facts.push({ top: `${fmtCompact(data.ratingCount)} RATINGS`, value: data.rating!.toFixed(1), bottom: <StarRow rating={data.rating!} size={Math.round(22 * u)} gap={3} empty={paper.empty} /> });
+  if (dl) facts.push({ top: 'DOWNLOADS', value: dl, bottom: 'worldwide' });
+  if (data.countries > 1) facts.push({ top: 'COUNTRIES', value: String(data.countries), bottom: `of ${data.storefronts}` });
+  if (data.listing?.genre && facts.length < (square ? 3 : 4)) facts.push({ top: 'CATEGORY', value: <Icon name="bag" size={Math.round(40 * u)} color={paper.muted} />, bottom: data.listing.genre });
+  const shown = facts.slice(0, square ? 3 : 4);
+  const count = tall ? 2 : 3;
+  const shots = images.screenshots.slice(0, count);
+  const shotGap = Math.round(20 * u);
+  const shotW = Math.floor((sheetW - sp * 2 - shotGap * (count - 1)) / count);
+  const sheet = (
+    <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, width: sheetW, padding: sp, gap: Math.round(34 * u), borderRadius: `${48 * u}px ${48 * u}px 0 0`, background: paper.bg, border: `2px solid ${paper.border}`, color: paper.fg }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: Math.round(30 * u) }}>
+        <AppIcon src={images.icon} size={iconSize} p={p} />
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, gap: 6 * u }}>
+          <div style={{ display: 'block', fontSize: 44 * u, fontWeight: 800, letterSpacing: -1, lineHeight: 1.1, lineClamp: 1 }}>{data.name}</div>
+          {sub && <div style={{ display: 'block', fontSize: 26 * u, lineHeight: 1.3, color: paper.muted, lineClamp: 2 }}>{sub}</div>}
+          <div style={{ display: 'flex', marginTop: 10 * u }}>
+            <div style={{ display: 'flex', alignItems: 'center', height: 54 * u, padding: `0 ${34 * u}px`, borderRadius: 999, background: o.accent, color: luminance(o.accent) > 0.45 ? '#0a0a0a' : '#ffffff', fontSize: 26 * u, fontWeight: 800, letterSpacing: 0.5 }}>
+              {get.toUpperCase()}
+            </div>
+          </div>
+        </div>
+      </div>
+      {shown.length > 0 && (
+        <div style={{ display: 'flex', paddingTop: 26 * u, paddingBottom: 26 * u, borderTop: `2px solid ${paper.border}`, borderBottom: `2px solid ${paper.border}` }}>
+          {shown.map((f, i) => (
+            <div key={i} style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', gap: 8 * u, borderLeft: i ? `2px solid ${paper.border}` : 'none' }}>
+              <div style={{ display: 'flex', fontSize: 17 * u, fontWeight: 600, letterSpacing: 1.2, color: paper.muted }}>{f.top}</div>
+              <div style={{ display: 'flex', alignItems: 'center', height: 48 * u, fontSize: 42 * u, fontWeight: 800, letterSpacing: -1, color: paper.muted }}>{f.value}</div>
+              <div style={{ display: 'flex', fontSize: 20 * u, color: paper.muted }}>{f.bottom}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {shots.length > 0 ? (
+        <div style={{ display: 'flex', gap: shotGap }}>
+          {shots.map((s, i) => (
+            // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text
+            <img key={i} src={s.src} width={shotW} height={Math.round(shotW * s.ratio)} style={{ borderRadius: shotW * 0.09, border: `2px solid ${paper.border}` }} />
+          ))}
+        </div>
+      ) : (
+        <Tagline text={data.listing?.description.split('\n')[0] ?? ''} size={26 * u} p={{ ...p, muted: paper.muted }} lines={6} />
+      )}
+    </div>
+  );
+  if (landscape) {
+    return (
+      <Canvas format={format} p={p} pad={pad} row>
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', width: leftW, paddingRight: 60, gap: 40 }}>
+          <Headline text={headline} size={100} p={p} lines={3} />
+          {o.showBadge && <div style={{ display: 'flex' }}><Badge p={p} cta={o.cta} /></div>}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: -pad - 600 }}>{sheet}</div>
+      </Canvas>
+    );
+  }
+  return (
+    <Canvas format={format} p={p} pad={pad}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 28, paddingBottom: square ? 36 : tall ? 64 : 48 }}>
+        <Headline text={headline} size={square ? 76 : tall ? 124 : 96} p={p} align="center" lines={2} />
+        {tall && o.showBadge && <Badge p={p} cta={o.cta} scale={1.05} />}
+      </div>
+      <div style={{ display: 'flex', flex: 1, justifyContent: 'center', alignItems: 'flex-start', marginBottom: -pad - 600 }}>{sheet}</div>
+    </Canvas>
+  );
+}
+
+/** A laurel wreath: two branches of leaves curving up from the bottom, open at the top. */
+function Laurel({ size, color }: { size: number; color: string }) {
+  const c = 100;
+  const R = 82;
+  const rad = (d: number) => (d * Math.PI) / 180;
+  const leaves: { x: number; y: number; angle: number; len: number }[] = [];
+  // The left branch, from the bottom (105°) round to the top left (250°); the right one mirrors it.
+  const N = 11;
+  for (let i = 0; i < N; i++) {
+    const t = i / (N - 1);
+    const a = rad(105 + t * 140);
+    const x = c + R * Math.cos(a);
+    const y = c + R * Math.sin(a);
+    const tangent = [-Math.sin(a), Math.cos(a)];
+    const normal = [Math.cos(a), Math.sin(a)];
+    const len = 26 - t * 9;
+    for (const side of [1, -1]) {
+      const dx = tangent[0] + side * 0.75 * normal[0];
+      const dy = tangent[1] + side * 0.75 * normal[1];
+      leaves.push({ x, y, angle: (Math.atan2(dx, -dy) * 180) / Math.PI, len: side < 0 ? len * 0.85 : len });
+    }
+  }
+  const leaf = (len: number) => {
+    const w = len * 0.36;
+    return `M0,0 C${w},${-len * 0.3} ${w},${-len * 0.75} 0,${-len} C${-w},${-len * 0.75} ${-w},${-len * 0.3} 0,0 Z`;
+  };
+  const start = [c + R * Math.cos(rad(100)), c + R * Math.sin(rad(100))];
+  const end = [c + R * Math.cos(rad(250)), c + R * Math.sin(rad(250))];
+  const branch = (mirror: boolean) => (
+    <g transform={mirror ? `translate(${c * 2} 0) scale(-1 1)` : undefined}>
+      <path d={`M${start[0]},${start[1]} A${R},${R} 0 0 1 ${end[0]},${end[1]}`} fill="none" stroke={color} strokeWidth={2.4} strokeLinecap="round" />
+      {leaves.map((l, i) => <path key={i} d={leaf(l.len)} fill={color} transform={`translate(${l.x} ${l.y}) rotate(${l.angle})`} />)}
+    </g>
+  );
+  return (
+    <svg width={size} height={size} viewBox="0 0 200 200">
+      {branch(false)}
+      {branch(true)}
+    </svg>
+  );
+}
+
+function Rated({ data, images, o, p }: Props) {
+  const { format } = o;
+  const landscape = format === '16x9';
+  const tall = format === '9x16';
+  const square = format === '1x1';
+  const pad = landscape ? 96 : tall ? 88 : 72;
+  const headline = headlineOf(data, o);
+  const sub = tagline(data, o);
+  const hasRating = data.rating != null && data.ratingCount > 0;
+  const dl = downloadsLabel(data.downloads);
+  const wreath = landscape ? 760 : square ? 520 : tall ? 820 : 640;
+  const num = wreath * 0.27;
+  const middle = hasRating ? (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: wreath * 0.02 }}>
+      <div style={{ display: 'flex', fontSize: num, fontWeight: 800, letterSpacing: -num * 0.04, lineHeight: 1 }}>{data.rating!.toFixed(1)}</div>
+      <StarRow rating={data.rating!} size={Math.round(wreath * 0.065)} gap={Math.round(wreath * 0.01)} empty={p.border} />
+      <div style={{ display: 'flex', fontSize: wreath * 0.04, color: p.muted, marginTop: wreath * 0.01 }}>
+        {fmtCompact(data.ratingCount)} rating{data.ratingCount === 1 ? '' : 's'}
+      </div>
+    </div>
+  ) : dl ? (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: wreath * 0.02 }}>
+      <div style={{ display: 'flex', fontSize: num * 0.9, fontWeight: 800, letterSpacing: -num * 0.04, lineHeight: 1 }}>{dl}</div>
+      <div style={{ display: 'flex', fontSize: wreath * 0.045, color: p.muted }}>downloads</div>
+    </div>
+  ) : (
+    <AppIcon src={images.icon} size={wreath * 0.4} p={p} />
+  );
+  const badge = (
+    <div style={{ display: 'flex', position: 'relative', flexShrink: 0, width: wreath, height: wreath }}>
+      <div style={{ display: 'flex', position: 'absolute', left: 0, top: 0 }}>
+        <Laurel size={wreath} color={p.accent} />
+      </div>
+      <div style={{ display: 'flex', position: 'absolute', left: 0, top: 0, width: wreath, height: wreath, alignItems: 'center', justifyContent: 'center' }}>
+        {middle}
+      </div>
+    </div>
+  );
+  const footerSize = square ? 64 : tall ? 96 : 80;
+  if (landscape) {
+    return (
+      <Canvas format={format} p={p} pad={pad} row>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 820 }}>{badge}</div>
+        <div style={{ display: 'flex', flex: 1, flexDirection: 'column', justifyContent: 'space-between', paddingLeft: 40 }}>
+          <div style={{ display: 'flex', flex: 1, flexDirection: 'column', justifyContent: 'center', gap: 32 }}>
+            <Headline text={headline} size={104} p={p} lines={3} />
+            <Tagline text={sub} size={34} p={p} lines={3} />
+          </div>
+          <Footer data={data} icon={images.icon} o={o} p={p} size={footerSize} />
+        </div>
+      </Canvas>
+    );
+  }
+  return (
+    <Canvas format={format} p={p} pad={pad}>
+      <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: square ? 16 : tall ? 40 : 28 }}>
+        {badge}
+        <Headline text={headline} size={square ? 72 : tall ? 120 : 92} p={p} align="center" lines={2} />
+        <Tagline text={sub} size={square ? 26 : tall ? 38 : 32} p={p} align="center" lines={2} />
+      </div>
+      <Footer data={data} icon={images.icon} o={o} p={p} size={footerSize} />
+    </Canvas>
+  );
+}
+
+// Confetti for the Milestone card, the same on every render: a few festive colours, scattered
+// around the edges so the number in the middle stays clear.
+const CONFETTI_COLORS = ['#f59e0b', '#ec4899', '#22c55e', '#3b82f6', '#a855f7', '#ef4444'];
+
+function confetti(width: number, height: number, accent: string, footer: number) {
+  let seed = 7;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+  const pieces: { x: number; y: number; w: number; h: number; r: number; color: string; round: boolean }[] = [];
+  const colors = [accent, ...CONFETTI_COLORS];
+  for (let tries = 0; pieces.length < 46 && tries < 400; tries++) {
+    const x = rand() * width;
+    const y = rand() * height;
+    // Keep clear of the middle (an ellipse around the number and headline).
+    const dx = (x - width / 2) / (width * 0.42);
+    const dy = (y - height * 0.46) / (height * 0.36);
+    // ...and of the footer.
+    if (dx * dx + dy * dy < 1 || y > height - footer) continue;
+    const round = rand() < 0.35;
+    const s = 12 + rand() * 18;
+    pieces.push({ x, y, w: round ? s : s * 0.55, h: round ? s : s * 1.6, r: rand() * 180, color: colors[Math.floor(rand() * colors.length)], round });
+  }
+  return pieces;
+}
+
+function Milestone({ data, images, o, p }: Props) {
+  const { format } = o;
+  const landscape = format === '16x9';
+  const tall = format === '9x16';
+  const square = format === '1x1';
+  const { width: W, height: H } = PROMO_SIZES[format];
+  const pad = landscape ? 96 : tall ? 88 : 72;
+  const headline = headlineOf(data, o);
+  const sub = tagline(data, o);
+  const dl = downloadsLabel(data.downloads);
+  const figure = dl ? { value: dl, label: 'DOWNLOADS' } : data.countries > 1 ? { value: String(data.countries), label: 'COUNTRIES' } : null;
+  const numSize = square ? 250 : landscape ? 290 : tall ? 360 : 300;
+  const footerSize = square ? 64 : tall ? 96 : 80;
+  return (
+    <Canvas format={format} p={p} pad={pad}>
+      {confetti(W, H, p.accent, pad + footerSize + 40).map((c, i) => (
+        <div key={i} style={{ display: 'flex', position: 'absolute', left: c.x, top: c.y, width: c.w, height: c.h, borderRadius: c.round ? 999 : 3, background: c.color, transform: `rotate(${c.r}deg)`, opacity: 0.9 }} />
+      ))}
+      <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: square ? 20 : 30 }}>
+        <Eyebrow p={p} size={square ? 22 : tall ? 30 : 24} center>MILESTONE</Eyebrow>
+        {figure ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <div style={{ display: 'flex', fontSize: numSize, fontWeight: 800, letterSpacing: -numSize * 0.05, lineHeight: 1, color: p.fg }}>{figure.value}</div>
+            <div style={{ display: 'flex', fontSize: numSize * 0.13, fontWeight: 600, letterSpacing: numSize * 0.03, color: p.muted }}>{figure.label}</div>
+          </div>
+        ) : (
+          <AppIcon src={images.icon} size={numSize * 0.9} p={p} />
+        )}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, maxWidth: landscape ? 1300 : 920, marginTop: square ? 0 : 16 }}>
+          <Headline text={headline} size={square ? 80 : tall ? 120 : 100} p={p} align="center" lines={2} />
+          <Tagline text={sub} size={square ? 28 : tall ? 38 : 32} p={p} align="center" lines={2} />
+        </div>
+      </div>
+      <Footer data={data} icon={images.icon} o={o} p={p} size={footerSize} />
+    </Canvas>
+  );
+}
+
 const TEMPLATES: Record<PromoTemplateId, (props: Props) => React.ReactElement> = {
   launch: Launch,
   update: Update,
@@ -756,6 +1089,10 @@ const TEMPLATES: Record<PromoTemplateId, (props: Props) => React.ReactElement> =
   loved: Loved,
   reviews: Reviews,
   download: Download,
+  feature: Feature,
+  store: Store,
+  rated: Rated,
+  milestone: Milestone,
 };
 
 export function PromoCard({ data, images, o }: { data: PromoData; images: PromoImages; o: PromoOptions }) {

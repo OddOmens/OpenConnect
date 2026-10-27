@@ -16,6 +16,7 @@ OpenConnect's screenshot studio. React editor, Express API, Playwright for PNG e
 - `server/renderer.ts` — headless Chromium export; falls back to any cached Playwright Chromium, then system Chrome.
 - `bin/appshot.mjs` — dependency-free CLI over the HTTP API.
 - `bin/appshot-mcp.mjs` — MCP server for the Claude desktop app (stdio; starts the HTTP server if needed when the server is local). Keep its tools in step with the CLI.
+- `bin/marketing.mjs` — OpenConnect Marketing for the CLI (`appshot marketing …`) and MCP (`marketing_*` tools): figures, projections and PNG cards from the dashboard's `/api/marketing*` and `/api/forecast`, with a token that has the Marketing scope. Needs `OPENCONNECT_URL`.
 - `bin/remote.mjs` — where the server is (`BASE`: `OPENCONNECT_URL` + `/studio` with `OPENCONNECT_TOKEN` sent as a Bearer token on every request; else `APPSHOT_URL`; else local) and, when the server's files aren't on this disk, downloads preview PNGs and export zips for the CLI and MCP.
 - `src/shared/summary.ts` — `buildAppData`, the clean per-app record behind `/api/apps/:app/data`, `appshot data` and the MCP `get_app` tool.
 

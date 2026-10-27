@@ -33,6 +33,7 @@ const StoreTable = dynamic(() => import('@/components/dashboard/store-table').th
 const SubscriptionPanel = dynamic(() => import('@/components/dashboard/subscription-panel').then((m) => m.SubscriptionPanel), { ssr: false, loading: panel(300) })
 const Breakdowns = dynamic(() => import('@/components/dashboard/breakdowns').then((m) => m.Breakdowns), { ssr: false, loading: panel(360) })
 const ReachPanel = dynamic(() => import('@/components/dashboard/reach-panel').then((m) => m.ReachPanel), { ssr: false, loading: panel(420) })
+const ForecastPanel = dynamic(() => import('@/components/dashboard/forecast-panel').then((m) => m.ForecastPanel), { ssr: false, loading: panel(520) })
 const ReviewsPanel = dynamic(() => import('@/components/dashboard/reviews-panel').then((m) => m.ReviewsPanel), { ssr: false, loading: panel(360) })
 
 export interface DashboardData {
@@ -190,6 +191,18 @@ export function Dashboard({ initial }: { initial: InitialData }) {
             prefs={prefs}
             onPrefs={updatePrefs}
             onHide={() => hide('history')}
+          />
+        )
+      case 'forecast':
+        return (
+          <ForecastPanel
+            key={selectedAppId ?? 'all'}
+            appId={selectedAppId}
+            currency={prefs.currency}
+            prefs={prefs.forecast}
+            onPrefs={(forecast) => updatePrefs({ forecast })}
+            refreshKey={reviewsKey}
+            onHide={() => hide('forecast')}
           />
         )
       case 'map':

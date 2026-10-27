@@ -1,5 +1,5 @@
 import { getDb } from './db';
-import { DEFAULT_SYNC_CONFIG, SyncConfig, UiPrefs, mergePrefs } from './prefs';
+import { DEFAULT_NOTIFY_CONFIG, DEFAULT_SYNC_CONFIG, NotifyConfig, SyncConfig, UiPrefs, mergePrefs } from './prefs';
 
 export function getSetting(key: string): string | null {
   const row = getDb().prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
@@ -15,7 +15,7 @@ export function setSetting(key: string, value: string | null) {
   db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
 }
 
-function getJson<T>(key: string): T | null {
+export function getJson<T>(key: string): T | null {
   const raw = getSetting(key);
   if (!raw) return null;
   try {
@@ -75,6 +75,27 @@ export function setSyncConfig(patch: Partial<SyncConfig>) {
   next.autoSyncHours = Math.max(0, Number(next.autoSyncHours) || 0);
   next.storeSyncHours = Math.max(0, Number(next.storeSyncHours) || 0);
   setSetting('sync_config', JSON.stringify(next));
+  return next;
+}
+
+export function getNotifyConfig(): NotifyConfig {
+  return { ...DEFAULT_NOTIFY_CONFIG, ...(getJson<Partial<NotifyConfig>>('notify_config') || {}) };
+}
+
+export function setNotifyConfig(patch: Partial<NotifyConfig>) {
+  const next = { ...getNotifyConfig(), ...patch };
+  for (const k of ['signalUrl', 'signalNumber', 'signalTo'] as const) next[k] = String(next[k] || '').trim();
+  while (next.signalUrl.endsWith('/')) next.signalUrl = next.signalUrl.slice(0, -1);
+  if (next.signalUrl && !/^https?:\/\/[^/]+/i.test(next.signalUrl)) throw new Error('The Signal API address must start with http:// or https://.');
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(next.recapTime)) next.recapTime = DEFAULT_NOTIFY_CONFIG.recapTime;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: next.timezone });
+  } catch {
+    throw new Error(`Unknown time zone “${next.timezone}”.`);
+  }
+  next.chartEntries = !!next.chartEntries;
+  next.recap = !!next.recap;
+  setSetting('notify_config', JSON.stringify(next));
   return next;
 }
 

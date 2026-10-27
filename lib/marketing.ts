@@ -1,6 +1,8 @@
 // Data for the marketing promo cards: one app's App Store listing (screenshots, version,
 // release notes, price) plus the numbers worth bragging about (rating, downloads, reach).
 
+import { cached } from './cache';
+import { readCachedSync, writeCached } from './disk-cache';
 import { listApps, reach, reviews, storePresence } from './queries';
 import type { PromoTemplateId } from './prefs';
 
@@ -16,7 +18,9 @@ export interface Listing {
   screenshots: { url: string; ratio: number }[]; // ratio = height / width
 }
 
-// The listing changes only on an App Store release, so a few hours is plenty.
+// The listing changes only on an App Store release, so a few hours is plenty. It's kept on disk
+// too: after that a card never waits for Apple. An older copy is used at once while a new one is
+// fetched in the background.
 const LISTING_TTL = 6 * 60 * 60 * 1000;
 const listingCache = new Map<string, { at: number; listing: Listing | null }>();
 // Lookups under way, so the cards that load together share one.
@@ -33,17 +37,30 @@ function ratioOf(url: string) {
 }
 
 export function listing(appId: string): Promise<Listing | null> {
-  const hit = listingCache.get(appId);
-  if (hit && Date.now() - hit.at < LISTING_TTL) return Promise.resolve(hit.listing);
+  let hit = listingCache.get(appId);
+  if (!hit) {
+    const saved = readCachedSync('listings', appId, '.json');
+    if (saved) {
+      try {
+        hit = JSON.parse(saved.toString('utf8')) as { at: number; listing: Listing | null };
+        listingCache.set(appId, hit);
+      } catch {
+        // unreadable: looked up again below
+      }
+    }
+  }
+  const fresh = hit && Date.now() - hit.at < LISTING_TTL;
+  if (fresh) return Promise.resolve(hit!.listing);
   let load = listingLoads.get(appId);
   if (!load) {
-    load = lookup(appId).finally(() => listingLoads.delete(appId));
+    load = lookup(appId, hit?.listing ?? null).finally(() => listingLoads.delete(appId));
     listingLoads.set(appId, load);
   }
-  return load;
+  // Stale but known: use it now, the new one is on its way.
+  return hit?.listing ? Promise.resolve(hit.listing) : load;
 }
 
-async function lookup(appId: string): Promise<Listing | null> {
+async function lookup(appId: string, previous: Listing | null): Promise<Listing | null> {
   let result: Listing | null = null;
   try {
     const res = await fetch(`https://itunes.apple.com/lookup?id=${encodeURIComponent(appId)}&country=us&entity=software`, {
@@ -69,9 +86,15 @@ async function lookup(appId: string): Promise<Listing | null> {
   } catch {
     // Not on the store (yet), or offline: the cards fall back to what the database knows.
   }
-  // Don't hold on to a failed lookup for long.
-  listingCache.set(appId, { at: result ? Date.now() : Date.now() - LISTING_TTL + 60_000, listing: result });
-  return result;
+  if (result) {
+    const entry = { at: Date.now(), listing: result };
+    listingCache.set(appId, entry);
+    writeCached('listings', appId, JSON.stringify(entry), '.json');
+  } else {
+    // Keep a copy we had; don't hold on to a failed lookup for long.
+    listingCache.set(appId, { at: Date.now() - LISTING_TTL + 60_000, listing: previous });
+  }
+  return result ?? previous;
 }
 
 // The card font has no emoji, so they're dropped from quoted text rather than drawn as boxes.
@@ -87,6 +110,19 @@ export function noteBullets(notes: string, max: number): string[] {
   // One long paragraph: split it into sentences instead.
   const items = lines.length === 1 ? lines[0].split(/(?<=[.!?])\s+(?=[A-Z])/) : lines;
   return items.map((l) => l.replace(/[.:]$/, '')).filter(Boolean).slice(0, max);
+}
+
+// A description's feature list: lines that start with a bullet, a check or an emoji.
+const BULLET = /^\s*(?:[-•*–·✓✔★☆▶►●○▪■◆◇➤→]|\p{Extended_Pictographic})/u;
+
+/** Features from the App Store description: its bulleted lines, else the sentences after the first. */
+export function featureList(description: string, max = 6): string[] {
+  const lines = description.split(/\n+/);
+  const bulleted = lines.filter((l) => BULLET.test(l)).map((l) => plain(l).replace(/^[\s\-•*–·✓✔★☆▶►●○▪■◆◇➤→:]+/u, '').trim());
+  const items = bulleted.filter((l) => l.length >= 3 && l.length <= 90);
+  if (items.length >= 2) return items.slice(0, max);
+  const sentences = plain(description).split(/(?<=[.!?])\s+|\n+/).slice(1);
+  return sentences.map((l) => l.replace(/[.!]$/, '').trim()).filter((l) => l.length >= 12 && l.length <= 90).slice(0, max);
 }
 
 /** The first sentence of the description: a ready-made tagline. */
@@ -109,29 +145,35 @@ export interface PromoData {
   quotes: { title: string; body: string; reviewer: string; rating: number }[]; // up to 12; the Reviews card picks from these
 }
 
+/**
+ * The card's data. The database part is worked out once per data version (a sync, a new day), not
+ * once per card: reach() reads every download, and a page of cards asks for it ten times.
+ */
 export async function promoData(appId: string): Promise<PromoData | null> {
-  const app = (listApps() as any[]).find((a) => a.apple_id === appId);
-  if (!app) return null;
-  const store = storePresence(appId).summary;
-  const r = reach({});
-  // Short, glowing reviews quote best on a card.
-  const quotes = (reviews({ appId, rating: 5, limit: 100, offset: 0 }).items as any[])
-    .map((q) => ({ title: plain(q.title || ''), body: plain(q.body || ''), reviewer: plain(q.reviewer || '') || 'App Store reviewer', rating: q.rating }))
-    .filter((q) => q.body.length >= 20 && q.body.length <= 220)
-    .slice(0, 12);
-  return {
-    appId,
-    name: app.name.split(':')[0],
-    icon: app.icon_url ?? null,
-    listing: await listing(appId),
-    rating: store.rating,
-    ratingCount: store.rating_count,
-    downloads: app.first_time_downloads,
-    countries: r.apps[appId]?.count ?? 0,
-    reached: Object.keys(r.apps[appId]?.countries ?? {}),
-    storefronts: r.total,
-    quotes,
-  };
+  const known = cached(`promo-data|${appId}`, () => {
+    const app = (listApps() as any[]).find((a) => a.apple_id === appId);
+    if (!app) return null;
+    const store = storePresence(appId).summary;
+    const r = cached('promo-reach', () => reach({}));
+    // Short, glowing reviews quote best on a card.
+    const quotes = (reviews({ appId, rating: 5, limit: 100, offset: 0 }).items as any[])
+      .map((q) => ({ title: plain(q.title || ''), body: plain(q.body || ''), reviewer: plain(q.reviewer || '') || 'App Store reviewer', rating: q.rating }))
+      .filter((q) => q.body.length >= 20 && q.body.length <= 220)
+      .slice(0, 12);
+    return {
+      appId,
+      name: app.name.split(':')[0],
+      icon: app.icon_url ?? null,
+      rating: store.rating,
+      ratingCount: store.rating_count,
+      downloads: app.first_time_downloads,
+      countries: r.apps[appId]?.count ?? 0,
+      reached: Object.keys(r.apps[appId]?.countries ?? {}),
+      storefronts: r.total,
+      quotes,
+    };
+  });
+  return known && { ...known, listing: await listing(appId) };
 }
 
 /** Each template's own wording, used where a card's text is left empty. */
@@ -144,6 +186,17 @@ export function defaultCopy(t: PromoTemplateId, data: PromoData) {
     loved: data.countries > 1 ? `Loved In\n${data.countries} Countries` : `People Love\n${data.name}`,
     reviews: `People Love\n${data.name}`,
     download: `Get ${data.name}${data.listing?.price === 'Free' ? ' free' : ''}`,
+    feature: `Why\n${data.name}?`,
+    store: 'Now On The\nApp Store',
+    rated: data.rating != null && data.rating >= 4.5 && data.ratingCount > 0 ? 'Top Rated\nOn The App Store' : `People Love\n${data.name}`,
+    milestone: 'Thank You!',
   }[t];
-  return { headline, tagline: firstSentence(data.listing?.description ?? ''), cta: '', notes: data.listing?.releaseNotes ?? '' };
+  const description = data.listing?.description ?? '';
+  const tagline =
+    t === 'milestone'
+      ? `To everyone using ${data.name}${data.countries > 1 ? ` in ${data.countries} countries` : ''}.`
+      : firstSentence(description);
+  // Features lists the description's bullet points; What's New, the release notes.
+  const notes = t === 'feature' ? featureList(description).join('\n') : data.listing?.releaseNotes ?? '';
+  return { headline, tagline, cta: '', notes };
 }

@@ -37,6 +37,8 @@ COPY --from=deps /app/node_modules/bindings ./node_modules/bindings
 COPY --from=deps /app/node_modules/file-uri-to-path ./node_modules/file-uri-to-path
 # Native PNG renderer for share cards (its platform binary is an optional dependency).
 COPY --from=deps /app/node_modules/@resvg ./node_modules/@resvg
+# Marketing's card worker is loaded by path; satori, which it imports, is traced (serverExternalPackages).
+COPY --from=builder /app/lib/share-render/render-worker.mjs ./lib/share-render/render-worker.mjs
 
 RUN mkdir -p /app/data /keys && chown nextjs:nodejs /app/data
 

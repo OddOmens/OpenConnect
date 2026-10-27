@@ -3,6 +3,7 @@
 export const SECTIONS = {
   kpis: 'Key Metrics',
   history: 'History',
+  forecast: 'Projections',
   map: 'World Map',
   reach: 'Global Reach',
   breakdowns: 'Breakdowns',
@@ -162,8 +163,12 @@ export const PROMO_TEMPLATES = {
   launch: 'Launch',
   update: "What's New",
   screens: 'Screenshots',
+  feature: 'Features',
+  store: 'App Store Page',
   loved: 'Loved By',
   reviews: 'Reviews',
+  rated: 'Top Rated',
+  milestone: 'Milestone',
   download: 'Download',
 } as const
 export type PromoTemplateId = keyof typeof PROMO_TEMPLATES
@@ -214,7 +219,19 @@ export const PROMO_FRAMES = {
   '#34405a': 'Blue',
 } as const
 
+// How big the Marketing page draws its cards (S fits more on screen, L shows more detail).
+export const CARD_SIZES = { s: 'S', m: 'M', l: 'L' } as const
+export type CardSizeId = keyof typeof CARD_SIZES
+
 export const PROMO_ACCENTS = ['#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#f97316', '#f59e0b', '#10b981', '#06b6d4'] as const
+
+// What an API token can open (Settings → Security → API tokens). Never the dashboard or settings.
+export const TOKEN_SCOPES = {
+  studio: { label: 'Screenshot studio', detail: 'Read and edit screenshot sets, preview and export' },
+  marketing: { label: 'Marketing', detail: 'Render stats and promo cards, read the figures on them, the projections and ASO' },
+  aso: { label: 'ASO changes', detail: 'Read ASO, track keywords and change App Store listings (keywords, subtitle, promotional text…) in App Store Connect' },
+} as const
+export type TokenScope = keyof typeof TOKEN_SCOPES
 
 export type ThemeId = 'system' | 'light' | 'dark'
 
@@ -240,6 +257,10 @@ export interface UiPrefs {
   currency: string
   mapMetric: 'downloads' | 'proceeds' | 'rating' | 'rank'
   compareToPrevious: boolean
+  forecast: {
+    horizon: 30 | 90 | 365
+    metric: 'first_time' | 'impressions' | 'page_views' | 'proceeds'
+  }
   share: {
     format: '4x5' | '9x16'
     theme: 'dark' | 'light'
@@ -263,6 +284,8 @@ export interface UiPrefs {
     copy: Record<string, { headline?: string; tagline?: string; cta?: string; notes?: string }>
     // Each card's own settings, per app and template (edited in the card's popup).
     cards: Record<string, Partial<Record<PromoTemplateId, PromoCardSettings>>>
+    optionsOpen: boolean         // the toolbar's option rows are shown (else folded away)
+    cardSize: CardSizeId
   }
 }
 
@@ -288,6 +311,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   currency: 'USD',
   mapMetric: 'downloads',
   compareToPrevious: true,
+  forecast: { horizon: 90, metric: 'first_time' },
   share: {
     format: '4x5',
     theme: 'dark',
@@ -309,6 +333,8 @@ export const DEFAULT_PREFS: UiPrefs = {
     shots: {},
     copy: {},
     cards: {},
+    optionsOpen: true,
+    cardSize: 'm',
   },
 }
 
@@ -316,6 +342,7 @@ export function mergePrefs(saved: Partial<UiPrefs> | null | undefined): UiPrefs 
   const p = { ...DEFAULT_PREFS, ...(saved || {}) }
   p.share = { ...DEFAULT_PREFS.share, ...(saved?.share || {}) }
   p.marketing = { ...DEFAULT_PREFS.marketing, ...(saved?.marketing || {}) }
+  p.forecast = { ...DEFAULT_PREFS.forecast, ...(saved?.forecast || {}) }
   // Keep order valid if sections were added or removed since the prefs were saved.
   const known = Object.keys(SECTIONS) as SectionId[]
   const order = p.sectionOrder.filter((s) => known.includes(s))
@@ -334,6 +361,7 @@ export function mergePrefs(saved: Partial<UiPrefs> | null | undefined): UiPrefs 
   if (!PROMO_FORMATS[p.marketing.format]) p.marketing.format = DEFAULT_PREFS.marketing.format
   if (!/^#[0-9a-f]{6}$/i.test(p.marketing.accent)) p.marketing.accent = DEFAULT_PREFS.marketing.accent
   if (!/^#[0-9a-f]{6}$/i.test(p.marketing.frameColor)) p.marketing.frameColor = DEFAULT_PREFS.marketing.frameColor
+  if (!CARD_SIZES[p.marketing.cardSize]) p.marketing.cardSize = DEFAULT_PREFS.marketing.cardSize
   // Loved By used to quote reviews: its picks move to the Reviews card, and it's the map alone now.
   p.marketing.cards = Object.fromEntries(Object.entries(p.marketing.cards).map(([app, cards]) => {
     const old = cards.loved as (PromoCardSettings & { lovedShow?: string }) | undefined
@@ -358,6 +386,8 @@ export interface SyncConfig {
   syncSubscriptions: boolean
   syncReviews: boolean
   syncAnalytics: boolean         // impressions & product page views (Analytics Reports API)
+  syncListings: boolean          // App Store listings (name, subtitle, keywords) for ASO; keyword ranks run with Ratings & Rankings
+  trackListingKeywords: boolean  // track every keyword-field term in its locale's storefront
   rankCharts: ChartId[]
   rankOverall: boolean           // also check the all-categories charts
   storeCountries: 'all' | string[]
@@ -369,7 +399,30 @@ export const DEFAULT_SYNC_CONFIG: SyncConfig = {
   syncSubscriptions: true,
   syncReviews: true,
   syncAnalytics: true,
+  syncListings: true,
+  trackListingKeywords: true,
   rankCharts: ['topfree', 'topgrossing'],
   rankOverall: true,
   storeCountries: 'all',
+}
+
+/** Messages sent through a signal-cli-rest-api server. */
+export interface NotifyConfig {
+  signalUrl: string              // the REST API, e.g. http://signal-api:8080
+  signalNumber: string           // the Signal account it sends from
+  signalTo: string               // a phone number, a group.… id, or a group's name
+  chartEntries: boolean          // as soon as an app enters a top 100 chart
+  recap: boolean                 // a daily recap of every app
+  recapTime: string              // HH:MM, in `timezone`
+  timezone: string               // IANA, e.g. America/Chicago
+}
+
+export const DEFAULT_NOTIFY_CONFIG: NotifyConfig = {
+  signalUrl: '',
+  signalNumber: '',
+  signalTo: '',
+  chartEntries: true,
+  recap: true,
+  recapTime: '08:00',
+  timezone: 'UTC',
 }

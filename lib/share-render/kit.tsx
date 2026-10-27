@@ -6,6 +6,7 @@ import * as path from 'path';
 import DottedMap from 'dotted-map/without-countries';
 import { Resvg } from '@resvg/resvg-js';
 import worldDots from '@/lib/world-dots.json';
+import { readCached, writeCached } from '@/lib/disk-cache';
 import type { ShareData, ShareIcon } from '@/lib/share';
 import { TERRITORY_BY_CODE } from '@/lib/territories';
 
@@ -37,11 +38,23 @@ export function loadFonts() {
 
 // Images are inlined so a slow or flaky image host can't break the render.
 const imageCache = new Map<string, string | null>();
+// Icons are small, screenshots up to ~300 KB each: a few hundred stay in memory, the rest on disk.
+const MAX_IMAGES = 400;
+function remember(url: string, data: string) {
+  imageCache.set(url, data);
+  while (imageCache.size > MAX_IMAGES) imageCache.delete(imageCache.keys().next().value!);
+}
 // Downloads under way, so the cards that load together share one download of the same icon.
 const imageLoads = new Map<string, Promise<string | null>>();
+// A download that failed isn't tried again for a while: otherwise every card waits out the retries.
+const FAILED_FOR = 10 * 60_000;
+const failed = new Map<string, number>();
+
 export function inlineImage(url: string | null): Promise<string | null> {
   if (!url) return Promise.resolve(null);
   if (imageCache.has(url)) return Promise.resolve(imageCache.get(url)!);
+  const at = failed.get(url);
+  if (at && Date.now() - at < FAILED_FOR) return Promise.resolve(null);
   let load = imageLoads.get(url);
   if (!load) {
     load = fetchImage(url).finally(() => imageLoads.delete(url));
@@ -50,14 +63,23 @@ export function inlineImage(url: string | null): Promise<string | null> {
   return load;
 }
 
+// Apple's image URLs name one image at one size, so a downloaded copy is good forever: it's kept on
+// disk and never downloaded again.
 async function fetchImage(url: string): Promise<string | null> {
+  const saved = await readCached('images', url, '.txt');
+  if (saved) {
+    const data = saved.toString('utf8');
+    remember(url, data);
+    return data;
+  }
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const res = await fetch(url, { cache: 'no-store' });
       if (res.ok) {
         const type = res.headers.get('content-type') || 'image/png';
         const data = `data:${type};base64,${Buffer.from(await res.arrayBuffer()).toString('base64')}`;
-        imageCache.set(url, data);
+        remember(url, data);
+        writeCached('images', url, data, '.txt');
         return data;
       }
     } catch {
@@ -65,6 +87,8 @@ async function fetchImage(url: string): Promise<string | null> {
     }
     await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
   }
+  failed.set(url, Date.now());
+  if (failed.size > 500) failed.delete(failed.keys().next().value!);
   return null;
 }
 

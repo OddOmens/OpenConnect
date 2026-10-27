@@ -32,6 +32,9 @@ const nextConfig = {
   // known advisories) out of reach.
   images: { unoptimized: true },
   serverExternalPackages: ['better-sqlite3', '@resvg/resvg-js', 'satori'],
+  // Marketing's card worker is loaded by path at runtime (lib/share-render/pool.ts), so tracing
+  // can't find it on its own.
+  outputFileTracingIncludes: { '/*': ['./lib/share-render/render-worker.mjs'] },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },

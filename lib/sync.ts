@@ -6,7 +6,9 @@ import { addDays, daysBetween, monthsBetween, pacificToday, syncWindow, SyncWind
 import { TERRITORIES } from './territories';
 import type { ChartId } from './prefs';
 import { syncEngagement } from './analytics';
+import { syncKeywordRanks, syncListings } from './aso';
 import { buildReport, NO_FIGURES, Revision, salesFigures, SyncReport, takeSnapshot } from './sync-report';
+import { notifyChartEntries } from './notify';
 
 export type JobId = 'asc' | 'store';
 
@@ -95,6 +97,9 @@ export function startJob(id: JobId, trigger: string): boolean {
       state.running = false;
       state.phase = 'done';
       console.log(`[sync:${id}] finished (${status}) ${state.summary || ''}`);
+      // New data: Marketing's cards are drawn again in the background, ready for the page.
+      import('./marketing-warm').then((m) => m.scheduleWarm()).catch(() => {});
+      if (id === 'store') notifyChartEntries().catch((err) => console.error('[notify] chart entries:', err?.message || err));
     });
   return true;
 }
@@ -517,9 +522,10 @@ async function runAscSync(state: JobState) {
   state.phase = 'Fetching apps';
   const apps = await fetchApps();
   const upsert = db.prepare(`
-    INSERT INTO apps (apple_id, name, bundle_id, sku, platform) VALUES (?, ?, ?, ?, 'iOS')
-    ON CONFLICT(apple_id) DO UPDATE SET name = excluded.name, bundle_id = excluded.bundle_id, sku = excluded.sku`);
-  db.transaction(() => apps.forEach((a) => upsert.run(a.id, a.name, a.bundleId, a.sku)))();
+    INSERT INTO apps (apple_id, name, bundle_id, sku, platform, primary_locale) VALUES (?, ?, ?, ?, 'iOS', ?)
+    ON CONFLICT(apple_id) DO UPDATE SET name = excluded.name, bundle_id = excluded.bundle_id, sku = excluded.sku,
+      primary_locale = excluded.primary_locale`);
+  db.transaction(() => apps.forEach((a) => upsert.run(a.id, a.name, a.bundleId, a.sku, a.primaryLocale)))();
 
   // Release dates bound the backfill, so we never ask for days before an app existed.
   const unknownRelease = db.prepare(`SELECT apple_id FROM apps WHERE release_date IS NULL`).all() as { apple_id: string }[];
@@ -547,6 +553,11 @@ async function runAscSync(state: JobState) {
   if (config.syncReviews) {
     const added = await syncReviews(state);
     parts.push(`${added} new review${added === 1 ? '' : 's'}`);
+  }
+
+  if (config.syncListings) {
+    const listings = await syncListings(state, apps.map((a) => a.id));
+    if (listings) parts.push(`${listings} App Store listing${listings === 1 ? '' : 's'}`);
   }
   state.summary = `Synced ${parts.join(', ')}.`;
 }
@@ -702,6 +713,11 @@ async function runStoreSync(state: JobState) {
   await Promise.all([mapLimit(throttled, 4, check), mapLimit(free, 16, check)]);
   if (chartFailures) state.errors.push(`${chartFailures} chart requests failed (Apple throttling); they'll be retried next run.`);
 
+  // 3. Search ranks for the keywords tracked on the ASO page.
+  const keywords = await syncKeywordRanks(state);
+
   const rated = [...availability.values()].reduce((n, s) => n + s.size, 0);
-  state.summary = `Checked ${countries.length} storefronts (${rated} app listings) and ${tasks.length} charts; ${found} chart positions found.`;
+  state.summary =
+    `Checked ${countries.length} storefronts (${rated} app listings) and ${tasks.length} charts; ${found} chart positions found` +
+    (keywords ? `; ${keywords} keyword rank${keywords === 1 ? '' : 's'} checked.` : '.');
 }

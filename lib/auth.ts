@@ -15,6 +15,9 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import { getDb } from './db';
 import { getSetting, setSetting } from './config';
+import { TOKEN_SCOPES, type TokenScope } from './prefs';
+
+export { TOKEN_SCOPES, type TokenScope };
 
 export const SESSION_COOKIE = 'oc_session';
 const SESSION_DAYS = 30;
@@ -183,43 +186,55 @@ export function deleteAllSessions() {
 // --- API tokens ----------------------------------------------------------------------
 //
 // For scripts and Claude: the studio's `appshot` CLI and MCP server send one as
-// "Authorization: Bearer oc_…". Tokens only open the screenshot studio (see guard's
-// `apiToken` option), never the sales data or settings, and can be revoked one by one.
+// "Authorization: Bearer oc_…". Each token opens only what its scopes allow (see guard's
+// `apiToken` option), never the dashboard, settings or other tokens, and can be revoked one by one.
 
 const TOKEN_PREFIX = 'oc_';
 
-export interface ApiToken { id: string; name: string; hint: string; created_at: string; last_used_at: string | null }
+export interface ApiToken { id: string; name: string; hint: string; scopes: TokenScope[]; created_at: string; last_used_at: string | null }
+
+/** Tokens made before scopes existed opened the studio only. */
+const parseScopes = (v: string | null): TokenScope[] =>
+  (v ?? 'studio').split(',').filter((s): s is TokenScope => s in TOKEN_SCOPES);
 
 /** A new token; the returned secret is shown once and only its hash is kept. */
-export function createApiToken(name: string): { token: string; info: ApiToken } {
+export function createApiToken(name: string, scopes: TokenScope[] = ['studio']): { token: string; info: ApiToken } {
   const token = TOKEN_PREFIX + crypto.randomBytes(32).toString('base64url');
-  const info: ApiToken = { id: crypto.randomBytes(6).toString('hex'), name: name.trim().slice(0, 60) || 'API token', hint: token.slice(-4), created_at: new Date().toISOString(), last_used_at: null };
-  getDb().prepare(`INSERT INTO api_tokens (id, name, token_hash, hint, created_at) VALUES (?, ?, ?, ?, ?)`).run(info.id, info.name, tokenHash(token), info.hint, info.created_at);
+  const wanted = (Object.keys(TOKEN_SCOPES) as TokenScope[]).filter((s) => scopes.includes(s));
+  const info: ApiToken = {
+    id: crypto.randomBytes(6).toString('hex'), name: name.trim().slice(0, 60) || 'API token', hint: token.slice(-4),
+    scopes: wanted.length ? wanted : ['studio'], created_at: new Date().toISOString(), last_used_at: null,
+  };
+  getDb().prepare(`INSERT INTO api_tokens (id, name, token_hash, hint, scopes, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
+    .run(info.id, info.name, tokenHash(token), info.hint, info.scopes.join(','), info.created_at);
   return { token, info };
 }
 
 export function listApiTokens(): ApiToken[] {
-  return getDb().prepare(`SELECT id, name, hint, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC`).all() as ApiToken[];
+  const rows = getDb().prepare(`SELECT id, name, hint, scopes, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC`).all() as
+    (Omit<ApiToken, 'scopes'> & { scopes: string | null })[];
+  return rows.map((r) => ({ ...r, scopes: parseScopes(r.scopes) }));
 }
 
 export function deleteApiToken(id: string) {
   getDb().prepare(`DELETE FROM api_tokens WHERE id = ?`).run(id);
 }
 
-/** True when the request carries a valid API token (and notes when it was last used). */
-function apiTokenValid(req: Request): boolean {
+/** The request's API token, if it is valid (and notes when it was last used); null otherwise. */
+function apiTokenScopes(req: Request): TokenScope[] | null {
   const header = req.headers.get('authorization') || '';
   const token = header.match(/^Bearer\s+(\S+)$/i)?.[1];
-  if (!token || !token.startsWith(TOKEN_PREFIX) || token.length > 100) return false;
+  if (!token || !token.startsWith(TOKEN_PREFIX) || token.length > 100) return null;
   const db = getDb();
-  const row = db.prepare(`SELECT id, last_used_at FROM api_tokens WHERE token_hash = ?`).get(tokenHash(token)) as { id: string; last_used_at: string | null } | undefined;
-  if (!row) return false;
+  const row = db.prepare(`SELECT id, scopes, last_used_at FROM api_tokens WHERE token_hash = ?`).get(tokenHash(token)) as
+    { id: string; scopes: string | null; last_used_at: string | null } | undefined;
+  if (!row) return null;
   // Once a minute is plenty for "last used".
   const now = new Date();
   if (!row.last_used_at || now.getTime() - Date.parse(row.last_used_at) > 60_000) {
     db.prepare(`UPDATE api_tokens SET last_used_at = ? WHERE id = ?`).run(now.toISOString(), row.id);
   }
-  return true;
+  return parseScopes(row.scopes);
 }
 
 // --- Requests ----------------------------------------------------------------------
@@ -262,13 +277,20 @@ export function crossSite(req: Request): boolean {
 
 /**
  * For API routes: a Response to return when the request isn't allowed, otherwise null.
- * `apiToken`: an API token is accepted instead of a session (the screenshot studio only).
+ * `apiToken`: an API token with this scope (or any of these) is accepted instead of a session.
  */
-export function guard(req: Request, opts: { apiToken?: boolean } = {}): Response | null {
+export function guard(req: Request, opts: { apiToken?: TokenScope | TokenScope[] } = {}): Response | null {
   // A browser can't attach an Authorization header from another site without CORS, which
   // this server never grants, so token requests need no cross-site check.
   if (opts.apiToken && authEnabled() && req.headers.has('authorization')) {
-    return apiTokenValid(req) ? null : Response.json({ error: 'Invalid or revoked API token.' }, { status: 401 });
+    const wanted = ([] as TokenScope[]).concat(opts.apiToken);
+    const scopes = apiTokenScopes(req);
+    if (!scopes) return Response.json({ error: 'Invalid or revoked API token.' }, { status: 401 });
+    if (!wanted.some((w) => scopes.includes(w))) {
+      const names = wanted.map((w) => TOKEN_SCOPES[w].label).join(' or ');
+      return Response.json({ error: `This API token doesn't have the ${names} scope. Create one that does in Settings → Security → API tokens.` }, { status: 403 });
+    }
+    return null;
   }
   if (crossSite(req)) return Response.json({ error: 'Cross-site request refused.' }, { status: 403 });
   if (!authEnabled()) {

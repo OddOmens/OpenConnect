@@ -1,5 +1,6 @@
 import { getSyncConfig } from './config';
 import { lastRun, startJob, getJobStates, JobId } from './sync';
+import { maybeSendRecap } from './notify';
 
 const g = globalThis as unknown as { __schedulerStarted?: boolean };
 
@@ -16,12 +17,13 @@ function tick() {
     const config = getSyncConfig();
     if (due('asc', config.autoSyncHours)) startJob('asc', 'schedule');
     if (due('store', config.storeSyncHours)) startJob('store', 'schedule');
+    maybeSendRecap().catch((err) => console.error('[notify] daily recap:', err?.message || err));
   } catch (err) {
     console.error('[scheduler]', err);
   }
 }
 
-/** Checks every 5 minutes whether an automatic sync is due. Safe to call more than once. */
+/** Checks every 5 minutes whether an automatic sync (or the daily recap) is due. Safe to call more than once. */
 export function startScheduler() {
   if (g.__schedulerStarted || process.env.DISABLE_SCHEDULER === '1') return;
   g.__schedulerStarted = true;

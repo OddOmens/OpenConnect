@@ -23,6 +23,9 @@ interface AppSelectorProps {
   selectedAppId: string | null
   onSelect: (id: string | null) => void
   onToggleVisibility: (id: string) => void
+  /** The line under each name; downloads by default. */
+  detail?: (app: App) => React.ReactNode
+  allDetail?: React.ReactNode
 }
 
 function AppIcon({ app }: { app: App }) {
@@ -44,7 +47,7 @@ const rowCls = (selected: boolean) =>
  * Vertical app list: a sticky sidebar on wide screens, a collapsible list on narrow ones.
  * Hidden apps are left out entirely; they come back from Settings → Customize.
  */
-export function AppSelector({ apps, selectedAppId, onSelect, onToggleVisibility }: AppSelectorProps) {
+export function AppSelector({ apps, selectedAppId, onSelect, onToggleVisibility, detail, allDetail }: AppSelectorProps) {
   const [open, setOpen] = React.useState(false)
   const included = apps.filter((a) => !a.hidden)
   const selected = apps.find((a) => a.apple_id === selectedAppId) || null
@@ -61,7 +64,7 @@ export function AppSelector({ apps, selectedAppId, onSelect, onToggleVisibility 
         <AppIcon app={app} />
         <span className="flex min-w-0 flex-col">
           <span className="truncate text-sm font-medium text-foreground">{app.name.split(":")[0]}</span>
-          <span className="text-[11px] text-muted-foreground">{fmtCompact(app.first_time_downloads)} downloads</span>
+          <span className="truncate text-[11px] text-muted-foreground">{detail ? detail(app) : `${fmtCompact(app.first_time_downloads)} downloads`}</span>
         </span>
       </button>
       <button
@@ -98,7 +101,7 @@ export function AppSelector({ apps, selectedAppId, onSelect, onToggleVisibility 
               </span>
               <span className="flex min-w-0 flex-col">
                 <span className="text-sm font-medium text-foreground">All Apps</span>
-                <span className="text-[11px] text-muted-foreground">{fmtCompact(allDownloads)} downloads</span>
+                <span className="truncate text-[11px] text-muted-foreground">{allDetail ?? `${fmtCompact(allDownloads)} downloads`}</span>
               </span>
             </button>
           </li>

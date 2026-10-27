@@ -7,6 +7,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { BASE, fetchExport, fetchPreviews, moveExport, serverIsLocal } from './remote.mjs';
+import * as marketing from './marketing.mjs';
+import * as aso from './aso.mjs';
 
 
 const HELP = `appshot — drive the screenshot studio from the terminal
@@ -116,6 +118,40 @@ Product page (iOS 27+: one header and one search results asset per app)
                                        Header 3840×1646 (safe area 1646×661), search 3840×2560 (safe 2168×1030).
                                        Uses the app's colors, type and frame. --shots picks slides by position
                                        (iPhone unless :device); auto uses the first slides. --include adds it to export
+
+Marketing (OpenConnect; the token needs the Marketing scope. [app] is OpenConnect's app id, name or bundle id, or all)
+  marketing apps                       Apps and every card option (templates, formats, styles, stat tiles)
+  marketing stats [app] [--range 30d|90d|365d|ytd|all|m:YYYY-MM] [--hero first_time|downloads|proceeds|impressions|page_views]
+                                       The figures the cards show, with change vs the previous period
+  marketing forecast [app] [--horizon 30|90|365] [--currency USD]
+                                       Projected downloads, impressions, page views and proceeds (80% ranges),
+                                       the conversion funnel, what-if scenarios and the next download milestone
+  marketing promo <app>                Promo card material: screenshot ids, default wording, quotable reviews
+  marketing card [app] <template> [--out file.png] [options]
+                                       Render a card to PNG (default ~/.openappshot/marketing) and print its path.
+                                       Stats: overview reach map rating review milestone
+                                         [--range r] [--format 4x5|9x16] [--theme dark|light] [--hero h] [--stats a,b]
+                                         [--list on|off] [--pick n]
+                                       Promo (one app): launch update screens loved reviews download
+                                         [--format 1x1|4x5|9x16|16x9] [--style studio|light|gradient|bold|glow]
+                                         [--accent #hex] [--frame #hex] [--badge on|off] [--rating on|off] [--headline s]
+                                         [--tagline s] [--cta s] [--notes s] [--shots s:id,a:1] [--quotes 0,2] [--reviews 1|3]
+
+ASO (OpenConnect; reading needs the Marketing or ASO changes scope, the rest ASO changes. <app> is an id or name)
+  aso apps [--days 7|30|90]            Every app: listing score, wasted keyword characters, keywords in the top 10,
+                                       search impressions and conversion, storefronts to localize
+  aso show <app> [--country DE] [--days 30]
+                                       One app: listing per locale, tracked keywords (rank, popularity, difficulty),
+                                       search funnel, locale gaps, keyword ideas, changes with before/after impact
+  aso keyword <term> [--country US]    Search it now: top 25 apps, App Store suggestions, difficulty
+  aso track <app> <kw,kw> [--country US] [--remove]
+                                       Track keywords (keyword-field terms are tracked automatically)
+  aso update <app> <locale> [--keywords s] [--subtitle s] [--name s] [--promo s] [--description s] [--whats-new s] [--apply]
+                                       Plan a listing change in App Store Connect; --apply makes it. Keywords, name,
+                                       subtitle and description need a version being prepared; promotional text doesn't
+  aso refresh <app> [--country US]     Fetch the listing from App Store Connect again and rank its keywords
+  aso note <app> <text> [--date YYYY-MM-DD]
+                                       Note a change (new screenshots, icon…) on the timeline
 
 Output
   preview <app> --creative header|search   Render the asset to a PNG and print its path
@@ -992,6 +1028,108 @@ const commands = {
     const next = await http('PATCH', `/api/apps/${app.id}`, { creatives: { [id]: p } });
     const c = next.creatives[id];
     out(c, `${id === 'header' ? 'Product page header' : 'Search results'}: "${c.headline.replace(/\n/g, ' / ')}" · ${c.enabled ? 'in export' : 'not exported (--include on)'}\nCheck it: appshot preview ${ref} --creative ${id}`);
+  },
+
+  async marketing() {
+    const [sub, ...rest] = pos;
+    const str = (v) => (v === undefined || v === true ? undefined : String(v));
+    const on = (v) => (v === undefined ? undefined : ['on', 'true', true, 'yes', '1'].includes(v));
+    try {
+      if (sub === 'apps') {
+        const c = await marketing.catalog();
+        return out(c, () => [
+          ...c.apps.map((a) => `${a.name}  (id ${a.id}${a.bundleId ? `, ${a.bundleId}` : ''})  ${a.firstTimeDownloads.toLocaleString('en-US')} first-time downloads`),
+          '',
+          `Stats cards: ${Object.keys(c.statsCards.templates).join(', ')}  ·  formats ${Object.keys(c.statsCards.formats).join(', ')}`,
+          `Promo cards: ${Object.keys(c.promoCards.templates).join(', ')}  ·  formats ${Object.keys(c.promoCards.formats).join(', ')}  ·  styles ${Object.keys(c.promoCards.styles).join(', ')}`,
+          `Stat tiles: ${Object.keys(c.statsCards.stats).join(', ')}`,
+        ].join('\n'));
+      }
+      if (sub === 'stats') {
+        const s = await marketing.stats({ app: rest[0], range: str(flags.range), hero: str(flags.hero) });
+        return out(s, marketing.describeStats);
+      }
+      if (sub === 'forecast') {
+        const f = await marketing.forecast({ app: rest[0], horizon: str(flags.horizon), currency: str(flags.currency) });
+        return out(f, marketing.describeForecast);
+      }
+      if (sub === 'promo') {
+        if (!rest[0]) die('usage: appshot marketing promo <app>');
+        return out(await marketing.promoMaterial({ app: rest[0] }), (m) => JSON.stringify(m, null, 2));
+      }
+      if (sub === 'card') {
+        // "card <template>" is for all apps; "card <app> <template>" for one.
+        const [app, template] = rest.length > 1 ? rest : ['all', rest[0]];
+        if (!template) die('usage: appshot marketing card [app] <template> [options]');
+        const r = await marketing.card({
+          app, template, out: str(flags.out),
+          range: str(flags.range), format: str(flags.format), theme: str(flags.theme), hero: str(flags.hero), stats: str(flags.stats),
+          list: on(flags.list), pick: str(flags.pick),
+          style: str(flags.style), accent: str(flags.accent), frame: str(flags.frame), badge: on(flags.badge), rating: on(flags.rating),
+          headline: str(flags.headline)?.replace(/\\n/g, '\n'), tagline: str(flags.tagline), cta: str(flags.cta), notes: str(flags.notes),
+          shots: str(flags.shots), quotes: str(flags.quotes), reviews: str(flags.reviews),
+        });
+        return out({ path: r.path, bytes: r.bytes, url: r.url }, r.path);
+      }
+    } catch (e) {
+      die(e.message);
+    }
+    die('usage: appshot marketing apps|stats|forecast|promo|card (see appshot help)');
+  },
+
+  async aso() {
+    const [sub, ...rest] = pos;
+    const str = (v) => (v === undefined || v === true ? undefined : String(v));
+    try {
+      if (sub === 'apps') {
+        const r = await aso.portfolio({ days: str(flags.days) });
+        return out(r, () => r.apps.map((a) => {
+          const conv = a.searchImpressions ? ` · search conversion ${((a.searchGets / a.searchImpressions) * 100).toFixed(1)}%` : '';
+          return `${a.name.split(':')[0]}  (id ${a.apple_id})  ${a.score == null ? 'listing not fetched' : `score ${a.score}, ${a.wasted} wasted / ${a.unused} unused keyword chars, ${a.locales} languages`} · ${a.top10}/${a.keywords} keywords in top 10 · ${a.searchImpressions} search impressions${conv}${a.gaps ? ` · ${a.gaps} to localize` : ''}`;
+        }).join('\n'));
+      }
+      if (sub === 'show') {
+        if (!rest[0]) die('usage: appshot aso show <app> [--country DE] [--days 30]');
+        const o = await aso.overview({ app: rest[0], country: str(flags.country), days: str(flags.days) });
+        return out(o, () => JSON.stringify(o, null, 2));
+      }
+      if (sub === 'keyword') {
+        if (!rest[0]) die('usage: appshot aso keyword <term> [--country US]');
+        const k = await aso.keyword({ keyword: rest.join(' '), country: str(flags.country) });
+        return out(k, () => [
+          `"${k.keyword}" in ${k.country}: ${k.total}${k.total >= 200 ? '+' : ''} apps match, difficulty ${k.difficulty ?? '—'}`,
+          ...k.top.slice(0, 10).map((h, i) => `  ${i + 1}. ${h.name} (${h.ratings} ratings)`),
+          k.suggestions.length ? `Suggestions: ${k.suggestions.join(', ')}` : '',
+        ].join('\n'));
+      }
+      if (sub === 'track') {
+        if (!rest[1]) die('usage: appshot aso track <app> <kw,kw> [--country US] [--remove]');
+        const r = await aso.track({ app: rest[0], keywords: rest.slice(1).join(' ').split(','), country: str(flags.country), remove: !!flags.remove });
+        return out(r, () => (flags.remove ? r.removed.join('\n') : `Tracking ${r.added} new keyword${r.added === 1 ? '' : 's'}${r.failed?.length ? `; couldn't search ${r.failed.join(', ')} yet` : ''}.`));
+      }
+      if (sub === 'update') {
+        if (!rest[1]) die('usage: appshot aso update <app> <locale> [--keywords s] [--subtitle s] [--name s] [--promo s] [--description s] [--whats-new s] [--apply]');
+        const p = await aso.update({
+          app: rest[0], locale: rest[1], apply: !!flags.apply,
+          keywords: str(flags.keywords), subtitle: str(flags.subtitle), name: str(flags.name), promotional_text: str(flags.promo),
+          description: str(flags.description), whats_new: str(flags['whats-new']),
+        });
+        return out(p, aso.describePlan);
+      }
+      if (sub === 'refresh') {
+        if (!rest[0]) die('usage: appshot aso refresh <app> [--country US]');
+        const r = await aso.refresh({ app: rest[0], country: str(flags.country) });
+        return out(r, () => `${r.error ? `Listing: ${r.error}\n` : 'Listing fetched.\n'}Ranked ${r.checked} keywords now; ${r.queued} more in the background.`);
+      }
+      if (sub === 'note') {
+        if (!rest[1]) die('usage: appshot aso note <app> <text> [--date YYYY-MM-DD]');
+        const r = await aso.note({ app: rest[0], note: rest.slice(1).join(' '), date: str(flags.date) });
+        return out(r, 'Noted.');
+      }
+    } catch (e) {
+      die(e.message);
+    }
+    die('usage: appshot aso apps|show|keyword|track|update|refresh|note (see appshot help)');
   },
 
   async open() {

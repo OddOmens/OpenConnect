@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import { guard } from '@/lib/auth';
-import { defaultCopy, promoData } from '@/lib/marketing';
-import { PROMO_TEMPLATES, type PromoTemplateId } from '@/lib/prefs';
-import { promoScreens } from '@/lib/promo-screens';
+import { promoInfo } from '@/lib/promo-screens';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,13 +10,11 @@ export const dynamic = 'force-dynamic';
  * the reviews the Reviews card can quote.
  */
 export async function GET(request: Request) {
-  const denied = guard(request);
+  const denied = guard(request, { apiToken: 'marketing' });
   if (denied) return denied;
   const app = new URL(request.url).searchParams.get('app');
   if (!app || !/^\d+$/.test(app)) return NextResponse.json({ error: 'Which app?' }, { status: 400 });
-  const [screens, data] = await Promise.all([promoScreens(app), promoData(app)]);
-  if (!data) return NextResponse.json({ error: 'Unknown app' }, { status: 404 });
-  const copy = Object.fromEntries((Object.keys(PROMO_TEMPLATES) as PromoTemplateId[]).map((t) => [t, defaultCopy(t, data)]));
-  const quotes = data.quotes.map((q, index) => ({ index, body: q.body, reviewer: q.reviewer, rating: q.rating }));
-  return NextResponse.json({ ...screens, copy, quotes });
+  const info = await promoInfo(app);
+  if (!info) return NextResponse.json({ error: 'Unknown app' }, { status: 404 });
+  return NextResponse.json(info);
 }

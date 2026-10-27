@@ -7,5 +7,8 @@ export async function register() {
     logAuthStatus();
     const { startScheduler } = await import('./lib/scheduler');
     startScheduler();
+    // Marketing's listings, images and cards, ready before the page is opened.
+    const { scheduleWarm } = await import('./lib/marketing-warm');
+    scheduleWarm(20_000);
   }
 }

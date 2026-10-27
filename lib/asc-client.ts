@@ -136,11 +136,23 @@ export async function ascPost(path: string, body: unknown): Promise<any> {
   return res.json();
 }
 
+export async function ascPatch(path: string, body: unknown): Promise<any> {
+  const res = await fetch(API + path, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${generateToken()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  });
+  if (!res.ok) throw await errorFrom(res);
+  return res.json();
+}
+
 export interface AscApp {
   id: string;
   name: string;
   bundleId: string;
   sku: string;
+  primaryLocale: string | null;
 }
 
 export async function fetchApps(): Promise<AscApp[]> {
@@ -150,6 +162,7 @@ export async function fetchApps(): Promise<AscApp[]> {
     name: app.attributes.name,
     bundleId: app.attributes.bundleId,
     sku: app.attributes.sku,
+    primaryLocale: app.attributes.primaryLocale || null,
   }));
 }
 

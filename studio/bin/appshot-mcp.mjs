@@ -14,6 +14,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { BASE, fetchExport, isLocalUrl, moveExport, serverIsLocal } from './remote.mjs';
+import * as marketing from './marketing.mjs';
+import * as aso from './aso.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CLI = path.join(ROOT, 'bin', 'appshot.mjs');
@@ -139,6 +141,14 @@ const server = new McpServer(
       'Headlines: *asterisks* highlight words, \\n breaks lines; short benefit-led phrases.',
       'Apple rules: no prices, URLs, ©/®/™, other platforms, or Apple awards; at most 10 screenshots per device.',
       'Use preview_slide to look at your work before telling the user it is ready.',
+      'Inside OpenConnect there is also Marketing (tools named marketing_*, need a token with the Marketing scope):',
+      'marketing_catalog lists apps and card options; marketing_stats gives the figures the cards show; marketing_forecast',
+      'projects downloads, impressions, page views and proceeds with what-if scenarios; marketing_card renders a stats or',
+      'promo card to PNG. Quote figures exactly as returned and call projections estimates, never promises.',
+      'ASO (tools named aso_*): aso_overview without an app compares every app, with one gives its listing per locale,',
+      'keyword ranks, search funnel and change history; aso_keyword searches a keyword live. To improve a listing, plan it',
+      'with aso_update_listing (apply false), show the user the old and new text and score, and apply only after they agree.',
+      'Ranks, popularity, difficulty and the listing score are estimates; listing text and analytics figures are Apple\'s.',
     ].join(' '),
   },
 );
@@ -884,6 +894,205 @@ server.registerTool(
     execFile('open', [url]);
     return text(`Opened ${url}`);
   }),
+);
+
+// ---------- marketing (OpenConnect) ----------
+const mAppArg = z.string().optional().describe('OpenConnect app: id, name or bundle id; omit or "all" for all apps (stats cards and projections only)');
+
+server.registerTool(
+  'marketing_catalog',
+  {
+    title: 'Marketing: apps and options',
+    description: "OpenConnect's apps (id, name, all-time first-time downloads) and every Marketing card option: stats and promo templates, formats, styles, themes, stat tiles, ranges, projection horizons, and the HTTP endpoints.",
+    inputSchema: {},
+    annotations: { readOnlyHint: true },
+  },
+  wrap(async () => json('OpenConnect Marketing', await marketing.catalog())),
+);
+
+server.registerTool(
+  'marketing_stats',
+  {
+    title: 'Marketing: figures',
+    description: 'The figures the Marketing cards show for an app (or all apps) over a range: downloads, proceeds, impressions, page views, rating, rank, countries reached, top markets, change vs the previous period, and all-time totals. Use them to write posts and captions.',
+    inputSchema: {
+      app: mAppArg,
+      range: z.string().optional().describe('30d (default), 90d, 365d, ytd, all, or one month as m:YYYY-MM'),
+      hero: z.enum(['first_time', 'downloads', 'proceeds', 'impressions', 'page_views']).optional().describe('The headline figure (default first_time)'),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  wrap(async (a) => {
+    const s = await marketing.stats(a);
+    return json(marketing.describeStats(s), s);
+  }),
+);
+
+server.registerTool(
+  'marketing_forecast',
+  {
+    title: 'Marketing: projections',
+    description: "Projected first-time downloads, impressions, product page views and proceeds over 30, 90 or 365 days with rough 80% ranges; the impressions → page views → downloads funnel and conversion rate; what-if scenarios (more impressions, best conversion) with extra downloads and proceeds; and when the next download milestone lands. Estimates from the app's own daily history, not guarantees.",
+    inputSchema: {
+      app: mAppArg,
+      horizon: z.union([z.literal(30), z.literal(90), z.literal(365)]).optional().describe('Days ahead (default 30)'),
+      currency: z.string().optional().describe('Display currency, e.g. USD (default: the dashboard setting)'),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  wrap(async (a) => {
+    const f = await marketing.forecast(a);
+    // The daily series is long; the summary and totals are what's useful here.
+    const brief = { ...f, metrics: Object.fromEntries(Object.entries(f.metrics).map(([k, m]) => [k, { ...m, history: undefined, daily: undefined }])) };
+    return json(marketing.describeForecast(f), brief);
+  }),
+);
+
+server.registerTool(
+  'marketing_promo_material',
+  {
+    title: 'Marketing: promo card material',
+    description: "For one app's promo cards: the screenshots they can show (ids for marketing_card's shots: s:<studio slide>, a:<App Store n>), each template's default wording, and the 5-star reviews the Reviews card can quote (indexes for quotes).",
+    inputSchema: { app: z.string().describe('OpenConnect app: id, name or bundle id') },
+    annotations: { readOnlyHint: true },
+  },
+  wrap(async (a) => json('Promo card material', await marketing.promoMaterial(a))),
+);
+
+server.registerTool(
+  'marketing_card',
+  {
+    title: 'Marketing: render a card',
+    description:
+      'Render a Marketing card to PNG, saved on this Mac, and show it. Stats cards (overview, reach, map, rating, review, milestone) take range, format 4x5|9x16, theme, hero, stats, list, pick. ' +
+      'Promo cards for one app (launch, update, screens, loved, reviews, download) take format 1x1|4x5|9x16|16x9, style, accent, frame, badge, rating, headline, tagline, cta, notes, shots, quotes, reviews. Empty text uses the template wording; \\n breaks lines.',
+    inputSchema: {
+      app: mAppArg,
+      template: z.enum([...marketing.STATS_TEMPLATES, ...marketing.PROMO_TEMPLATES]),
+      format: z.enum(['1x1', '4x5', '9x16', '16x9']).optional().describe('Default 4x5. Stats cards: 4x5 or 9x16 only'),
+      range: z.string().optional().describe('Stats: 30d, 90d, 365d, ytd, all, m:YYYY-MM'),
+      theme: z.enum(['dark', 'light']).optional().describe('Stats cards'),
+      hero: z.enum(['first_time', 'downloads', 'proceeds', 'impressions', 'page_views']).optional().describe('Overview: the big number'),
+      stats: z.array(z.string()).optional().describe('Overview: tiles in order (see marketing_catalog statsCards.stats)'),
+      list: z.boolean().optional().describe('Overview: show top markets / top apps'),
+      pick: z.number().int().optional().describe('Review card: which review (0 = newest good one)'),
+      style: z.enum(['studio', 'light', 'gradient', 'bold', 'glow']).optional().describe('Promo cards'),
+      accent: z.string().optional().describe('Promo: #rrggbb'),
+      frame: z.string().optional().describe('Promo: iPhone frame #rrggbb'),
+      badge: z.boolean().optional().describe('Promo: "Download on the App Store" button'),
+      rating: z.boolean().optional().describe('Promo: show the rating'),
+      headline: z.string().optional(),
+      tagline: z.string().optional(),
+      cta: z.string().optional().describe('Promo: button text'),
+      notes: z.string().optional().describe("What's New card: release notes"),
+      shots: z.array(z.string()).optional().describe('Promo: screenshot ids from marketing_promo_material'),
+      quotes: z.array(z.number().int()).optional().describe('Reviews card: review indexes, first in front'),
+      reviews: z.union([z.literal(1), z.literal(3)]).optional().describe('Reviews card: one review or three'),
+      out: z.string().optional().describe(`Where to save the PNG (default ${marketing.OUT_DIR})`),
+    },
+  },
+  wrap(async (a) => {
+    const r = await marketing.card(a, { preview: true });
+    return {
+      content: [
+        { type: 'text', text: `Saved ${r.path} (${Math.round(r.bytes / 1024)} KB). Full size: ${r.url}` },
+        { type: 'image', data: r.preview.toString('base64'), mimeType: 'image/png' },
+      ],
+    };
+  }),
+);
+
+// ---------- ASO (OpenConnect) ----------
+const asoApp = z.string().describe('OpenConnect app: id or name');
+const asoCountry = z.string().optional().describe("Storefront, ISO code like US, DE, JP (default: the app's primary language's storefront)");
+
+server.registerTool(
+  'aso_overview',
+  {
+    title: 'ASO: apps or one app',
+    description:
+      'Without app: every app side by side (listing score, wasted/unused keyword characters, listing languages, keywords in the top 10 now and a week ago, App Store search impressions and conversion vs the period before, storefronts to localize). ' +
+      "With app: one app in one storefront: its listing in every locale as App Store Connect holds it (live, and the version being prepared with whether it's editable), " +
+      'tracked keywords (every keyword-field term is tracked in its language\'s storefront automatically; source "listing" vs "manual") with rank (null = not in top 200), rank 7/30 days ago, popularity and difficulty 0-100, top 5 apps; ' +
+      'markets (storefronts per listing language), the search funnel by source and storefront, locale gaps, keyword ideas from competitors, and the change timeline with search/downloads 14 days before and after each change. ' +
+      'Listing text, funnel and change figures are from Apple; ranks follow App Store search closely but not exactly; popularity, difficulty and the score are OpenConnect estimates.',
+    inputSchema: {
+      app: z.string().optional().describe('OpenConnect app: id or name; omit for all apps'),
+      country: asoCountry,
+      days: z.union([z.literal(7), z.literal(30), z.literal(90)]).optional().describe('Funnel period (default 30)'),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  wrap(async (a) => (a.app ? json('ASO overview', await aso.overview(a)) : json('ASO: all apps', await aso.portfolio(a)))),
+);
+
+server.registerTool(
+  'aso_keyword',
+  {
+    title: 'ASO: search a keyword',
+    description: 'Search App Store for a keyword in a storefront now: the top 25 apps (ratings, rating, genre), how many apps match, what App Store search suggests around it, and a difficulty estimate. Use it to judge a keyword before putting it in a listing.',
+    inputSchema: { keyword: z.string(), country: z.string().optional().describe('Storefront, ISO code (default US)') },
+    annotations: { readOnlyHint: true },
+  },
+  wrap(async (a) => json(`"${a.keyword}" in ${a.country ?? 'US'}`, await aso.keyword(a))),
+);
+
+server.registerTool(
+  'aso_track_keywords',
+  {
+    title: 'ASO: track keywords',
+    description: "Track keywords for an app in a storefront (ranked right away, then daily), or stop tracking ones added this way (remove: true). Keyword-field terms are tracked automatically and follow the field; they can't be removed here. Needs a token with the ASO changes scope.",
+    inputSchema: { app: asoApp, keywords: z.array(z.string()).min(1).max(30), country: z.string().optional().describe('Storefront, ISO code (default US)'), remove: z.boolean().optional() },
+  },
+  wrap(async (a) => json(a.remove ? 'Stopped tracking' : 'Tracking', await aso.track(a))),
+);
+
+server.registerTool(
+  'aso_update_listing',
+  {
+    title: 'ASO: change the App Store listing',
+    description:
+      'Change one locale of an app\'s listing in App Store Connect: keywords (comma-separated, 100 characters), subtitle and name (30 each), promotional text (170), description and whats_new (4000). ' +
+      "Apple only allows keywords, description, What's New, name and subtitle on a version being prepared (check listing.draftVersion.editable in aso_overview); promotional text changes on the live version at once. " +
+      'ALWAYS call with apply false first (the default): it sends nothing to Apple and returns old → new for each field, where it would be written, anything that can\'t change and why, and the listing score before and after. ' +
+      'Show that to the user and call again with apply: true only after they say yes. Needs a token with the ASO changes scope and an App Store Connect key with the App Manager role.',
+    inputSchema: {
+      app: asoApp,
+      locale: z.string().describe('Listing locale as App Store Connect names it: en-US, de-DE, ja, zh-Hans…'),
+      keywords: z.string().optional(),
+      subtitle: z.string().optional(),
+      name: z.string().optional(),
+      promotional_text: z.string().optional(),
+      description: z.string().optional(),
+      whats_new: z.string().optional(),
+      apply: z.boolean().optional().describe('false (default): plan only. true: write to App Store Connect'),
+    },
+    annotations: { destructiveHint: true },
+  },
+  wrap(async (a) => {
+    const plan = await aso.update(a);
+    return json(aso.describePlan(plan), plan);
+  }),
+);
+
+server.registerTool(
+  'aso_refresh',
+  {
+    title: 'ASO: refresh from App Store Connect',
+    description: "Fetch an app's listing from App Store Connect again (the keyword-field tracking follows it) and rank its keywords: the storefront's now, the others in the background.",
+    inputSchema: { app: asoApp, country: asoCountry },
+  },
+  wrap(async (a) => json('Refreshed', await aso.refresh(a))),
+);
+
+server.registerTool(
+  'aso_note',
+  {
+    title: 'ASO: note a change',
+    description: "Add a note to an app's ASO change timeline (new screenshots, icon, Search Ads campaign…) so its before/after impact is measured like a listing change.",
+    inputSchema: { app: asoApp, note: z.string().max(300), date: z.string().optional().describe('YYYY-MM-DD (default today)') },
+  },
+  wrap(async (a) => json('Noted', await aso.note(a))),
 );
 
 await server.connect(new StdioServerTransport());

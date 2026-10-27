@@ -13,17 +13,17 @@ import { execFileSync } from 'node:child_process';
  * Otherwise APPSHOT_URL, or a studio running on this machine.
  */
 const trim = (u) => u.trim().replace(/\/+$/, '');
-export const BASE = process.env.OPENCONNECT_URL
-  ? `${trim(process.env.OPENCONNECT_URL)}/studio`
-  : trim(process.env.APPSHOT_URL ?? 'http://127.0.0.1:4317');
+/** OpenConnect itself (Marketing lives at /api/marketing); null for a standalone studio. */
+export const ORIGIN = process.env.OPENCONNECT_URL ? trim(process.env.OPENCONNECT_URL) : null;
+export const BASE = ORIGIN ? `${ORIGIN}/studio` : trim(process.env.APPSHOT_URL ?? 'http://127.0.0.1:4317');
 
-// OpenConnect keeps the studio behind its sign-in: every request to it carries the token.
+// OpenConnect keeps the studio and Marketing behind its sign-in: every request to it carries the token.
 const TOKEN = process.env.OPENCONNECT_TOKEN?.trim();
 if (TOKEN) {
   const plain = globalThis.fetch;
   globalThis.fetch = (input, init = {}) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    if (!url.startsWith(BASE)) return plain(input, init);
+    if (!url.startsWith(`${ORIGIN ?? BASE}/`)) return plain(input, init);
     const headers = new Headers(init.headers ?? (input instanceof Request ? input.headers : undefined));
     headers.set('authorization', `Bearer ${TOKEN}`);
     return plain(input, { ...init, headers });

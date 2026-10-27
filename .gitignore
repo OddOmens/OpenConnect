@@ -22,3 +22,6 @@ npm-debug.log*
 
 # Tailscale node state (docker-compose.tailscale.yml)
 tailscale/
+
+# Local compose overrides (e.g. extra networks on one server)
+docker-compose.override.yml

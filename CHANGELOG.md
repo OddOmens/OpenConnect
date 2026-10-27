@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0
 
 ### Added
 - **One top bar on every page:** OpenConnect, Dashboard · Marketing · Studio, the page's own controls and Settings, always in the same place (the studio included, in its own colours). The studio starts in your OpenConnect light/dark setting.

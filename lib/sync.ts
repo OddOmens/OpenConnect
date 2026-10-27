@@ -97,6 +97,8 @@ export function startJob(id: JobId, trigger: string): boolean {
       state.running = false;
       state.phase = 'done';
       console.log(`[sync:${id}] finished (${status}) ${state.summary || ''}`);
+      // New data: Marketing's cards are drawn again in the background, ready for the page.
+      import('./marketing-warm').then((m) => m.scheduleWarm()).catch(() => {});
       if (id === 'store') notifyChartEntries().catch((err) => console.error('[notify] chart entries:', err?.message || err));
     });
   return true;

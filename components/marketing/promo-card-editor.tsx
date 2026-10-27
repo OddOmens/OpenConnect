@@ -75,7 +75,7 @@ function TextField({ label, value, placeholder, multiline, maxLength, onCommit }
     <label className="block space-y-1">
       <span className="text-xs text-muted-foreground">{label}</span>
       {multiline ? (
-        <textarea value={draft} onChange={(e) => change(e.target.value)} placeholder={placeholder} maxLength={maxLength} rows={label === 'Release notes' ? 5 : 3} className={cn(textareaCls, 'resize-y')} />
+        <textarea value={draft} onChange={(e) => change(e.target.value)} placeholder={placeholder} maxLength={maxLength} rows={label === 'Release notes' || label === 'Features' ? 5 : 3} className={cn(textareaCls, 'resize-y')} />
       ) : (
         <input value={draft} onChange={(e) => change(e.target.value)} placeholder={placeholder} maxLength={maxLength} className={inputCls} />
       )}
@@ -87,7 +87,7 @@ function TextField({ label, value, placeholder, multiline, maxLength, onCommit }
  * The popup for one promo card: a large preview, and beside it everything that card uses. Each
  * setting starts as "all cards" (the toolbar's) until it's changed here; Reset clears them all.
  */
-export function PromoCardEditor({ template, appId, mk, updateMk, info, toolbarShots, resolved, url, aspect, busy, onDownload }: {
+export function PromoCardEditor({ template, appId, mk, updateMk, info, toolbarShots, resolved, url, placeholder: firstImage, aspect, busy, onDownload }: {
   template: PromoTemplateId
   appId: string
   mk: Marketing
@@ -96,6 +96,7 @@ export function PromoCardEditor({ template, appId, mk, updateMk, info, toolbarSh
   toolbarShots: string[]
   resolved: ResolvedPromo
   url: string
+  placeholder?: string // shown until `url` has loaded (the grid's preview, already in the browser)
   aspect: string
   busy: boolean
   onDownload: () => void
@@ -119,7 +120,7 @@ export function PromoCardEditor({ template, appId, mk, updateMk, info, toolbarSh
   const edited = Object.keys(own).length > 0
 
   // The preview keeps showing the last image until the next one has loaded (a hidden <img> loads it).
-  const [shown, setShown] = useState(url)
+  const [shown, setShown] = useState(firstImage ?? url)
   const loading = url !== shown
 
   // Screenshots: this card's own picks, else the toolbar's.
@@ -134,7 +135,8 @@ export function PromoCardEditor({ template, appId, mk, updateMk, info, toolbarSh
     setOwn({ quotes: ownQuotes.includes(i) ? ownQuotes.filter((x) => x !== i) : [...ownQuotes, i].slice(-reviewCount) })
 
   const placeholder = (k: TextKey) => {
-    const fromAll = appCopy[k]
+    // The toolbar's notes are release notes, not a feature list.
+    const fromAll = template === 'feature' && k === 'notes' ? undefined : appCopy[k]
     if (fromAll) return fromAll
     const own = info?.copy[template]?.[k]
     if (k === 'cta') return 'Download on the App Store'
@@ -250,7 +252,7 @@ export function PromoCardEditor({ template, appId, mk, updateMk, info, toolbarSh
             {uses.text.map((k) => (
               <TextField
                 key={`${template}-${k}`}
-                label={TEXT_LABELS[k]}
+                label={k === 'notes' && template === 'feature' ? 'Features' : TEXT_LABELS[k]}
                 value={own[k] ?? ''}
                 placeholder={placeholder(k)}
                 multiline={k === 'headline' || k === 'notes' || k === 'tagline'}

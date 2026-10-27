@@ -5,9 +5,10 @@ import Link from 'next/link'
 import { AppNav } from '@/components/nav/app-nav'
 import { ScreenThumb, type PromoScreens } from './screen-thumb'
 import { PromoCardEditor } from './promo-card-editor'
-import { hasOwnSettings, promoUrl, resolvePromo, type ResolvedPromo } from '@/lib/promo-settings'
+import { hasOwnSettings, previewParam, promoUrl, resolvePromo, statsUrl, type ResolvedPromo } from '@/lib/promo-settings'
 import {
-  AlertTriangle, Download, Globe, Heart, Images, LayoutDashboard, Loader2, Map as MapIcon, Maximize2, MessageSquareQuote, RefreshCw, Rocket, Smartphone, Sparkles, Star, Trophy,
+  AlertTriangle, Award, ChevronDown, Download, Globe, Heart, Images, LayoutDashboard, ListChecks, Loader2, Map as MapIcon, Maximize2, MessageSquareQuote, PartyPopper,
+  RefreshCw, Rocket, SlidersHorizontal, Smartphone, Sparkles, Star, Store, Trophy,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -15,7 +16,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { EmptyState, Segmented, Toggle } from '@/components/dashboard/section'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
-  DEFAULT_PREFS, PROMO_ACCENTS, PROMO_FORMATS, PROMO_FRAMES, PROMO_STYLES, PROMO_TEMPLATES, PromoFormatId, PromoStyleId, PromoTemplateId,
+  CARD_SIZES, CardSizeId, PROMO_ACCENTS, PROMO_FORMATS, PROMO_FRAMES, PROMO_STYLES, PROMO_TEMPLATES, PromoFormatId, PromoStyleId, PromoTemplateId,
   SHARE_HEROES, SHARE_STATS, SHARE_TEMPLATES, ShareHeroId, ShareStatId, ShareTemplateId, UiPrefs, monthRangeLabel,
 } from '@/lib/prefs'
 import type { App } from '@/components/dashboard/app-selector'
@@ -60,6 +61,10 @@ const PROMO_ICONS: Record<PromoTemplateId, React.ElementType> = {
   loved: Heart,
   reviews: MessageSquareQuote,
   download: Smartphone,
+  feature: ListChecks,
+  store: Store,
+  rated: Award,
+  milestone: PartyPopper,
 }
 
 // What each style looks like, for its picker button.
@@ -78,6 +83,14 @@ const ASPECT: Record<PromoFormatId, string> = {
   '16x9': 'aspect-video',
 }
 
+// Grid columns for each card shape at each card size (S fits more on screen, L shows more detail).
+type Shape = 'portrait' | 'tall' | 'wide'
+const GRID: Record<Shape, Record<CardSizeId, string>> = {
+  portrait: { s: 'grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5', m: 'sm:grid-cols-2 xl:grid-cols-3', l: 'md:grid-cols-2' },
+  tall: { s: 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-6', m: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4', l: 'sm:grid-cols-2 xl:grid-cols-3' },
+  wide: { s: 'sm:grid-cols-2 xl:grid-cols-3', m: 'sm:grid-cols-2', l: 'grid-cols-1' },
+}
+
 const SIZE: Record<PromoFormatId, string> = {
   '1x1': '1080x1080',
   '4x5': '1080x1350',
@@ -89,23 +102,73 @@ function slug(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
 
-/** One preview; shows a spinner until the server has rendered (or served from cache) the PNG. */
-function Preview({ src, alt, aspect, onOpen }: { src: string; alt: string; aspect: string; onOpen: () => void }) {
-  const [loaded, setLoaded] = useState(false)
-  useEffect(() => setLoaded(false), [src])
+/**
+ * One preview. Until its first image is in it shows a spinner; after that a change of settings
+ * keeps the last image up (with a small spinner) until the new one has loaded, so nothing blanks
+ * out while you tweak. Hovering it fetches the full-size card, so the popup opens sharp.
+ */
+function Preview({ src, full, alt, aspect, onOpen }: { src: string; full: string; alt: string; aspect: string; onOpen: () => void }) {
+  const [shown, setShown] = useState<string | null>(null)
+  useEffect(() => {
+    if (!shown || shown === src) return
+    const next = new Image()
+    next.onload = next.onerror = () => setShown(src)
+    next.src = src
+    return () => {
+      next.onload = next.onerror = null
+    }
+  }, [src, shown])
+  const hover = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const prefetch = () => {
+    hover.current = setTimeout(() => {
+      new Image().src = full
+    }, 250)
+  }
+  useEffect(() => () => clearTimeout(hover.current), [])
   return (
-    <button onClick={onOpen} className={cn('group relative block w-full overflow-hidden rounded-lg border border-border bg-card', aspect)} aria-label={`Enlarge ${alt}`}>
-      {!loaded && (
+    <button
+      onClick={onOpen}
+      onPointerEnter={prefetch}
+      onPointerLeave={() => clearTimeout(hover.current)}
+      className={cn('group relative block w-full overflow-hidden rounded-lg border border-border bg-card', aspect)}
+      aria-label={`Enlarge ${alt}`}
+    >
+      {!shown && (
         <span className="absolute inset-0 flex items-center justify-center text-muted-foreground">
           <Loader2 className="h-6 w-6 animate-spin" />
         </span>
       )}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt={alt} loading="lazy" onLoad={() => setLoaded(true)} className={cn('h-full w-full object-cover transition-opacity', loaded ? 'opacity-100' : 'opacity-0')} />
+      <img src={shown ?? src} alt={alt} loading="lazy" onLoad={() => !shown && setShown(src)} className={cn('h-full w-full object-cover transition-opacity', shown ? 'opacity-100' : 'opacity-0')} />
+      {shown && shown !== src && (
+        <span className="absolute left-2 top-2 rounded-md bg-background/80 p-1.5 text-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+        </span>
+      )}
       <span className="absolute right-2 top-2 rounded-md bg-background/80 p-1.5 text-foreground opacity-0 transition-opacity group-hover:opacity-100">
         <Maximize2 className="h-4 w-4" />
       </span>
     </button>
+  )
+}
+
+/** The full-size card in the popup, over the grid's preview (already loaded) until it's in. */
+function FullImage({ src, placeholder, alt, className }: { src: string; placeholder: string; alt: string; className: string }) {
+  const [shown, setShown] = useState(placeholder)
+  return (
+    <div className="relative">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={shown} alt={alt} className={className} />
+      {shown !== src && (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={src} alt="" className="hidden" onLoad={() => setShown(src)} onError={() => setShown(src)} />
+          <span className="absolute right-2 top-2 rounded-md bg-background/80 p-1.5">
+            <Loader2 className="h-4 w-4 animate-spin" />
+          </span>
+        </>
+      )}
+    </div>
   )
 }
 
@@ -203,35 +266,25 @@ interface Card {
   extra?: React.ReactNode
 }
 
-export function MarketingStudio() {
-  const [apps, setApps] = useState<App[]>([])
-  const [months, setMonths] = useState<string[]>([])
-  const [loaded, setLoaded] = useState(false)
-  const [share, setShare, updateShare] = useSaved<UiPrefs['share']>('share', DEFAULT_PREFS.share)
-  const [mk, setMk, updateMk] = useSaved<Marketing>('marketing', DEFAULT_PREFS.marketing)
+/** What the server already knows when it sends the page (see app/(dashboard)/marketing/page.tsx). */
+export interface MarketingInitial {
+  share: UiPrefs['share']
+  marketing: Marketing
+  apps: App[]
+  months: string[]
+  screens: { app: string; data: PromoScreens } | null // the promo app's, when they were quick to get
+  statsVersion: string // goes in the stats cards' URLs, so the browser can keep them
+}
+
+export function MarketingStudio({ initial }: { initial: MarketingInitial }) {
+  const { apps, months } = initial
+  const [share, , updateShare] = useSaved<UiPrefs['share']>('share', initial.share)
+  const [mk, , updateMk] = useSaved<Marketing>('marketing', initial.marketing)
   const [busy, setBusy] = useState<string | null>(null)
   const [openKey, setOpenKey] = useState<string | null>(null)
   // Browsers block file downloads on plain http:// pages (except localhost).
   const [secure, setSecure] = useState(true)
   useEffect(() => setSecure(window.isSecureContext), [])
-
-  useEffect(() => {
-    fetch('/api/settings')
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.prefs?.share) setShare(d.prefs.share)
-        if (d.prefs?.marketing) setMk(d.prefs.marketing)
-      })
-      .catch(() => {})
-      .finally(() => setLoaded(true))
-    fetch('/api/apps')
-      .then((r) => r.json())
-      .then((d) => {
-        setApps((d.apps || []).filter((a: App) => !a.hidden))
-        setMonths(d.months || [])
-      })
-      .catch(() => {})
-  }, [setShare, setMk])
 
   // --- Stats cards: every app (and All Apps) in the chosen design ---------------------
   const { format, range, theme, template } = share
@@ -242,7 +295,7 @@ export function MarketingStudio() {
     key: c.id,
     name: c.name,
     title: `${c.name} card`,
-    url: `/api/marketing?app=${c.id}&t=${template}&range=${range}&format=${format}&theme=${theme}&hero=${share.hero}&stats=${share.stats.join(',')}&list=${share.showList ? 1 : 0}&pick=${picks[c.id] ?? 0}`,
+    url: statsUrl(c.id, share, picks[c.id] ?? 0, initial.statsVersion),
     file: `${slug(c.name)}-${template}${usesRange ? `-${range.replace('m:', '')}` : ''}-${format === '4x5' ? '1080x1350' : '1080x1920'}.png`,
     aspect: ASPECT[format],
     extra: template === 'review' && (
@@ -266,12 +319,13 @@ export function MarketingStudio() {
 
   // Screenshots the cards can show: the app's studio screens and its App Store ones. The picked
   // ones (in order) are kept per app; until some are picked the cards use the defaults.
-  const [loadedScreens, setLoadedScreens] = useState<{ app: string; data: PromoScreens } | null>(null)
+  const [loadedScreens, setLoadedScreens] = useState<{ app: string; data: PromoScreens } | null>(initial.screens)
   const promoAppId = promoApp?.apple_id
   // Only the answer for the app on screen counts (switching apps shows "Loading…" until it's in).
   const screens = loadedScreens && loadedScreens.app === promoAppId ? loadedScreens.data : null
+  const haveScreens = !!screens
   useEffect(() => {
-    if (!promo || !promoAppId) return
+    if (!promo || !promoAppId || haveScreens) return
     let live = true
     fetch(`/api/marketing/promo?app=${promoAppId}`)
       .then((r) => (r.ok ? r.json() : null))
@@ -280,7 +334,7 @@ export function MarketingStudio() {
     return () => {
       live = false
     }
-  }, [promo, promoAppId])
+  }, [promo, promoAppId, haveScreens])
   const pickedShots = (promoAppId && mk.shots[promoAppId]) || []
   const available = new Set(screens?.screens.map((x) => x.id) ?? [])
   const shownShots = (pickedShots.length ? pickedShots : screens?.defaults ?? []).filter((id) => !screens || available.has(id))
@@ -295,18 +349,22 @@ export function MarketingStudio() {
     delete rest[promoAppId]
     updateMk({ shots: rest })
   }
-  const settledShots = useSettled(shownShots.join(','), 400)
+  // The cards' URLs name only picked screenshots: left out, the server uses the defaults itself, so
+  // a card's URL doesn't change (and load twice) when the screenshot list arrives.
+  const settledShots = useSettled(pickedShots.length ? shownShots.join(',') : '', 400)
   // Toolbar text and colour settle before the cards re-render (no render per keystroke).
   const mkForCards = { ...mk, accent: settledAccent, copy: promoAppId ? { ...mk.copy, [promoAppId]: settledCopy } : mk.copy }
   const toolbarShots = settledShots ? settledShots.split(',') : []
-  const promoCards: Card[] = promoApp
+  // Promo cards wait for the app's version (with its screenshots, usually sent with the page), so
+  // each card is asked for once, by the URL the browser can keep.
+  const promoCards: Card[] = promoApp && screens
     ? (Object.keys(PROMO_TEMPLATES) as PromoTemplateId[]).map((t) => {
         const r = resolvePromo(mkForCards, promoApp.apple_id, t, toolbarShots)
         return {
           key: t,
           name: PROMO_TEMPLATES[t],
           title: `${appName} · ${PROMO_TEMPLATES[t]}`,
-          url: promoUrl(promoApp.apple_id, t, r),
+          url: promoUrl(promoApp.apple_id, t, r, screens?.version),
           file: `${slug(appName)}-${t}-${r.style}-${SIZE[r.format]}.png`,
           aspect: ASPECT[r.format],
           template: t,
@@ -319,9 +377,11 @@ export function MarketingStudio() {
   const cards = promo ? promoCards : statsCards
   // Looked up live, so an open card's preview follows its settings.
   const open = cards.find((c) => c.key === openKey) ?? null
-  const grid = promo
-    ? mk.format === '16x9' ? 'sm:grid-cols-2' : mk.format === '9x16' ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5' : 'sm:grid-cols-2 xl:grid-cols-3'
-    : format === '4x5' ? 'sm:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4'
+  const shape: Shape = (promo ? mk.format : format) === '16x9' ? 'wide' : (promo ? mk.format : format) === '9x16' ? 'tall' : 'portrait'
+  const grid = GRID[shape][mk.cardSize]
+  const optionsOpen = mk.optionsOpen
+  const preview = previewParam(mk.cardSize)
+  const waiting = promo && !!promoApp && !screens
 
   // Full size: straight from the server's cache if the card was opened, else drawn now (the grid's
   // previews are smaller).
@@ -338,6 +398,20 @@ export function MarketingStudio() {
     a.download = card.file
     a.click()
     URL.revokeObjectURL(a.href)
+  }
+
+  // Every card's PNG is fetched at once (the server draws a few at a time), then saved in order.
+  const downloadAll = async (list: Card[]) => {
+    const files = list.map((c) => fetch(c.url).then((r) => (r.ok ? r.blob() : null)).catch(() => null))
+    for (let i = 0; i < list.length; i++) {
+      const blob = await files[i]
+      if (!blob) continue
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = list[i].file
+      a.click()
+      URL.revokeObjectURL(a.href)
+    }
   }
 
   const run = async (key: string, fn: () => Promise<void>) => {
@@ -357,7 +431,7 @@ export function MarketingStudio() {
       <AppNav
         active="marketing"
         actions={
-          <Button size="sm" onClick={() => run('all-cards', async () => { for (const c of cards) await download(c) })} disabled={!!busy || !secure || !cards.length} title={secure ? undefined : 'Needs https://'} className="gap-1.5">
+          <Button size="sm" onClick={() => run('all-cards', () => downloadAll(cards))} disabled={!!busy || !secure || !cards.length} title={secure ? undefined : 'Needs https://'} className="gap-1.5">
             {busy === 'all-cards' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
             <span className="hidden sm:inline">Download all</span>
           </Button>
@@ -415,9 +489,28 @@ export function MarketingStudio() {
               </>
             )}
           </div>
+          <div className="ml-auto flex items-center gap-2">
+            <Segmented
+              value={mk.cardSize}
+              onChange={(cardSize: CardSizeId) => updateMk({ cardSize })}
+              options={(Object.keys(CARD_SIZES) as CardSizeId[]).map((sz) => ({ value: sz, label: CARD_SIZES[sz] }))}
+            />
+            <Button
+              variant={optionsOpen ? 'secondary' : 'outline'}
+              size="sm"
+              className="h-7 gap-1.5 px-2.5 text-xs"
+              aria-expanded={optionsOpen}
+              onClick={() => updateMk({ optionsOpen: !optionsOpen })}
+              title={optionsOpen ? 'Fold the options away to see more of the cards' : 'Show the options'}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              Customize
+              <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', optionsOpen && 'rotate-180')} />
+            </Button>
+          </div>
         </div>
 
-        {promo ? (
+        {!optionsOpen ? null : promo ? (
           <>
             <div className={rowCls}>
               <span className={labelCls}>Style</span>
@@ -583,7 +676,7 @@ export function MarketingStudio() {
             </div>
           </div>
         )}
-        {promo && loaded && apps.length === 0 && (
+        {promo && apps.length === 0 && (
           <div className="rounded-lg border border-border">
             <EmptyState>Sync your apps first: promo cards are made from an app&apos;s App Store listing.</EmptyState>
           </div>
@@ -594,12 +687,12 @@ export function MarketingStudio() {
           </p>
         )}
         <div className={cn('grid gap-6', grid)}>
-          {!loaded && [0, 1, 2].map((i) => <Skeleton key={i} className={cn('w-full rounded-lg', ASPECT[mk.format])} />)}
-          {loaded && cards.map((c) => {
+          {waiting && [0, 1, 2].map((i) => <Skeleton key={i} className={cn('w-full rounded-lg', ASPECT[mk.format])} />)}
+          {cards.map((c) => {
             const Icon = promo ? PROMO_ICONS[c.key as PromoTemplateId] : null
             return (
               <figure key={c.key} className="space-y-2">
-                <Preview src={`${c.url}&preview=1`} alt={c.title} aspect={c.aspect} onOpen={() => setOpenKey(c.key)} />
+                <Preview src={`${c.url}&preview=${preview}`} full={c.url} alt={c.title} aspect={c.aspect} onOpen={() => setOpenKey(c.key)} />
                 <figcaption className="flex items-center justify-between gap-2">
                   <span className="flex min-w-0 items-center gap-2 truncate text-sm font-medium">
                     {Icon && <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />}
@@ -631,9 +724,10 @@ export function MarketingStudio() {
               mk={mk}
               updateMk={updateMk}
               info={screens}
-              toolbarShots={toolbarShots}
+              toolbarShots={shownShots}
               resolved={open.resolved}
               url={open.url}
+              placeholder={`${open.url}&preview=${preview}`}
               aspect={open.aspect}
               busy={busy === open.key}
               onDownload={() => run(open.key, () => download(open))}
@@ -644,8 +738,7 @@ export function MarketingStudio() {
             <DialogTitle className="sr-only">{open?.title}</DialogTitle>
             {open && (
               <>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={open.url} alt={open.title} className={cn('max-h-[82vh] w-auto max-w-[92vw] rounded-md', open.aspect)} />
+                <FullImage key={open.url} src={open.url} placeholder={`${open.url}&preview=${preview}`} alt={open.title} className={cn('max-h-[82vh] w-auto max-w-[92vw] rounded-md', open.aspect)} />
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-sm font-medium">{open.title}</span>
                   <Button size="sm" className="gap-1.5" disabled={!!busy} onClick={() => run(open.key, () => download(open))}>

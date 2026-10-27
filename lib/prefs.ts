@@ -163,8 +163,12 @@ export const PROMO_TEMPLATES = {
   launch: 'Launch',
   update: "What's New",
   screens: 'Screenshots',
+  feature: 'Features',
+  store: 'App Store Page',
   loved: 'Loved By',
   reviews: 'Reviews',
+  rated: 'Top Rated',
+  milestone: 'Milestone',
   download: 'Download',
 } as const
 export type PromoTemplateId = keyof typeof PROMO_TEMPLATES
@@ -214,6 +218,10 @@ export const PROMO_FRAMES = {
   '#c9a77c': 'Desert',
   '#34405a': 'Blue',
 } as const
+
+// How big the Marketing page draws its cards (S fits more on screen, L shows more detail).
+export const CARD_SIZES = { s: 'S', m: 'M', l: 'L' } as const
+export type CardSizeId = keyof typeof CARD_SIZES
 
 export const PROMO_ACCENTS = ['#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#f97316', '#f59e0b', '#10b981', '#06b6d4'] as const
 
@@ -276,6 +284,8 @@ export interface UiPrefs {
     copy: Record<string, { headline?: string; tagline?: string; cta?: string; notes?: string }>
     // Each card's own settings, per app and template (edited in the card's popup).
     cards: Record<string, Partial<Record<PromoTemplateId, PromoCardSettings>>>
+    optionsOpen: boolean         // the toolbar's option rows are shown (else folded away)
+    cardSize: CardSizeId
   }
 }
 
@@ -323,6 +333,8 @@ export const DEFAULT_PREFS: UiPrefs = {
     shots: {},
     copy: {},
     cards: {},
+    optionsOpen: true,
+    cardSize: 'm',
   },
 }
 
@@ -349,6 +361,7 @@ export function mergePrefs(saved: Partial<UiPrefs> | null | undefined): UiPrefs 
   if (!PROMO_FORMATS[p.marketing.format]) p.marketing.format = DEFAULT_PREFS.marketing.format
   if (!/^#[0-9a-f]{6}$/i.test(p.marketing.accent)) p.marketing.accent = DEFAULT_PREFS.marketing.accent
   if (!/^#[0-9a-f]{6}$/i.test(p.marketing.frameColor)) p.marketing.frameColor = DEFAULT_PREFS.marketing.frameColor
+  if (!CARD_SIZES[p.marketing.cardSize]) p.marketing.cardSize = DEFAULT_PREFS.marketing.cardSize
   // Loved By used to quote reviews: its picks move to the Reviews card, and it's the map alone now.
   p.marketing.cards = Object.fromEntries(Object.entries(p.marketing.cards).map(([app, cards]) => {
     const old = cards.loved as (PromoCardSettings & { lovedShow?: string }) | undefined

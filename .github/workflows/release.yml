@@ -82,7 +82,8 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: digests-${{ matrix.image.name }}-${{ matrix.platform.arch }}
+          # "--" around the name: openconnect-* would also match openconnect-studio's digests.
+          name: digests--${{ matrix.image.name }}--${{ matrix.platform.arch }}
           path: digests/*
           if-no-files-found: error
           retention-days: 1
@@ -103,7 +104,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: digests
-          pattern: digests-${{ matrix.name }}-*
+          pattern: digests--${{ matrix.name }}--*
           merge-multiple: true
 
       - uses: docker/setup-buildx-action@v3

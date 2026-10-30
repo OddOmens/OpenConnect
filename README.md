@@ -33,6 +33,7 @@ App Store Connect spreads your numbers over several slow pages and only keeps da
 - **Marketing:** render PNG stats cards to post anywhere, plus promo cards for one app (launch, what's new, screenshots, reviews, download) built from its App Store listing, in five styles, any accent colour and four sizes.
 - **Screenshot studio:** design, localize and export App Store screenshots for iPhone, iPad and Mac at `/studio` (see [studio/README.md](studio/README.md)). Claude can drive it, and Marketing, through its CLI and MCP server with an API token, from your Mac.
 - **Fully customizable:** show, hide or reorder every section, metric, column and chart series. Light, dark or system theme.
+- **An app on your phone:** add it to your iPhone's Home Screen (Share → Add to Home Screen) or install it from Chrome, and it opens full screen with a tab bar, popups that slide up as sheets, pull to refresh, and an offline screen when the server can't be reached. Phone access needs HTTPS, e.g. through Tailscale.
 - **Incremental sync:** a routine sync takes a handful of requests, not a 365-day backfill.
 - **Private by default:** one password protects everything, and the container runs read-only with no Linux capabilities.
 

@@ -28,7 +28,7 @@ function RankBadge({ rank }: { rank: number | null }) {
   return (
     <span
       className={cn(
-        'inline-flex min-w-[2.25rem] justify-center rounded-md px-1.5 py-0.5 text-sm font-semibold tabular-nums',
+        'inline-flex min-w-9 justify-center rounded-md px-1.5 py-0.5 text-sm font-semibold tabular-nums',
         rank <= 10 ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : rank <= 50 ? 'bg-sky-500/15 text-sky-700 dark:text-sky-300' : 'bg-muted text-foreground'
       )}
     >

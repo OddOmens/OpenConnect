@@ -78,8 +78,8 @@ const STYLE_SWATCH: Record<PromoStyleId, (accent: string) => string> = {
 
 const ASPECT: Record<PromoFormatId, string> = {
   '1x1': 'aspect-square',
-  '4x5': 'aspect-[4/5]',
-  '9x16': 'aspect-[9/16]',
+  '4x5': 'aspect-4/5',
+  '9x16': 'aspect-9/16',
   '16x9': 'aspect-video',
 }
 
@@ -423,7 +423,7 @@ export function MarketingStudio({ initial }: { initial: MarketingInitial }) {
     }
   }
 
-  const rowCls = 'mx-auto flex max-w-screen-2xl flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-4 py-2.5 sm:px-6 lg:px-8'
+  const rowCls = 'mx-auto flex max-w-(--breakpoint-2xl) flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-4 py-2.5 sm:px-6 lg:px-8'
   const labelCls = 'text-xs font-medium text-muted-foreground'
 
   return (
@@ -437,7 +437,7 @@ export function MarketingStudio({ initial }: { initial: MarketingInitial }) {
           </Button>
         }
       >
-        <div className="mx-auto flex max-w-screen-2xl flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-4 py-2.5 sm:px-6 lg:px-8">
+        <div className="mx-auto flex max-w-(--breakpoint-2xl) flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-4 py-2.5 sm:px-6 lg:px-8">
           <Segmented
             value={mk.mode}
             onChange={(mode) => updateMk({ mode })}
@@ -575,7 +575,7 @@ export function MarketingStudio({ initial }: { initial: MarketingInitial }) {
               />
             )}
             {promoApp && (
-              <div className="mx-auto grid max-w-screen-2xl gap-x-4 gap-y-2 border-t border-border px-4 py-2.5 sm:grid-cols-2 sm:px-6 lg:grid-cols-[1fr_1.4fr_0.7fr_auto] lg:px-8">
+              <div className="mx-auto grid max-w-(--breakpoint-2xl) gap-x-4 gap-y-2 border-t border-border px-4 py-2.5 sm:grid-cols-2 sm:px-6 lg:grid-cols-[1fr_1.4fr_0.7fr_auto] lg:px-8">
                 <label className="flex flex-col gap-1">
                   <span className={labelCls}>Headline</span>
                   <input value={copy.headline ?? ''} onChange={(e) => setCopy({ headline: e.target.value })} placeholder="Each template's own" maxLength={120} className={inputCls} />
@@ -609,7 +609,7 @@ export function MarketingStudio({ initial }: { initial: MarketingInitial }) {
           </>
         ) : (
           <>
-            <nav aria-label="Card design" className="mx-auto flex max-w-screen-2xl gap-1 overflow-x-auto border-t border-border px-4 py-2 sm:px-6 lg:px-8">
+            <nav aria-label="Card design" className="mx-auto flex max-w-(--breakpoint-2xl) gap-1 overflow-x-auto border-t border-border px-4 py-2 sm:px-6 lg:px-8">
               {(Object.keys(SHARE_TEMPLATES) as ShareTemplateId[]).map((t) => {
                 const Icon = TEMPLATE_ICONS[t]
                 return (
@@ -629,7 +629,7 @@ export function MarketingStudio({ initial }: { initial: MarketingInitial }) {
               })}
             </nav>
             {template !== 'overview' && (
-              <p className="mx-auto max-w-screen-2xl border-t border-border px-4 py-2.5 text-xs text-muted-foreground sm:px-6 lg:px-8">{TEMPLATE_NOTES[template]}</p>
+              <p className="mx-auto max-w-(--breakpoint-2xl) border-t border-border px-4 py-2.5 text-xs text-muted-foreground sm:px-6 lg:px-8">{TEMPLATE_NOTES[template]}</p>
             )}
             {template === 'overview' && (
               <div className={rowCls}>
@@ -662,7 +662,7 @@ export function MarketingStudio({ initial }: { initial: MarketingInitial }) {
         )}
       </AppNav>
 
-      <main className="mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 lg:px-8">
+      <main className="mx-auto max-w-(--breakpoint-2xl) px-4 py-6 sm:px-6 lg:px-8">
         {!secure && (
           <div className="mb-6 flex gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />

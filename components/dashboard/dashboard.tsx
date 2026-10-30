@@ -307,7 +307,7 @@ export function Dashboard({ initial }: { initial: InitialData }) {
       />
 
       <div
-        className={`mx-auto max-w-screen-2xl gap-6 px-4 py-6 sm:px-6 lg:grid lg:px-8 ${
+        className={`mx-auto max-w-(--breakpoint-2xl) gap-6 px-4 py-6 sm:px-6 lg:grid lg:px-8 ${
           prefs.sidebar === 'right' ? 'lg:grid-cols-[minmax(0,1fr)_240px]' : 'lg:grid-cols-[240px_minmax(0,1fr)]'
         }`}
       >

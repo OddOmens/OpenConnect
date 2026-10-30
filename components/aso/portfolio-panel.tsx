@@ -25,7 +25,7 @@ function Score({ value }: { value: number | null }) {
   return (
     <span
       className={cn(
-        'inline-flex min-w-[2.25rem] justify-center rounded-md px-1.5 py-0.5 text-sm font-semibold tabular-nums',
+        'inline-flex min-w-9 justify-center rounded-md px-1.5 py-0.5 text-sm font-semibold tabular-nums',
         value >= 80 ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : value >= 60 ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300' : 'bg-red-500/15 text-red-700 dark:text-red-300'
       )}
     >

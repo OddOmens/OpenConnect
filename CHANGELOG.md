@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.0
 
 ### Added
 - **ASO**, a new page in the top bar for App Store search. **Keyword ranks:** track keywords per app and storefront and get your daily rank in the top 200, 90 days of history, a popularity estimate from App Store search suggestions, a difficulty score, the top results, and suggestions to track next. **Listing audit:** every locale's name, subtitle, keywords and promotional text from App Store Connect, scored, with the wasted characters spelled out and a keyword editor that cleans them up live. **Search funnel:** search vs browse vs links, impressions → page views → Get taps, by week and storefront, with the storefronts worth localizing. **Changes & impact:** keyword and description changes from version history, name and subtitle changes from each sync, and your own notes, each with search and downloads two weeks before and after. **What to do next** sums it up. Also at `GET /api/aso`. Listings sync with Sales & analytics (needs an App Manager, Developer, Marketing or Admin key; Settings → Sync → App Store listings) and keyword ranks with Ratings & Rankings. The page has the dashboard's app sidebar, and **All Apps** compares every app's listing, keyword ranks and search side by side with what to do first in each.
@@ -9,9 +9,16 @@
 - **Signal notifications** (Settings → Notifications), through your own signal-cli-rest-api server, to a phone number or a group by name: a message as soon as an app enters a top 100 chart, and a **daily recap** at a time you pick of each app's downloads and proceeds, ratings, new reviews and chart moves. The recap is also at `GET /api/notify`.
 - **Projections** on the dashboard: first-time downloads, impressions, product page views and proceeds over the next 30 days, 90 days or 12 months, each with a likely range and its pace against the last 28 days, charted after the actual numbers. It also shows your impressions → page views → downloads funnel and conversion rate (and your best 28 days), a **what-if** with sliders for more impressions and a better conversion rate (extra downloads, and proceeds at your recent proceeds per download), and when you'll pass your next download milestone. Also at `GET /api/forecast`.
 - **Marketing for Claude and scripts.** API tokens now have scopes: **Screenshot studio**, **Marketing**, or both. With Marketing, the `appshot` CLI (`appshot marketing apps|stats|forecast|promo|card`) and the MCP connector (`marketing_catalog`, `marketing_stats`, `marketing_forecast`, `marketing_promo_material`, `marketing_card`) read the figures the cards show, the projections, and render any stats or promo card to PNG. New endpoints: `/api/marketing/catalog` and `/api/marketing/stats`. Existing tokens keep opening the studio only.
-- **One top bar on every page:** OpenConnect, Dashboard · ASO · Marketing · Studio, the page's own controls and Settings, always in the same place (the studio included, in its own colours). The studio starts in your OpenConnect light/dark setting.
 - **A faster Marketing page with more cards.** **Customize** folds away the option rows so the cards get the room, and **S / M / L** sets the card size. Four new promo cards: **Features** (a checklist from your description), **App Store Page** (a mock product page with your screenshots and rating), **Top Rated** and **Milestone**. Cards draw on several cores at once; App Store listings, icons, screenshots and drawn cards are kept on disk (under `data/cache/marketing`), and the cards you use are drawn ahead after each sync and on start, so the page opens with them ready and stays fast after a restart or update.
-- **API tokens** (Settings → Security). Claude's `appshot` CLI and MCP server reach the studio with `OPENCONNECT_URL` and `OPENCONNECT_TOKEN`. A token never opens the dashboard, settings or other tokens, and each one can be revoked.
+- **OpenConnect as an app on your phone.** Add it to your iPhone's Home Screen (Share → Add to Home Screen) or install it from Chrome, and it opens full screen with its own icon, like an app. On phones, Dashboard · ASO · Marketing · Studio · Settings sit in a **tab bar** along the bottom, each page's title and controls sit in the top bar, popups slide up from the bottom as **sheets**, and pages fit around the notch and home indicator. In the installed app, **pull down** at the top of a page to refresh it, and if the server can't be reached, an offline screen shows (and reopens the page when the server's back).
+
+### Changed
+- **better-sqlite3 12**, which ships prebuilt binaries for Node 22 and 24, so running OpenConnect outside Docker on Node 24 no longer needs a compiler.
+- On touch screens, buttons dim while pressed, hover highlights no longer stick after a tap, taps respond at once, and tapping a field no longer zooms the page. On phones, Marketing's option rows scroll away with the page instead of staying pinned under the top bar.
+- Under the hood: Tailwind CSS 4 (pages look the same), eslint 10, and newer Docker actions for the release builds.
+
+### Security
+- **fflate 0.7.5**, which the card renderer uses to read its fonts, for an infinite loop on malformed ZIP64 archives (GHSA). OpenConnect never opens ZIP files from anyone else, but it clears the alert.
 
 ## 1.3.0
 

@@ -61,7 +61,7 @@ export function SearchBox({ value, onChange, placeholder }: { value: string; onC
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder || "Search"}
-        className="h-8 w-36 rounded-md border border-input bg-background pl-7 pr-2 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring sm:w-44"
+        className="h-8 w-36 rounded-md border border-input bg-background pl-7 pr-2 text-xs focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring sm:w-44"
       />
     </div>
   )

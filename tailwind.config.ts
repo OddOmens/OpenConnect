@@ -2,6 +2,8 @@ import type { Config } from 'tailwindcss'
 
 const config: Config = {
   darkMode: 'class',
+  // hover: styles only where there's a pointer, so a tap on a phone doesn't leave them stuck on.
+  future: { hoverOnlyWhenSupported: true },
   content: [
     './app/**/*.{ts,tsx}',
     './components/**/*.{ts,tsx}',
@@ -13,6 +15,8 @@ const config: Config = {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
+        // iOS's system blue, for the selected tab and other touches of app chrome.
+        tint: 'hsl(var(--tint))',
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         primary: {

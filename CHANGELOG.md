@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **OpenConnect as an app on your phone.** Add it to your iPhone's Home Screen (Share → Add to Home Screen) or install it from Chrome, and it opens full screen with its own icon, like an app. On phones, Dashboard · ASO · Marketing · Studio · Settings sit in a **tab bar** along the bottom, each page's title and controls sit in the top bar, popups slide up from the bottom as **sheets**, and pages fit around the notch and home indicator. In the installed app, **pull down** at the top of a page to refresh it, and if the server can't be reached, an offline screen shows (and reopens the page when the server's back).
+
+### Changed
+- On touch screens, buttons dim while pressed, hover highlights no longer stick after a tap, taps respond at once, and tapping a field no longer zooms the page. On phones, Marketing's option rows scroll away with the page instead of staying pinned under the top bar.
+
 ## 1.4.0
 
 ### Added

@@ -1,14 +1,11 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { SessionWatcher } from '@/components/auth/session-watcher'
+import { AppShell } from '@/components/nav/app-shell'
 import { getUiPrefs } from '@/lib/config'
+import { pwaMetadata, pwaViewport } from '@/lib/pwa'
 import { SYSTEM_THEME_SCRIPT } from '@/lib/theme'
 import type { ThemeId } from '@/lib/prefs'
-
-export const metadata: Metadata = {
-  title: 'OpenConnect',
-  description: 'Self-hosted App Store Connect analytics',
-}
 
 // The saved theme is read per request so the page arrives already in the right colours.
 export const dynamic = 'force-dynamic'
@@ -19,6 +16,18 @@ function savedTheme(): ThemeId {
   } catch {
     return 'dark'
   }
+}
+
+export function generateMetadata(): Metadata {
+  return {
+    title: 'OpenConnect',
+    description: 'Self-hosted App Store Connect analytics',
+    ...pwaMetadata(savedTheme()),
+  }
+}
+
+export function generateViewport(): Viewport {
+  return pwaViewport(savedTheme())
 }
 
 export default function RootLayout({
@@ -35,6 +44,7 @@ export default function RootLayout({
       </head>
       <body className="font-sans antialiased" suppressHydrationWarning>
         <SessionWatcher />
+        <AppShell />
         {children}
       </body>
     </html>

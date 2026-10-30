@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)">
+  <title>OpenConnect</title>
+  <style>
+    :root { color-scheme: light dark; --bg: #ffffff; --fg: #09090b; --muted: #71717a; --border: #e4e4e7; --tint: #007aff; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #09090b; --fg: #fafafa; --muted: #a1a1aa; --border: #27272a; --tint: #0a84ff; } }
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+      padding: env(safe-area-inset-top) 24px env(safe-area-inset-bottom); box-sizing: border-box;
+      background: var(--bg); color: var(--fg); text-align: center;
+      font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, sans-serif; -webkit-tap-highlight-color: transparent;
+    }
+    svg { margin-bottom: 8px; }
+    h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+    p { margin: 0; max-width: 300px; color: var(--muted); }
+    button {
+      margin-top: 12px; padding: 0 22px; height: 44px; border: 0; border-radius: 22px;
+      background: var(--tint); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+    }
+    button:active { opacity: 0.6; }
+  </style>
+</head>
+<body>
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="64" height="64" aria-hidden="true">
+    <defs>
+      <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c1c21"/><stop offset="1" stop-color="#09090b"/></linearGradient>
+      <linearGradient id="blue" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5ac8fa"/><stop offset="1" stop-color="#0a84ff"/></linearGradient>
+    </defs>
+    <rect width="1024" height="1024" rx="230" fill="url(#bg)"/>
+    <g transform="translate(512 512) scale(1) translate(-512 -512)">
+      <rect x="217" y="532" width="150" height="240" rx="44" fill="#fafafa" fill-opacity="0.55"/>
+      <rect x="437" y="392" width="150" height="380" rx="44" fill="#fafafa" fill-opacity="0.8"/>
+      <rect x="657" y="232" width="150" height="540" rx="44" fill="url(#blue)" fill-opacity="1"/>
+    </g>
+  </svg>
+  <h1>Can’t reach OpenConnect</h1>
+  <p>Check that you’re online and the server is running. It opens again as soon as it’s back.</p>
+  <button type="button" onclick="location.reload()">Try Again</button>
+  <script>window.addEventListener('online', function () { location.reload() })</script>
+</body>
+</html>

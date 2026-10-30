@@ -29,6 +29,7 @@
     --chart-3: 43 96% 56%;
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
+    --tint: 211 100% 50%;
   }
 
   .dark {
@@ -57,6 +58,7 @@
     --chart-3: 43 96% 56%;
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
+    --tint: 210 100% 52%;
   }
 }
 
@@ -65,8 +67,20 @@
     @apply border-border;
   }
 
+  html {
+    @apply bg-background;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
   body {
     @apply bg-background text-foreground;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Taps act at once: no wait to see whether it's a double-tap zoom. */
+  :is(a, button, select, label, summary, [role="button"]) {
+    touch-action: manipulation;
   }
 
   /* Native controls (selects, scrollbars, date pickers) follow the theme too. */
@@ -86,4 +100,60 @@
     outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
   }
+}
+
+/* Touch screens: buttons and links dim while pressed, like an app's, and pressing and holding
+   one doesn't select its text or open the link menu. */
+@media (hover: none) {
+  :is(button, a, [role="button"], summary) {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  :is(button, a, [role="button"], summary):active:not(:disabled) {
+    opacity: 0.6;
+  }
+}
+
+/* Phones */
+@media (max-width: 767px) {
+  /* iOS zooms into a field whose text is under 16px when it's tapped. */
+  :is(input:not([type="checkbox"], [type="radio"], [type="range"]), select, textarea) {
+    font-size: 16px !important;
+  }
+  /* Room for the tab bar (components/nav/app-nav.tsx) under the last of the page. */
+  body:has([data-tab-bar]) {
+    padding-bottom: calc(50px + env(safe-area-inset-bottom));
+  }
+}
+
+/* Installed to the home screen, the page doesn't bounce past its top: pulling down there
+   refreshes instead (components/nav/app-shell.tsx). */
+html[data-standalone] {
+  overscroll-behavior-y: none;
+}
+
+/* Popups rise from the bottom as sheets on phones (components/ui/dialog.tsx). */
+@media (max-width: 639px) {
+  [data-sheet][data-state="open"] {
+    animation: sheet-in 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  [data-sheet][data-state="closed"] {
+    animation: sheet-out 0.2s ease-in;
+  }
+  [data-sheet-overlay][data-state="open"] {
+    animation: overlay-in 0.25s ease-out;
+  }
+  [data-sheet-overlay][data-state="closed"] {
+    animation: overlay-in 0.2s ease-in reverse;
+  }
+}
+@keyframes sheet-in {
+  from { transform: translateY(100%); }
+}
+@keyframes sheet-out {
+  to { transform: translateY(100%); }
+}
+@keyframes overlay-in {
+  from { opacity: 0; }
 }

@@ -87,8 +87,9 @@ export function SettingsView({ initial, apps: initialApps, version }: { initial:
       <AppNav active="settings" />
 
       {/* Lined up with the top bar, like the other pages; the Saved note shows here, once. */}
-      <div className="mx-auto flex max-w-screen-2xl items-center justify-between gap-4 px-4 pt-6 sm:px-6 lg:px-8">
-        <h1 className="text-lg font-semibold tracking-tight">Settings</h1>
+      <div className="mx-auto flex max-w-screen-2xl items-center justify-between gap-4 px-4 pt-3 sm:px-6 md:pt-6 lg:px-8">
+        {/* On phones the top bar already says Settings. */}
+        <h1 className="hidden text-lg font-semibold tracking-tight md:block">Settings</h1>
         {savedNote}
       </div>
       <div className="mx-auto max-w-screen-2xl gap-8 px-4 py-6 sm:px-6 md:grid md:grid-cols-[200px_minmax(0,48rem)] lg:px-8">

@@ -1,9 +1,12 @@
 import Link from 'next/link'
 import { Settings } from 'lucide-react'
-import { NAV_ITEMS } from '@/components/nav/app-nav'
+import { NAV_ITEMS, TAB_ITEMS } from '@/components/nav/app-nav'
 import styles from './studio-nav.module.css'
 
-/** The dashboard's top bar on the studio page, with the studio's editor filling the rest. */
+/**
+ * The dashboard's top bar on the studio page, with the studio's editor filling the rest. On
+ * phones the places move to a tab bar along the bottom, as on the other pages.
+ */
 export function StudioFrame({ children }: { children: React.ReactNode }) {
   return (
     <div className={styles.frame}>
@@ -12,11 +15,12 @@ export function StudioFrame({ children }: { children: React.ReactNode }) {
         <Link href="/" className={styles.brand}>
           OpenConnect
         </Link>
+        <div className={styles.title}>Studio</div>
         <nav aria-label="Main" className={styles.tabs}>
           {NAV_ITEMS.map(({ page, href, label, icon: Icon }) => (
             <Link key={page} href={href} className={styles.tab} title={label} aria-current={page === 'studio' ? 'page' : undefined}>
               <Icon size={16} />
-              <span className={styles.label}>{label}</span>
+              <span>{label}</span>
             </Link>
           ))}
         </nav>
@@ -26,6 +30,14 @@ export function StudioFrame({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       {children}
+      <nav aria-label="Main" className={styles.tabBar}>
+        {TAB_ITEMS.map(({ page, href, label, icon: Icon }) => (
+          <Link key={page} href={href} className={styles.tabBarItem} aria-current={page === 'studio' ? 'page' : undefined}>
+            <Icon size={23} strokeWidth={page === 'studio' ? 2.25 : 1.75} />
+            <span>{label}</span>
+          </Link>
+        ))}
+      </nav>
     </div>
   )
 }

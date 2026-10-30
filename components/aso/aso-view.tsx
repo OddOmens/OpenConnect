@@ -180,7 +180,7 @@ export function AsoView({ initialApps, initialPortfolio, sidebar }: { initialApp
     return (
       <div className="min-h-screen bg-background">
         <AppNav active="aso" />
-        <main className="mx-auto max-w-screen-2xl px-4 py-16 text-center text-sm text-muted-foreground">No apps yet. Run a sync from the dashboard first.</main>
+        <main className="mx-auto max-w-(--breakpoint-2xl) px-4 py-16 text-center text-sm text-muted-foreground">No apps yet. Run a sync from the dashboard first.</main>
       </div>
     )
   }
@@ -192,7 +192,7 @@ export function AsoView({ initialApps, initialPortfolio, sidebar }: { initialApp
         actions={
           <>
             {appId && (
-              <select value={country} onChange={(e) => setCountries((c) => ({ ...c, [appId]: e.target.value }))} className={cn(selectCls, 'max-w-[13rem]')} aria-label="Storefront">
+              <select value={country} onChange={(e) => setCountries((c) => ({ ...c, [appId]: e.target.value }))} className={cn(selectCls, 'max-w-52')} aria-label="Storefront">
                 {countryOptions.markets.length > 0 && (
                   <optgroup label="Your listing’s languages">
                     {countryOptions.markets.map((m) => (
@@ -218,7 +218,7 @@ export function AsoView({ initialApps, initialPortfolio, sidebar }: { initialApp
         }
       />
 
-      <div className={`mx-auto max-w-screen-2xl gap-6 px-4 py-6 sm:px-6 lg:grid lg:px-8 ${sidebar === 'right' ? 'lg:grid-cols-[minmax(0,1fr)_240px]' : 'lg:grid-cols-[240px_minmax(0,1fr)]'}`}>
+      <div className={`mx-auto max-w-(--breakpoint-2xl) gap-6 px-4 py-6 sm:px-6 lg:grid lg:px-8 ${sidebar === 'right' ? 'lg:grid-cols-[minmax(0,1fr)_240px]' : 'lg:grid-cols-[240px_minmax(0,1fr)]'}`}>
         <aside className={`mb-6 lg:mb-0 ${sidebar === 'right' ? 'lg:order-2' : ''}`}>
           <div className="lg:sticky lg:top-[88px] lg:max-h-[calc(100vh-112px)] lg:overflow-y-auto">
             <AppSelector

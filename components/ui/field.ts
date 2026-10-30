@@ -2,7 +2,7 @@
 // (Native elements rather than components: they're used straight in forms and toolbars.)
 
 const base =
-  "rounded-md border border-input bg-background text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+  "rounded-md border border-input bg-background text-foreground placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
 
 /** Full-width input (or select in a settings form). */
 export const inputCls = `flex h-9 w-full px-3 py-1 text-sm ${base}`

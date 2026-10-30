@@ -43,7 +43,7 @@ export function LoginForm({ mode, minLength, passwordFromEnv, next = '/' }: Prop
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <form onSubmit={submit} className="w-full max-w-sm space-y-5 rounded-lg border border-border bg-card p-6 shadow-sm">
+      <form onSubmit={submit} className="w-full max-w-sm space-y-5 rounded-lg border border-border bg-card p-6 shadow-xs">
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
             <Lock className="h-4 w-4 text-muted-foreground" />

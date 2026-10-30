@@ -76,7 +76,7 @@ function Metric({ label, before, after, format, early }: { label: string; before
   // Under a week of "after" is noise: show the figures, not a verdict.
   const change = !early && before != null && after != null && before > 0 ? (after - before) / before : null
   return (
-    <div className="min-w-[8.5rem] rounded-md border border-border bg-background px-3 py-2">
+    <div className="min-w-34 rounded-md border border-border bg-background px-3 py-2">
       <div className="text-[11px] text-muted-foreground">{label}</div>
       <div className="mt-0.5 flex items-baseline gap-1.5 text-sm tabular-nums">
         <span className="text-muted-foreground">{before == null ? '—' : format(before)}</span>
@@ -108,7 +108,7 @@ function Impact({ e }: { e: ChangeEvent }) {
         <Metric label="Search conversion" before={conv(b)} after={conv(a)} format={(n) => `${n.toFixed(1)}%`} early={early} />
         <Metric label="First downloads / day" before={b ? perDay(b, 'downloads') : null} after={a ? perDay(a, 'downloads') : null} format={one} early={early} />
         {e.ranks && (
-          <div className="min-w-[8.5rem] rounded-md border border-border bg-background px-3 py-2">
+          <div className="min-w-34 rounded-md border border-border bg-background px-3 py-2">
             <div className="text-[11px] text-muted-foreground">Keyword ranks</div>
             <div className="mt-0.5 text-sm">
               <span className="text-emerald-600 dark:text-emerald-400">{e.ranks.better} up</span> · <span className="text-red-600 dark:text-red-400">{e.ranks.worse} down</span>
@@ -198,7 +198,7 @@ export function ChangesPanel({ overview: o, onChange }: { overview: AsoOverview;
         }}
       >
         <input type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)} className={cn(inputCls, 'w-auto')} aria-label="Date" />
-        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a note: new screenshots, new icon, started Search Ads…" className={cn(inputCls, 'min-w-[14rem] flex-1')} aria-label="Note" />
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a note: new screenshots, new icon, started Search Ads…" className={cn(inputCls, 'min-w-56 flex-1')} aria-label="Note" />
         <Button type="submit" size="sm" variant="outline" disabled={busy || !note.trim()}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
           <span className="ml-1.5">Add note</span>
@@ -208,7 +208,7 @@ export function ChangesPanel({ overview: o, onChange }: { overview: AsoOverview;
       {!o.changes.length ? (
         <EmptyState>No changes recorded yet. They appear here after the listing is fetched and a version with new keywords is released, or when you add a note.</EmptyState>
       ) : (
-        <ol className="space-y-8 border-l border-border pl-0 [&>li]:-ml-[5px]">
+        <ol className="space-y-8 border-l border-border pl-0 [&>li]:ml-[-5px]">
           {o.changes.map((e) => <Event key={e.date} e={e} onRemoveNote={removeNote} />)}
         </ol>
       )}

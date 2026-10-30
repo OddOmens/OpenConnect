@@ -148,7 +148,7 @@ export function PromoCardEditor({ template, appId, mk, updateMk, info, toolbarSh
       <div className="flex min-h-0 flex-1 items-center justify-center bg-muted/30 p-4">
         <div className="relative">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={shown} alt={`${PROMO_TEMPLATES[template]} card`} className={cn('max-h-[50vh] w-auto max-w-full rounded-md shadow-sm md:max-h-[84vh]', aspect)} />
+          <img src={shown} alt={`${PROMO_TEMPLATES[template]} card`} className={cn('max-h-[50vh] w-auto max-w-full rounded-md shadow-xs md:max-h-[84vh]', aspect)} />
           {loading && (
             <>
               {/* eslint-disable-next-line @next/next/no-img-element */}

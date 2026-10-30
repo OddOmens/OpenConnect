@@ -26,9 +26,9 @@ export function AppNav({ active, actions, children }: { active: NavPage; actions
   const title = TAB_ITEMS.find((t) => t.page === active)?.label
   return (
     <>
-      <header className="sticky top-0 z-40 select-none border-b border-border bg-background/90 pt-[env(safe-area-inset-top)] backdrop-blur-xl supports-[backdrop-filter]:bg-background/75">
+      <header className="sticky top-0 z-40 select-none border-b border-border bg-background/90 pt-[env(safe-area-inset-top)] backdrop-blur-xl supports-backdrop-filter:bg-background/75">
         {/* On phones the page's controls wrap to a second row when they don't fit beside the title. */}
-        <div className="mx-auto flex min-h-14 max-w-screen-2xl flex-wrap items-center gap-x-2 gap-y-2 px-4 py-2.5 md:h-14 md:flex-nowrap md:gap-4 md:px-6 md:py-0 lg:px-8">
+        <div className="mx-auto flex min-h-14 max-w-(--breakpoint-2xl) flex-wrap items-center gap-x-2 gap-y-2 px-4 py-2.5 md:h-14 md:flex-nowrap md:gap-4 md:px-6 md:py-0 lg:px-8">
           <Link href="/" className="hidden shrink-0 text-base font-semibold tracking-tight md:block">
             OpenConnect
           </Link>
@@ -69,7 +69,7 @@ export function AppNav({ active, actions, children }: { active: NavPage; actions
       {/* The page's toolbar rows: pinned under the bar on wider screens, scrolled away with the
           page on phones so the content gets the room. */}
       {children && (
-        <div className="z-30 border-b border-border bg-background/90 backdrop-blur-xl supports-[backdrop-filter]:bg-background/75 md:sticky md:top-[calc(3.5rem+1px+env(safe-area-inset-top))] [&>:first-child]:border-t-0">
+        <div className="z-30 border-b border-border bg-background/90 backdrop-blur-xl supports-backdrop-filter:bg-background/75 md:sticky md:top-[calc(3.5rem+1px+env(safe-area-inset-top))] *:first:border-t-0">
           {children}
         </div>
       )}

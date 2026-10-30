@@ -80,7 +80,7 @@ jobs:
           digest="${{ steps.build.outputs.digest }}"
           touch "digests/${digest#sha256:}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           # "--" around the name: openconnect-* would also match openconnect-studio's digests.
           name: digests--${{ matrix.image.name }}--${{ matrix.platform.arch }}

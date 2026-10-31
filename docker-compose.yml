@@ -4,6 +4,11 @@
 # On first start, sign-in setup asks for a code printed by: docker logs openconnect
 services:
   dashboard:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     build: .
     # Published for Intel and ARM on every release. Pin a version with OPENCONNECT_VERSION=1.1.0.
     image: ghcr.io/oddomens/openconnect:${OPENCONNECT_VERSION:-latest}
@@ -49,6 +54,11 @@ services:
   # and its data API are part of the dashboard; this service only renders, and has no port of its
   # own (Claude reaches the studio through the dashboard with an API token).
   studio:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     build: ./studio
     image: ghcr.io/oddomens/openconnect-studio:${OPENCONNECT_VERSION:-latest}
     container_name: openconnect-studio

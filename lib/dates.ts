@@ -94,10 +94,32 @@ export function lastDayOfMonth(month: string): string {
   return addDays(addMonths(month, 1) + '-01', -1);
 }
 
-/** Resolve a range preset, a month ("m:YYYY-MM") or explicit dates to an inclusive [start, end]. */
+/** A single day as a range id: "d:2026-10-15". */
+export const DAY_RANGE = /^d:(\d{4}-\d{2}-\d{2})$/;
+
+/** The day a one-day range (Today, Yesterday, "d:YYYY-MM-DD") covers, in Pacific time; null for longer ranges. */
+export function rangeDay(range: string | null | undefined): string | null {
+  const today = pacificToday();
+  if (range === 'today') return today;
+  if (range === 'yesterday') return addDays(today, -1);
+  const day = range?.match(DAY_RANGE)?.[1];
+  return day ? (day > today ? today : day) : null;
+}
+
+/** The range id for one day: Today and Yesterday by name, any other day as "d:YYYY-MM-DD". */
+export function dayRange(day: string): string {
+  const today = pacificToday();
+  if (day === today) return 'today';
+  if (day === addDays(today, -1)) return 'yesterday';
+  return `d:${day}`;
+}
+
+/** Resolve a range preset, a month ("m:YYYY-MM"), a day or explicit dates to an inclusive [start, end]. */
 export function resolveRange(range: string | null, start?: string | null, end?: string | null) {
   const latest = addDays(pacificToday(), -1);
   if (start || end) return { start: start || undefined, end: end || latest };
+  const day = rangeDay(range);
+  if (day) return { start: day, end: day };
   const month = range?.match(MONTH_RANGE)?.[1];
   if (month) {
     const last = lastDayOfMonth(month);
@@ -112,8 +134,8 @@ export function resolveRange(range: string | null, start?: string | null, end?: 
 
 /**
  * The period a range is compared against: a month with the whole month before it (also
- * while the current month is still running), anything else with the equally long
- * stretch right before it.
+ * while the current month is still running), anything else (a single day too) with the
+ * equally long stretch right before it.
  */
 export function previousRange(range: string | null, start: string, end: string) {
   const month = range?.match(MONTH_RANGE)?.[1];

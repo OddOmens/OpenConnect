@@ -8,8 +8,8 @@ import { Segmented, Toggle } from "@/components/dashboard/section"
 import type { App } from "@/components/dashboard/app-selector"
 import { Panel } from "./panel"
 import {
-  BREAKDOWN_TABS, DEFAULT_PREFS, REACH_ITEMS, HISTORY_SERIES, KPIS, MAP_ITEMS, SECTIONS, STORE_COLUMNS, SUBSCRIPTION_ITEMS, TERRITORY_COLUMNS,
-  BreakdownTab, HistorySeries, ReachItem, KpiId, MapItem, SectionId, SectionWidth, StoreColumn, SubscriptionItem, TerritoryColumn, UiPrefs,
+  APP_COLUMNS, BREAKDOWN_TABS, DEFAULT_PREFS, REACH_ITEMS, HISTORY_SERIES, KPIS, MAP_ITEMS, SECTIONS, STORE_COLUMNS, SUBSCRIPTION_ITEMS, TERRITORY_COLUMNS,
+  AppColumn, BreakdownTab, HistorySeries, ReachItem, KpiId, MapItem, SectionId, SectionWidth, StoreColumn, SubscriptionItem, TerritoryColumn, UiPrefs,
 } from "@/lib/prefs"
 import { ConfirmButton } from "@/components/ui/confirm-button"
 import { inputCls } from "@/components/ui/field"
@@ -149,6 +149,9 @@ export function CustomizeSettings({ prefs, onPrefs, apps, onToggleApp }: Props) 
         </Detail>
         <Detail title="Ratings & Rankings columns">
           <Chips<StoreColumn> all={STORE_COLUMNS} hidden={prefs.hiddenStoreColumns} onChange={(hiddenStoreColumns) => onPrefs({ hiddenStoreColumns })} />
+        </Detail>
+        <Detail title="Apps columns">
+          <Chips<AppColumn> all={APP_COLUMNS} hidden={prefs.hiddenAppColumns} onChange={(hiddenAppColumns) => onPrefs({ hiddenAppColumns })} />
         </Detail>
         <Detail title="Territory columns">
           <Chips<TerritoryColumn> all={TERRITORY_COLUMNS} hidden={prefs.hiddenTerritoryColumns} onChange={(hiddenTerritoryColumns) => onPrefs({ hiddenTerritoryColumns })} />

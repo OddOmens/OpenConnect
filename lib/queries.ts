@@ -271,19 +271,32 @@ function subscriptions(f: Filter, rate: number) {
   return { events, active, bySubscription, trend };
 }
 
-export function dashboard(f: Filter, granularity: HistoryGranularity, currency: string, compare: boolean, range: string | null = null) {
+/** First and last day Apple has sent a daily sales report for (any app). */
+export function dailyCoverage(): { first: string | null; last: string | null } {
+  return getDb().prepare(`SELECT MIN(date) AS first, MAX(date) AS last FROM sales WHERE granularity = 'D'`).get() as any;
+}
+
+/** The period a range is compared against, or null when there's nothing fair to compare. */
+export function comparisonRange(f: { start?: string; end?: string }, range: string | null): { start: string; end: string } | null {
+  if (!f.start) return null;
+  // Apple hasn't reported any of the range yet (e.g. Today): 0 against the day before isn't a drop.
+  const reported = dailyCoverage().last;
+  if (!reported || f.start > reported) return null;
+  const prev = previousRange(range, f.start, f.end || addDays(pacificToday(), -1));
+  // Before the first daily/monthly row, history only exists as yearly totals, which can't be
+  // cut to an arbitrary window: comparing against them would be wrong, so don't compare.
+  const fineFrom = (getDb().prepare(`SELECT MIN(date) AS d FROM sales WHERE granularity IN ('D', 'M')`).get() as { d: string | null }).d;
+  return fineFrom && prev.start >= fineFrom ? prev : null;
+}
+
+/**
+ * `historyStart` lets the chart reach back further than the range, so a single day is
+ * drawn with the days before it for context.
+ */
+export function dashboard(f: Filter, granularity: HistoryGranularity, currency: string, compare: boolean, range: string | null = null, historyStart = f.start) {
   const rate = currencyRate(currency);
-  let previous: Totals | null = null;
-  if (compare && f.start) {
-    const prev = previousRange(range, f.start, f.end || addDays(pacificToday(), -1));
-    const prevStart = prev.start;
-    // Before the first daily/monthly row, history only exists as yearly totals, which can't be
-    // cut to an arbitrary window: comparing against them would be wrong, so don't compare.
-    const fineFrom = (getDb().prepare(`SELECT MIN(date) AS d FROM sales WHERE granularity IN ('D', 'M')`).get() as { d: string | null }).d;
-    if (fineFrom && prevStart >= fineFrom) {
-      previous = totals({ appId: f.appId, start: prev.start, end: prev.end }, rate);
-    }
-  }
+  const prev = compare ? comparisonRange(f, range) : null;
+  const previous: Totals | null = prev ? totals({ appId: f.appId, ...prev }, rate) : null;
   const [where, params] = salesWhere(f);
   // Earliest daily/monthly row in range: everything before it only exists as coarser totals.
   const coarse = getDb()
@@ -301,7 +314,7 @@ export function dashboard(f: Filter, granularity: HistoryGranularity, currency: 
     totals: totals(f, rate),
     previous,
     engagementPending: imported === 0,
-    history: history(f, granularity, rate),
+    history: history({ ...f, start: historyStart }, granularity, rate),
     coarseHistory: {
       monthly: !!coarse.monthly,
       yearly: !!coarse.yearly,
@@ -355,6 +368,28 @@ export function reach(f: { start?: string; end?: string }): { total: number; all
     all: entry(union),
     apps: Object.fromEntries(Object.entries(perApp).map(([id, c]) => [id, entry(c)])),
   };
+}
+
+function totalsByApp(f: Filter, rate: number): Record<string, Totals> {
+  const db = getDb();
+  const [where, params] = salesWhere(f);
+  const sales = db.prepare(`SELECT s.apple_id, ${SUMS} FROM sales s ${FX_JOIN} WHERE ${where} GROUP BY s.apple_id`).all(...params) as any[];
+  const [eWhere, eParams] = engagementWhere(f);
+  const engagement = db.prepare(`SELECT e.apple_id, ${ENGAGEMENT_SUMS} FROM engagement e WHERE ${eWhere} GROUP BY e.apple_id`).all(...eParams) as any[];
+  const out: Record<string, Totals> = {};
+  const row = (id: string) =>
+    (out[id] ??= { first_time: 0, redownloads: 0, updates: 0, iap: 0, proceeds: 0, impressions: 0, page_views: 0 });
+  for (const r of sales) {
+    Object.assign(row(r.apple_id), { first_time: r.first_time, redownloads: r.redownloads, updates: r.updates, iap: r.iap, proceeds: r.proceeds_usd * rate });
+  }
+  for (const e of engagement) Object.assign(row(e.apple_id), { impressions: e.impressions, page_views: e.page_views });
+  return out;
+}
+
+/** Every visible app's totals in a range (the Apps section), and in the period it's compared with. */
+export function appTotals(f: { start?: string; end?: string }, currency: string, prev: { start: string; end: string } | null) {
+  const rate = currencyRate(currency);
+  return { current: totalsByApp(f, rate), previous: prev ? totalsByApp(prev, rate) : null };
 }
 
 /** Per-app sales totals in range, best first (for the All Apps share card). */

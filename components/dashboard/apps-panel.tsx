@@ -105,7 +105,7 @@ export function AppsPanel({ data, apps, selectedAppId, onSelectApp, day, currenc
                     </div>
                   </TableCell>
                   {cols.map((c) => (
-                    <TableCell key={c} className={cn("text-right tabular-nums", c !== "change" && !t[c as Metric] && "text-muted-foreground")}>
+                    <TableCell key={c} className={cn("whitespace-nowrap text-right tabular-nums", c !== "change" && !t[c as Metric] && "text-muted-foreground")}>
                       {c === "change" ? <Change pct={change(a.apple_id)} now={t.first_time} before={before(a.apple_id).first_time} /> : value(t, c)}
                     </TableCell>
                   ))}
@@ -118,7 +118,7 @@ export function AppsPanel({ data, apps, selectedAppId, onSelectApp, day, currenc
               <TableRow>
                 <TableCell className="font-medium">All apps</TableCell>
                 {cols.map((c) => (
-                  <TableCell key={c} className="text-right font-medium tabular-nums">
+                  <TableCell key={c} className="whitespace-nowrap text-right font-medium tabular-nums">
                     {c === "change" ? <Change pct={totalChange} now={total.first_time} before={sum("first_time", before)} /> : value(total, c)}
                   </TableCell>
                 ))}

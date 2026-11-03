@@ -45,13 +45,13 @@ export type TerritoryColumn = keyof typeof TERRITORY_COLUMNS
 // The Apps section: every app's numbers side by side (one day, or any range).
 export const APP_COLUMNS = {
   first_time: 'First-Time',
+  change: 'vs prev.',          // first-time downloads against the previous period
   redownloads: 'Redownloads',
   updates: 'Updates',
   iap: 'IAP Units',
   proceeds: 'Proceeds',
   impressions: 'Impressions',
   page_views: 'Page Views',
-  change: 'vs prev.',
 } as const
 export type AppColumn = keyof typeof APP_COLUMNS
 

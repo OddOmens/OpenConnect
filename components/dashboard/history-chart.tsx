@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { Section, Segmented, Toggle, EmptyState } from "./section"
 import { Skeleton } from "@/components/ui/skeleton"
 import { HISTORY_SERIES, HistorySeries, UiPrefs } from "@/lib/prefs"
@@ -41,10 +41,12 @@ interface Props {
   coarseHistory: CoarseHistory | null
   prefs: UiPrefs
   onPrefs: (p: Partial<UiPrefs>) => void
+  /** A one-day range: the chart shows the two weeks up to this day, day by day, and marks it. */
+  focusDay?: string | null
   onHide: () => void
 }
 
-export function HistoryChart({ data, isLoading, coarseHistory, prefs, onPrefs, onHide }: Props) {
+export function HistoryChart({ data, isLoading, coarseHistory, prefs, onPrefs, focusDay, onHide }: Props) {
   const hidden = prefs.hiddenHistorySeries
   const series = (Object.keys(HISTORY_SERIES) as HistorySeries[]).filter((s) => !hidden.includes(s))
   // Impressions and page views dwarf download counts, so they get their own (unstacked) scale.
@@ -55,7 +57,7 @@ export function HistoryChart({ data, isLoading, coarseHistory, prefs, onPrefs, o
   const toggle = (s: HistorySeries) =>
     onPrefs({ hiddenHistorySeries: hidden.includes(s) ? hidden.filter((x) => x !== s) : [...hidden, s] })
 
-  const g = prefs.granularity
+  const g = focusDay ? "day" : prefs.granularity
   const tickFormat = (d: string) =>
     fmtDate(d, g === "year" ? { year: "numeric" } : g === "month" ? { month: "short", year: "2-digit" } : { month: "short", day: "numeric" })
   const labelFormat = (d: string) =>
@@ -64,7 +66,9 @@ export function HistoryChart({ data, isLoading, coarseHistory, prefs, onPrefs, o
   // Apple only keeps 365 days of daily and 12 months of monthly reports; older history is yearly totals.
   const monthYear = (d: string | null) => fmtDate(d, { month: "short", year: "numeric" })
   let note: string | undefined
-  if (coarseHistory?.yearly && g !== "year") {
+  if (focusDay) {
+    note = `The two weeks up to ${fmtDate(focusDay, { month: "short", day: "numeric" })}, which is marked.`
+  } else if (coarseHistory?.yearly && g !== "year") {
     note = `Before ${monthYear(coarseHistory.monthlyFrom)} Apple only keeps yearly totals. Switch to Yearly to include them.`
   } else if (coarseHistory?.monthly && (g === "day" || g === "week")) {
     note = `${monthYear(coarseHistory.monthlyFrom)} only has a monthly total. Switch to Monthly to include it.`
@@ -86,7 +90,7 @@ export function HistoryChart({ data, isLoading, coarseHistory, prefs, onPrefs, o
       onHide={onHide}
       actions={
         <>
-          <Segmented
+          {!focusDay && <Segmented
             value={prefs.granularity}
             onChange={(granularity) => onPrefs({ granularity })}
             options={[
@@ -95,7 +99,7 @@ export function HistoryChart({ data, isLoading, coarseHistory, prefs, onPrefs, o
               { value: "month", label: "Monthly" },
               { value: "year", label: "Yearly" },
             ]}
-          />
+          />}
           <Segmented
             value={prefs.chartType}
             onChange={(chartType) => onPrefs({ chartType })}
@@ -138,6 +142,7 @@ export function HistoryChart({ data, isLoading, coarseHistory, prefs, onPrefs, o
               {units.map((s) => renderSeries(s, "units"))}
               {views.map((s) => renderSeries(s, "views"))}
               {showProceeds && renderSeries("proceeds", "money")}
+              {focusDay && <ReferenceLine x={focusDay} yAxisId="units" stroke="hsl(var(--foreground))" strokeDasharray="4 3" strokeOpacity={0.6} />}
             </Chart>
           </ResponsiveContainer>
         </div>

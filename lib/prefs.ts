@@ -3,6 +3,7 @@
 export const SECTIONS = {
   kpis: 'Key Metrics',
   history: 'History',
+  apps: 'Apps',
   forecast: 'Projections',
   map: 'World Map',
   reach: 'Global Reach',
@@ -40,6 +41,19 @@ export const TERRITORY_COLUMNS = {
   share: '% of Downloads',
 } as const
 export type TerritoryColumn = keyof typeof TERRITORY_COLUMNS
+
+// The Apps section: every app's numbers side by side (one day, or any range).
+export const APP_COLUMNS = {
+  first_time: 'First-Time',
+  change: 'vs prev.',          // first-time downloads against the previous period
+  redownloads: 'Redownloads',
+  updates: 'Updates',
+  iap: 'IAP Units',
+  proceeds: 'Proceeds',
+  impressions: 'Impressions',
+  page_views: 'Page Views',
+} as const
+export type AppColumn = keyof typeof APP_COLUMNS
 
 export const STORE_COLUMNS = {
   rating: 'Rating',
@@ -101,6 +115,8 @@ export const SUBSCRIPTION_ITEMS = {
 export type SubscriptionItem = keyof typeof SUBSCRIPTION_ITEMS
 
 export const RANGES = {
+  today: 'Today',
+  yesterday: 'Yesterday',
   '7d': 'Last 7 days',
   '30d': 'Last 30 days',
   '90d': 'Last 90 days',
@@ -111,6 +127,8 @@ export const RANGES = {
 export type RangeId = keyof typeof RANGES
 /** A single calendar month, e.g. "m:2026-09". */
 export type MonthRangeId = `m:${string}`
+/** A single day, e.g. "d:2026-10-15" (Today and Yesterday have their own ids). */
+export type DayRangeId = `d:${string}`
 
 /** "m:2026-09" → "September 2026" */
 export function monthRangeLabel(id: string, month: 'long' | 'short' = 'long') {
@@ -245,13 +263,14 @@ export interface UiPrefs {
   sidebar: 'left' | 'right'
   hiddenKpis: KpiId[]
   hiddenTerritoryColumns: TerritoryColumn[]
+  hiddenAppColumns: AppColumn[]
   hiddenStoreColumns: StoreColumn[]
   hiddenHistorySeries: HistorySeries[]
   hiddenBreakdowns: BreakdownTab[]
   hiddenMapItems: MapItem[]
   hiddenReachItems: ReachItem[]
   hiddenSubscriptionItems: SubscriptionItem[]
-  range: RangeId | MonthRangeId
+  range: RangeId | MonthRangeId | DayRangeId
   granularity: 'day' | 'week' | 'month' | 'year'
   chartType: 'area' | 'bar' | 'line'
   currency: string
@@ -299,6 +318,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   sidebar: 'left',
   hiddenKpis: ['updates'],
   hiddenTerritoryColumns: [],
+  hiddenAppColumns: ['updates'],
   hiddenStoreColumns: ['toppaid'],
   hiddenHistorySeries: ['updates', 'proceeds'],
   hiddenBreakdowns: [],

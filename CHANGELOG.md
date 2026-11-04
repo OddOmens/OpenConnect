@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.0
+
+### Added
+- **Today, Yesterday and any single day.** The dashboard's range menu now starts with **Today** and **Yesterday**, and **Pick a day…** opens a calendar. A one-day view gets a day bar with ‹ › to step day by day, every number is compared with the day before, and the History chart shows the two weeks up to that day with it marked. Days follow Apple's reports (Pacific time); a day Apple hasn't published yet (Today, or Yesterday early in the morning) says so instead of comparing zeros with the day before.
+- **Apps**, a new dashboard section: every app's first-time downloads, redownloads, updates, IAP units, proceeds, impressions and page views side by side, with an All apps total and the change against the previous period. It follows the selected range, so on one day it's that day for every app; click a row to open that app. Columns can be switched off in the section or in Settings → Customize.
+
+### Changed
+- Container logs are capped at three files of 10 MB each, so a long-running install can't fill the disk with logs.
+
 ## 1.4.0
 
 ### Added

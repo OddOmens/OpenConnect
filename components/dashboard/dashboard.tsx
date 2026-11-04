@@ -13,12 +13,15 @@ import type { StoreData } from '@/components/dashboard/store-table'
 import type { SubscriptionData } from '@/components/dashboard/subscription-panel'
 import type { BreakdownData } from '@/components/dashboard/breakdowns'
 import type { ReachData } from '@/components/dashboard/reach-panel'
+import type { AppTotalsData } from '@/components/dashboard/apps-panel'
+import { DayBar } from '@/components/dashboard/day-bar'
 import { SyncStatusButton, useSyncStatus } from '@/components/dashboard/sync-status'
 import type { ServerSettings } from '@/components/settings/settings-view'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { CURRENCIES, DEFAULT_PREFS, RANGES, RangeId, SECTIONS, SectionId, UiPrefs, monthRangeLabel } from '@/lib/prefs'
 import { fmtDate } from '@/lib/format'
+import { addDays, dayRange, pacificToday, rangeDay } from '@/lib/dates'
 import { selectCls } from '@/components/ui/field'
 
 // Charts, the map and the tables are loaded after the first paint, in parallel, so the page
@@ -32,12 +35,20 @@ const TerritoryTable = dynamic(() => import('@/components/dashboard/territory-ta
 const StoreTable = dynamic(() => import('@/components/dashboard/store-table').then((m) => m.StoreTable), { ssr: false, loading: panel(420) })
 const SubscriptionPanel = dynamic(() => import('@/components/dashboard/subscription-panel').then((m) => m.SubscriptionPanel), { ssr: false, loading: panel(300) })
 const Breakdowns = dynamic(() => import('@/components/dashboard/breakdowns').then((m) => m.Breakdowns), { ssr: false, loading: panel(360) })
+const AppsPanel = dynamic(() => import('@/components/dashboard/apps-panel').then((m) => m.AppsPanel), { ssr: false, loading: panel(300) })
 const ReachPanel = dynamic(() => import('@/components/dashboard/reach-panel').then((m) => m.ReachPanel), { ssr: false, loading: panel(420) })
 const ForecastPanel = dynamic(() => import('@/components/dashboard/forecast-panel').then((m) => m.ForecastPanel), { ssr: false, loading: panel(520) })
 const ReviewsPanel = dynamic(() => import('@/components/dashboard/reviews-panel').then((m) => m.ReviewsPanel), { ssr: false, loading: panel(360) })
 
+/** The range menu's "Pick a day…" entry; choosing it switches to a one-day range. */
+const PICK_DAY = 'pick-day'
+
 export interface DashboardData {
   range: { start?: string; end?: string }
+  /** The day shown when the range is a single day (the history then covers the two weeks up to it). */
+  day: string | null
+  /** First and last day Apple has sent a daily report for. */
+  daily: { first: string | null; last: string | null }
   totals: HistoryPoint & { proceeds: number }
   previous: (HistoryPoint & { proceeds: number }) | null
   history: HistoryPoint[]
@@ -47,6 +58,7 @@ export interface DashboardData {
   breakdowns: BreakdownData
   subscriptions: SubscriptionData
   reach: ReachData
+  apps: AppTotalsData
 }
 
 /** Everything the first render needs, read from the local database on the server. */
@@ -153,6 +165,23 @@ export function Dashboard({ initial }: { initial: InitialData }) {
     }
   }
 
+  // One-day ranges (Today, Yesterday, any day) get the day bar to step through days.
+  const day = rangeDay(prefs.range)
+  const dayInput = useRef<HTMLInputElement>(null)
+  const pickRange = (value: string) => {
+    if (value !== PICK_DAY) return updatePrefs({ range: value as UiPrefs['range'] })
+    // Start from the latest day Apple has reported, then open the calendar to go anywhere else.
+    const latest = dash?.daily?.last ?? addDays(pacificToday(), -1)
+    updatePrefs({ range: dayRange(latest) as UiPrefs['range'] })
+    setTimeout(() => {
+      try {
+        dayInput.current?.showPicker()
+      } catch {
+        dayInput.current?.focus()
+      }
+    }, 50)
+  }
+
   const hide = (id: SectionId) => updatePrefs({ hiddenSections: [...prefs.hiddenSections, id] })
 
   const permissionError = sync.status?.coverage.reports.find((r) => r.error > 0 && /HTTP 40[13]/.test(r.lastError || ''))
@@ -190,7 +219,22 @@ export function Dashboard({ initial }: { initial: InitialData }) {
             coarseHistory={dash?.coarseHistory ?? null}
             prefs={prefs}
             onPrefs={updatePrefs}
+            focusDay={dash?.day ?? null}
             onHide={() => hide('history')}
+          />
+        )
+      case 'apps':
+        return (
+          <AppsPanel
+            data={dash?.apps ?? null}
+            apps={apps}
+            selectedAppId={selectedAppId}
+            onSelectApp={setSelectedAppId}
+            day={dash?.day ?? null}
+            currency={prefs.currency}
+            hiddenColumns={prefs.hiddenAppColumns}
+            onColumns={(hiddenAppColumns) => updatePrefs({ hiddenAppColumns })}
+            onHide={() => hide('apps')}
           />
         )
       case 'forecast':
@@ -280,13 +324,18 @@ export function Dashboard({ initial }: { initial: InitialData }) {
         active="dashboard"
         actions={
           <>
-            {dash?.range.start && (
+            {dash?.range.start && !day && (
               <span className="hidden text-xs text-muted-foreground xl:inline">
                 {fmtDate(dash.range.start)} – {fmtDate(dash.range.end)}
               </span>
             )}
-            <select value={prefs.range} onChange={(e) => updatePrefs({ range: e.target.value as UiPrefs['range'] })} className={selectCls} aria-label="Date range">
+            <select value={prefs.range} onChange={(e) => pickRange(e.target.value)} className={selectCls} aria-label="Date range">
               {(Object.keys(RANGES) as RangeId[]).map((r) => <option key={r} value={r}>{RANGES[r]}</option>)}
+              {prefs.range.startsWith('d:') && day ? (
+                <option value={prefs.range}>{fmtDate(day)}</option>
+              ) : (
+                <option value={PICK_DAY}>Pick a day…</option>
+              )}
               {months.length > 0 && (
                 <optgroup label="Month">
                   {months.map((m) => <option key={m} value={`m:${m}`}>{monthRangeLabel(m)}</option>)}
@@ -318,6 +367,8 @@ export function Dashboard({ initial }: { initial: InitialData }) {
         </aside>
 
         <main className="min-w-0 space-y-6">
+          {day && <DayBar ref={dayInput} day={day} daily={dash?.daily ?? null} onDay={(d) => updatePrefs({ range: dayRange(d) as UiPrefs['range'] })} />}
+
           {permissionError && (
             <div className="flex gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />

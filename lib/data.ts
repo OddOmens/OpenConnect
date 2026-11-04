@@ -3,8 +3,8 @@
 
 import { cached } from './cache';
 import { credentialSources, getCredentials, getNotifyConfig, getSyncConfig, getUiPrefs } from './config';
-import { resolveRange } from './dates';
-import { availableMonths, dashboard, dataBounds, HistoryGranularity, listApps, reach, storePresence } from './queries';
+import { addDays, pacificToday, rangeDay, resolveRange } from './dates';
+import { appTotals, availableMonths, comparisonRange, dailyCoverage, dashboard, dataBounds, HistoryGranularity, listApps, reach, storePresence } from './queries';
 
 export function settingsResponse() {
   const creds = getCredentials();
@@ -42,13 +42,21 @@ export function dashboardResponse(p: DashboardParams) {
   const appId = p.app && p.app !== 'all' ? p.app : undefined;
   const granularity = (['day', 'week', 'month', 'year'].includes(p.granularity || '') ? p.granularity : 'day') as HistoryGranularity;
   const currency = p.currency || 'USD';
-  const key = `dashboard|${appId}|${p.range}|${p.start}|${p.end}|${granularity}|${currency}|${p.compare}`;
+  // Presets like Today and Last 7 days move at midnight (Pacific), so the day is part of the key.
+  const key = `dashboard|${pacificToday()}|${appId}|${p.range}|${p.start}|${p.end}|${granularity}|${currency}|${p.compare}`;
   return cached(key, () => {
     const { start, end } = resolveRange(p.range, p.start, p.end);
-    const data = dashboard({ appId, start, end }, granularity, currency, p.compare, p.range);
-    // Reach covers every app (the section compares them); it only depends on the range.
+    // One day is charted day by day with the two weeks before it, so it has something to stand against.
+    const day = !p.start && !p.end && rangeDay(p.range);
+    const data = day
+      ? dashboard({ appId, start, end }, 'day', currency, p.compare, p.range, addDays(day, -13))
+      : dashboard({ appId, start, end }, granularity, currency, p.compare, p.range);
+    // Reach and the Apps section cover every app (they compare them); they only depend on the range.
     const reachData = cached(`reach|${start}|${end}`, () => reach({ start, end }));
-    return { range: { start, end }, bounds: dataBounds(appId), ...data, reach: reachData };
+    const apps = cached(`apps|${start}|${end}|${currency}|${p.compare}|${p.range}`, () =>
+      appTotals({ start, end }, currency, p.compare ? comparisonRange({ start, end }, p.range) : null)
+    );
+    return { range: { start, end }, day: day || null, bounds: dataBounds(appId), daily: dailyCoverage(), ...data, reach: reachData, apps };
   });
 }
 

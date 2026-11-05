@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import Link from 'next/link'
 import { AppNav } from '@/components/nav/app-nav'
 import { ScreenThumb, type PromoScreens } from './screen-thumb'
@@ -276,6 +276,9 @@ export interface MarketingInitial {
   statsVersion: string // goes in the stats cards' URLs, so the browser can keep them
 }
 
+// window.isSecureContext never changes while the page is open: nothing to subscribe to.
+const noSubscribe = () => () => {}
+
 export function MarketingStudio({ initial }: { initial: MarketingInitial }) {
   const { apps, months } = initial
   const [share, , updateShare] = useSaved<UiPrefs['share']>('share', initial.share)
@@ -283,8 +286,7 @@ export function MarketingStudio({ initial }: { initial: MarketingInitial }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [openKey, setOpenKey] = useState<string | null>(null)
   // Browsers block file downloads on plain http:// pages (except localhost).
-  const [secure, setSecure] = useState(true)
-  useEffect(() => setSecure(window.isSecureContext), [])
+  const secure = useSyncExternalStore(noSubscribe, () => window.isSecureContext, () => true)
 
   // --- Stats cards: every app (and All Apps) in the chosen design ---------------------
   const { format, range, theme, template } = share

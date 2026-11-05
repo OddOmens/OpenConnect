@@ -84,7 +84,10 @@ export function InteractiveMap({ points, focus, onFocus, renderTooltip }: {
   )
   const focused = pins.find((p) => p.code === focus) ?? null
   const focusedRef = React.useRef(focused)
-  focusedRef.current = focused
+  // Before the tooltip's layout effect below, which reads it.
+  React.useLayoutEffect(() => {
+    focusedRef.current = focused
+  })
 
   // Current and target view: zoom anchor (percent of the map box) and scale.
   const view = React.useRef({ ax: 50, ay: 50, s: 1 })
@@ -154,30 +157,6 @@ export function InteractiveMap({ points, focus, onFocus, renderTooltip }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pins, focus, size, themeKey])
 
-  // Ease the view towards its target; stops itself once it arrives.
-  const frame = React.useCallback(() => {
-    const v = view.current
-    const t = target.current
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    const k = reduce ? 1 : EASE
-    v.ax += (t.ax - v.ax) * k
-    v.ay += (t.ay - v.ay) * k
-    v.s += (t.s - v.s) * k
-    const done = Math.abs(t.ax - v.ax) < 0.01 && Math.abs(t.ay - v.ay) < 0.01 && Math.abs(t.s - v.s) < 0.001
-    if (done) Object.assign(v, t)
-    if (layerRef.current) {
-      layerRef.current.style.transform = `translate(${v.ax * (1 - v.s)}%, ${v.ay * (1 - v.s)}%) scale(${v.s})`
-    }
-    placeTooltip()
-    raf.current = done ? null : requestAnimationFrame(frame)
-  }, [])
-  const kick = () => {
-    if (raf.current == null) raf.current = requestAnimationFrame(frame)
-  }
-  React.useEffect(() => () => {
-    if (raf.current != null) cancelAnimationFrame(raf.current)
-  }, [])
-
   // The tooltip follows the focused country's on-screen position as the view moves.
   const placeTooltip = () => {
     const tip = tipRef.current
@@ -192,6 +171,31 @@ export function InteractiveMap({ points, focus, onFocus, renderTooltip }: {
     tip.style.transform = `translate(${onRight ? "22px" : "calc(-100% - 22px)"}, -50%)`
   }
   React.useLayoutEffect(placeTooltip)
+
+  // Ease the view towards its target, a step per animation frame; stops itself once it arrives.
+  const kick = () => {
+    if (raf.current != null) return
+    const step = () => {
+      const v = view.current
+      const t = target.current
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      const k = reduce ? 1 : EASE
+      v.ax += (t.ax - v.ax) * k
+      v.ay += (t.ay - v.ay) * k
+      v.s += (t.s - v.s) * k
+      const done = Math.abs(t.ax - v.ax) < 0.01 && Math.abs(t.ay - v.ay) < 0.01 && Math.abs(t.s - v.s) < 0.001
+      if (done) Object.assign(v, t)
+      if (layerRef.current) {
+        layerRef.current.style.transform = `translate(${v.ax * (1 - v.s)}%, ${v.ay * (1 - v.s)}%) scale(${v.s})`
+      }
+      placeTooltip()
+      raf.current = done ? null : requestAnimationFrame(step)
+    }
+    raf.current = requestAnimationFrame(step)
+  }
+  React.useEffect(() => () => {
+    if (raf.current != null) cancelAnimationFrame(raf.current)
+  }, [])
 
   const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const rect = boxRef.current!.getBoundingClientRect()
@@ -333,7 +337,7 @@ interface Props {
 const METRICS: Metric[] = ["downloads", "proceeds", "rating", "rank"]
 
 export function WorldMap({ sales, store, metric: picked, currency, onMetric, hidden, onHide }: Props) {
-  const metrics = METRICS.filter((m) => !hidden.includes(m))
+  const metrics = React.useMemo(() => METRICS.filter((m) => !hidden.includes(m)), [hidden])
   // A hidden view can still be the saved choice: show the first one that isn't hidden.
   const metric = metrics.includes(picked) ? picked : metrics[0] ?? "downloads"
   const showList = !hidden.includes("topList")

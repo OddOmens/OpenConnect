@@ -66,7 +66,9 @@ export function useSyncStatus(onJobFinished: (job: JobId) => void) {
   const awaiting = React.useRef<Partial<Record<JobId, number | null>>>({})
   const lastIds = React.useRef<Record<JobId, number | null>>({ asc: null, store: null })
   const finishedRef = React.useRef(onJobFinished)
-  finishedRef.current = onJobFinished
+  React.useLayoutEffect(() => {
+    finishedRef.current = onJobFinished
+  })
 
   const refresh = React.useCallback(async () => {
     try {
@@ -95,9 +97,13 @@ export function useSyncStatus(onJobFinished: (job: JobId) => void) {
 
   const anyRunning = !!status && (status.jobs.asc.running || status.jobs.store.running)
   React.useEffect(() => {
-    refresh()
+    // Poll once straight away (scheduled, like the rest), then on the interval.
+    const first = setTimeout(refresh)
     const t = setInterval(refresh, anyRunning ? 1500 : 30000)
-    return () => clearInterval(t)
+    return () => {
+      clearTimeout(first)
+      clearInterval(t)
+    }
   }, [refresh, anyRunning])
 
   const start = React.useCallback(

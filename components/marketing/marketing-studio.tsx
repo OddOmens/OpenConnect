@@ -8,7 +8,7 @@ import { PromoCardEditor } from './promo-card-editor'
 import { hasOwnSettings, previewParam, promoUrl, resolvePromo, statsUrl, type ResolvedPromo } from '@/lib/promo-settings'
 import {
   AlertTriangle, Award, ChevronDown, Download, Globe, Heart, Images, LayoutDashboard, ListChecks, Loader2, Map as MapIcon, Maximize2, MessageSquareQuote, PartyPopper,
-  RefreshCw, Rocket, SlidersHorizontal, Smartphone, Sparkles, Star, Store, Trophy,
+  Quote, RefreshCw, Rocket, SlidersHorizontal, Smartphone, Sparkles, Star, Store, Trophy,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -60,6 +60,7 @@ const PROMO_ICONS: Record<PromoTemplateId, React.ElementType> = {
   screens: Images,
   loved: Heart,
   reviews: MessageSquareQuote,
+  highlight: Quote,
   download: Smartphone,
   feature: ListChecks,
   store: Store,
@@ -96,6 +97,17 @@ const SIZE: Record<PromoFormatId, string> = {
   '4x5': '1080x1350',
   '9x16': '1080x1920',
   '16x9': '1920x1080',
+}
+
+/** "4:5 · 1080×1350", or just "4:5" on a phone. */
+function SizeLabel({ text }: { text: string }) {
+  const [ratio, size] = text.split(' · ')
+  return (
+    <>
+      {ratio}
+      <span className="hidden sm:inline"> · {size}</span>
+    </>
+  )
 }
 
 function slug(s: string) {
@@ -427,6 +439,7 @@ export function MarketingStudio({ initial }: { initial: MarketingInitial }) {
 
   const rowCls = 'mx-auto flex max-w-(--breakpoint-2xl) flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-4 py-2.5 sm:px-6 lg:px-8'
   const labelCls = 'text-xs font-medium text-muted-foreground'
+  const groupCls = 'flex flex-wrap items-center gap-x-2.5 gap-y-1.5'
 
   return (
     <div className="min-h-screen bg-background">
@@ -457,7 +470,7 @@ export function MarketingStudio({ initial }: { initial: MarketingInitial }) {
                 <Segmented
                   value={mk.format}
                   onChange={(f) => updateMk({ format: f })}
-                  options={(Object.keys(PROMO_FORMATS) as PromoFormatId[]).map((f) => ({ value: f, label: PROMO_FORMATS[f] }))}
+                  options={(Object.keys(PROMO_FORMATS) as PromoFormatId[]).map((f) => ({ value: f, label: <SizeLabel text={PROMO_FORMATS[f]} /> }))}
                 />
               </>
             ) : (
@@ -466,8 +479,8 @@ export function MarketingStudio({ initial }: { initial: MarketingInitial }) {
                   value={format}
                   onChange={(f: Format) => updateShare({ format: f })}
                   options={[
-                    { value: '4x5', label: '4:5 · 1080×1350' },
-                    { value: '9x16', label: '9:16 · 1080×1920' },
+                    { value: '4x5', label: <SizeLabel text="4:5 · 1080×1350" /> },
+                    { value: '9x16', label: <SizeLabel text="9:16 · 1080×1920" /> },
                   ]}
                 />
                 <Segmented
@@ -514,55 +527,63 @@ export function MarketingStudio({ initial }: { initial: MarketingInitial }) {
 
         {!optionsOpen ? null : promo ? (
           <>
-            <div className={rowCls}>
-              <span className={labelCls}>Style</span>
-              <div className="flex flex-wrap gap-1.5">
-                {(Object.keys(PROMO_STYLES) as PromoStyleId[]).map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => updateMk({ style: s })}
-                    aria-pressed={mk.style === s}
-                    className={cn(
-                      'flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
-                      mk.style === s ? 'border-foreground/40 bg-accent text-foreground' : 'border-border text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    <span className="h-4 w-4 rounded border border-border" style={{ background: STYLE_SWATCH[s](mk.accent) }} />
-                    {PROMO_STYLES[s]}
-                  </button>
-                ))}
+            <div className={cn(rowCls, 'gap-x-6')}>
+              <div className={groupCls}>
+                <span className={labelCls}>Style</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {(Object.keys(PROMO_STYLES) as PromoStyleId[]).map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => updateMk({ style: s })}
+                      aria-pressed={mk.style === s}
+                      className={cn(
+                        'flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
+                        mk.style === s ? 'border-foreground/40 bg-accent text-foreground' : 'border-border text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      <span className="h-4 w-4 rounded border border-border" style={{ background: STYLE_SWATCH[s](mk.accent) }} />
+                      {PROMO_STYLES[s]}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <span className={labelCls}>Accent</span>
-              <div className="flex items-center gap-1.5">
-                {PROMO_ACCENTS.map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => updateMk({ accent: c })}
-                    aria-label={`Accent ${c}`}
-                    className={cn('h-6 w-6 rounded-full border-2 transition-transform', mk.accent === c ? 'scale-110 border-foreground' : 'border-transparent hover:scale-110')}
-                    style={{ background: c }}
-                  />
-                ))}
-                <label className="relative h-6 w-6 cursor-pointer overflow-hidden rounded-full border border-border" title="Custom color" style={{ background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' }}>
-                  <input type="color" value={mk.accent} onChange={(e) => updateMk({ accent: e.target.value })} className="absolute inset-0 cursor-pointer opacity-0" aria-label="Custom accent color" />
-                </label>
+              <div className={groupCls}>
+                <span className={labelCls}>Accent</span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {PROMO_ACCENTS.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => updateMk({ accent: c })}
+                      aria-label={`Accent ${c}`}
+                      className={cn('h-6 w-6 rounded-full border-2 transition-transform', mk.accent === c ? 'scale-110 border-foreground' : 'border-transparent hover:scale-110')}
+                      style={{ background: c }}
+                    />
+                  ))}
+                  <label className="relative h-6 w-6 cursor-pointer overflow-hidden rounded-full border border-border" title="Custom color" style={{ background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' }}>
+                    <input type="color" value={mk.accent} onChange={(e) => updateMk({ accent: e.target.value })} className="absolute inset-0 cursor-pointer opacity-0" aria-label="Custom accent color" />
+                  </label>
+                </div>
               </div>
-              <span className={labelCls}>iPhone</span>
-              <div className="flex items-center gap-1.5">
-                {(Object.keys(PROMO_FRAMES) as (keyof typeof PROMO_FRAMES)[]).map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => updateMk({ frameColor: c })}
-                    title={PROMO_FRAMES[c]}
-                    aria-label={`${PROMO_FRAMES[c]} iPhone`}
-                    className={cn('h-6 w-6 rounded-full border-2 transition-transform', mk.frameColor === c ? 'scale-110 border-foreground' : 'border-transparent hover:scale-110')}
-                    style={{ background: `linear-gradient(135deg, ${c}, ${c}cc)` }}
-                  />
-                ))}
+              <div className={groupCls}>
+                <span className={labelCls}>iPhone</span>
+                <div className="flex items-center gap-1.5">
+                  {(Object.keys(PROMO_FRAMES) as (keyof typeof PROMO_FRAMES)[]).map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => updateMk({ frameColor: c })}
+                      title={PROMO_FRAMES[c]}
+                      aria-label={`${PROMO_FRAMES[c]} iPhone`}
+                      className={cn('h-6 w-6 rounded-full border-2 transition-transform', mk.frameColor === c ? 'scale-110 border-foreground' : 'border-transparent hover:scale-110')}
+                      style={{ background: `linear-gradient(135deg, ${c}, ${c}cc)` }}
+                    />
+                  ))}
+                </div>
               </div>
-              <span className={labelCls}>Show</span>
-              <Toggle active={mk.showBadge} onClick={() => updateMk({ showBadge: !mk.showBadge })}>App Store button</Toggle>
-              <Toggle active={mk.showRating} onClick={() => updateMk({ showRating: !mk.showRating })}>Rating</Toggle>
+              <div className={groupCls}>
+                <span className={labelCls}>Show</span>
+                <Toggle active={mk.showBadge} onClick={() => updateMk({ showBadge: !mk.showBadge })}>App Store button</Toggle>
+                <Toggle active={mk.showRating} onClick={() => updateMk({ showRating: !mk.showRating })}>Rating</Toggle>
+              </div>
             </div>
             {promoApp && (
               <ScreenPicker
@@ -715,9 +736,10 @@ export function MarketingStudio({ initial }: { initial: MarketingInitial }) {
         </div>
       </main>
 
+      {/* w-max: centred with left: 50%, an auto width would stop at half the window. */}
       <Dialog open={!!open} onOpenChange={(o) => !o && setOpenKey(null)}>
         {open?.template && open.resolved && promoApp ? (
-          <DialogContent className="w-auto max-w-[95vw] gap-0 overflow-hidden p-0 sm:max-w-[95vw]">
+          <DialogContent className="w-max max-w-[95vw] gap-0 overflow-hidden p-0 sm:max-w-[95vw]">
             <DialogTitle className="sr-only">{open.title}</DialogTitle>
             <PromoCardEditor
               key={`${promoApp.apple_id}-${open.template}`}
@@ -736,7 +758,7 @@ export function MarketingStudio({ initial }: { initial: MarketingInitial }) {
             />
           </DialogContent>
         ) : (
-          <DialogContent className="w-auto max-w-[95vw] gap-3 p-3 sm:max-w-[95vw]">
+          <DialogContent className="w-max max-w-[95vw] gap-3 p-3 sm:max-w-[95vw]">
             <DialogTitle className="sr-only">{open?.title}</DialogTitle>
             {open && (
               <>

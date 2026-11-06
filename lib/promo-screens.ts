@@ -9,7 +9,7 @@ import fs from 'fs';
 import type { App as StudioApp } from '@studio/shared/types';
 import * as studio from '@studio-server/store';
 import { listApps } from './queries';
-import { defaultCopy, listing, promoData } from './marketing';
+import { defaultCopy, defaultHighlight, listing, promoData } from './marketing';
 import { PROMO_TEMPLATES, type PromoTemplateId } from './prefs';
 import { inlineImage, shrinkImage } from './share-render/kit';
 import { readCached, writeCached } from './disk-cache';
@@ -105,7 +105,8 @@ export async function promoInfo(appleId: string) {
   if (!data) return null;
   const copy = Object.fromEntries((Object.keys(PROMO_TEMPLATES) as PromoTemplateId[]).map((t) => [t, defaultCopy(t, data)]));
   const quotes = data.quotes.map((q, index) => ({ index, body: q.body, reviewer: q.reviewer, rating: q.rating }));
-  return { ...screens, copy, quotes, version: await promoVersion(appleId) };
+  // Review Highlight picks from all of them; `defaultReview` is the one it shows until then.
+  return { ...screens, copy, quotes, reviews: data.reviews, defaultReview: defaultHighlight(data.reviews)?.id ?? null, version: await promoVersion(appleId) };
 }
 
 /**

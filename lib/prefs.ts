@@ -185,6 +185,7 @@ export const PROMO_TEMPLATES = {
   store: 'App Store Page',
   loved: 'Loved By',
   reviews: 'Reviews',
+  highlight: 'Review Highlight',
   rated: 'Top Rated',
   milestone: 'Milestone',
   download: 'Download',
@@ -223,6 +224,7 @@ export interface PromoCardSettings {
   shots?: string[]             // this card's screenshots, in order
   quotes?: number[]            // Reviews: which reviews, the first in front
   reviewCount?: ReviewCount    // Reviews: one review, or three fanned out
+  review?: string              // Review Highlight: the review's id (unset = the best short 5★ one)
 }
 
 export const REVIEW_COUNTS = { 1: '1 review', 3: '3 reviews' } as const

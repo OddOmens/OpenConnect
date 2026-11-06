@@ -181,6 +181,7 @@ async function promoCard(q: URLSearchParams, template: PromoTemplateId): Promise
     notes: text(q.get('notes'), 1200) || undefined,
     reviewCount: q.get('n') === '1' ? 1 : 3,
     quotes: (q.get('quotes') ?? '').split(',').filter((v) => /^\d{1,2}$/.test(v)).map(Number).slice(0, 3),
+    review: /^[\w.-]{1,80}$/.test(q.get('review') ?? '') ? q.get('review')! : undefined,
   };
   const scale = PREVIEW_SCALES[q.get('preview') ?? ''] ?? 1;
   // The picked screenshots (studio screens or App Store ones), else the app's defaults; previews

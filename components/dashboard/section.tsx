@@ -44,7 +44,7 @@ export function Section({ title, description, actions, onHide, className, conten
 
 interface SegmentedProps<T extends string> {
   value: T
-  options: { value: T; label: string }[]
+  options: { value: T; label: React.ReactNode }[]
   onChange: (v: T) => void
   className?: string
 }

@@ -38,7 +38,7 @@ export function GET(request: Request) {
       'GET /api/forecast?app=<id|all>&horizon=30|90|365&currency=USD': 'Projections, conversion funnel, what-if scenarios, next milestone',
       'GET /api/marketing/promo?app=<id>': "One app's promo card material: screenshots, each template's default wording, quotable reviews",
       'GET /api/marketing?app=<id|all>&t=<stats template>&range=30d&format=4x5&theme=dark&hero=first_time&stats=a,b&list=1&pick=0': 'A stats card as PNG',
-      'GET /api/marketing?app=<id>&t=<promo template>&format=4x5&style=gradient&accent=3b82f6&frame=2c2c30&badge=1&rating=1&h=<headline>&sub=<tagline>&cta=<button>&notes=<release notes>&shots=s:<id>,a:<n>&quotes=0,2&n=1|3':
+      'GET /api/marketing?app=<id>&t=<promo template>&format=4x5&style=gradient&accent=3b82f6&frame=2c2c30&badge=1&rating=1&h=<headline>&sub=<tagline>&cta=<button>&notes=<release notes>&shots=s:<id>,a:<n>&quotes=0,2&n=1|3&review=<review id>':
         'A promo card as PNG. Headlines: \\n breaks lines',
     },
   });

@@ -9,6 +9,8 @@ import {
   type PromoCardSettings, type PromoFormatId, type PromoStyleId, type PromoTemplateId, type ReviewCount, type UiPrefs,
 } from '@/lib/prefs'
 import { PROMO_USES, type ResolvedPromo } from '@/lib/promo-settings'
+import { fmtDate } from '@/lib/format'
+import { TERRITORY_BY_CODE } from '@/lib/territories'
 import { cn } from '@/lib/utils'
 import { ScreenThumb, type PromoScreens } from './screen-thumb'
 import { inputCls, selectSmCls, textareaCls } from '@/components/ui/field'
@@ -83,6 +85,78 @@ function TextField({ label, value, placeholder, multiline, maxLength, onCommit }
   )
 }
 
+type ReviewFilter = 'all' | '5' | '4' | 'low'
+const REVIEW_FILTERS: { value: ReviewFilter; label: string; test: (rating: number) => boolean }[] = [
+  { value: 'all', label: 'All', test: () => true },
+  { value: '5', label: '5★', test: (r) => r === 5 },
+  { value: '4', label: '4★', test: (r) => r === 4 },
+  { value: 'low', label: '3★ and under', test: (r) => r <= 3 },
+]
+
+/** Review Highlight's review: any of the app's written reviews, newest first. */
+function ReviewPicker({ info, picked, onPick }: { info: PromoScreens | null; picked: string | undefined; onPick: (id: string | undefined) => void }) {
+  const [filter, setFilter] = useState<ReviewFilter>('all')
+  const reviews = info?.reviews ?? []
+  // A picked review that's gone (deleted on the App Store) falls back to the default, as on the card.
+  const shown = picked && reviews.some((r) => r.id === picked) ? picked : info?.defaultReview ?? null
+  const test = REVIEW_FILTERS.find((f) => f.value === filter)!.test
+  const list = reviews.filter((r) => test(r.rating))
+  // Only the ratings there are: with every review 5★, no filter at all.
+  const filters = REVIEW_FILTERS.map((f) => ({ ...f, n: reviews.filter((r) => f.test(r.rating)).length }))
+    .filter((f) => f.value === 'all' || f.n > 0)
+    .map((f) => ({ value: f.value, label: `${f.label} · ${f.n}` }))
+  return (
+    <Section
+      title="Review"
+      aside={picked && <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => onPick(undefined)} title="Show the newest short 5★ review">Reset</Button>}
+    >
+      <p className="text-[11px] text-muted-foreground">
+        {picked ? 'Picked by you.' : 'The newest short 5★ review. Pick any review to show it instead.'} Long reviews get smaller text.
+      </p>
+      {!info ? (
+        <p className="text-xs text-muted-foreground">Loading…</p>
+      ) : !reviews.length ? (
+        <p className="text-xs text-muted-foreground">No written reviews yet. The card shows the app&apos;s numbers until there are.</p>
+      ) : (
+        <>
+          {filters.length > 2 && reviews.length > 4 && <Segmented value={filter} onChange={setFilter} options={filters} />}
+          {list.length ? (
+            <ul className="space-y-1.5">
+              {list.map((r) => {
+                const on = r.id === shown
+                return (
+                  <li key={r.id}>
+                    <button
+                      onClick={() => onPick(r.id)}
+                      aria-pressed={on}
+                      className={cn('w-full space-y-1 rounded-md border px-2.5 py-2 text-left text-xs transition-colors', on ? 'border-foreground/40 bg-accent' : 'border-border hover:bg-accent/50')}
+                    >
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="tracking-tight text-amber-500" aria-label={`${r.rating} stars`}>
+                          {'★'.repeat(r.rating)}
+                          <span className="text-muted-foreground/40">{'★'.repeat(5 - r.rating)}</span>
+                        </span>
+                        {on && <span className="rounded bg-primary px-1.5 py-px text-[10px] font-semibold text-primary-foreground">On the card</span>}
+                      </span>
+                      {r.title && <span className="block font-semibold">{r.title}</span>}
+                      <span className="line-clamp-3 block">{r.body}</span>
+                      <span className="block text-muted-foreground">
+                        {[r.reviewer, r.country && (TERRITORY_BY_CODE[r.country]?.name ?? r.country), r.date && fmtDate(r.date)].filter(Boolean).join(' · ')}
+                      </span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <p className="text-xs text-muted-foreground">No reviews with that rating.</p>
+          )}
+        </>
+      )}
+    </Section>
+  )
+}
+
 /**
  * The popup for one promo card: a large preview, and beside it everything that card uses. Each
  * setting starts as "all cards" (the toolbar's) until it's changed here; Reset clears them all.
@@ -140,6 +214,7 @@ export function PromoCardEditor({ template, appId, mk, updateMk, info, toolbarSh
     if (fromAll) return fromAll
     const own = info?.copy[template]?.[k]
     if (k === 'cta') return 'Download on the App Store'
+    if (template === 'highlight' && k === 'headline') return 'None. Type one to show it above the review'
     return own || (k === 'tagline' ? 'No tagline' : '')
   }
 
@@ -285,6 +360,8 @@ export function PromoCardEditor({ template, appId, mk, updateMk, info, toolbarSh
               )}
             </Section>
           )}
+
+          {uses.review && <ReviewPicker info={info} picked={own.review} onPick={(review) => setOwn({ review })} />}
 
           {uses.quotes && (
             <Section

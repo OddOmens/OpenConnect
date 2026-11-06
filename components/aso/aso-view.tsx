@@ -56,11 +56,13 @@ export function AsoView({ initialApps, initialPortfolio, sidebar }: { initialApp
   const [refreshing, setRefreshing] = useState(false)
   const [notice, setNotice] = useState<{ tone: 'info' | 'warn'; text: string } | null>(null)
 
-  // ?app=<id> (links from elsewhere), else the last selection in this browser.
+  // ?app=<id> (links from elsewhere), else the last selection in this browser. Both only exist
+  // in the browser, so they're read after hydration: setting state here is the point.
   useEffect(() => {
     const s = saved()
     const linked = new URLSearchParams(window.location.search).get('app')
     const app = [linked, s.app].find((id) => id && visible.some((a) => a.apple_id === id))
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (app) setAppId(app)
     if (s.countries) setCountries(Object.fromEntries(Object.entries(s.countries).filter(([, c]) => TERRITORIES.some((t) => t.code === c))))
     // Only on first load: later changes to the app list don't move the selection.

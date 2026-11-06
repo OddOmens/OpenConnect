@@ -8,7 +8,7 @@ import path from 'node:path';
 import { ORIGIN } from './remote.mjs';
 
 export const STATS_TEMPLATES = ['overview', 'reach', 'map', 'rating', 'review', 'milestone'];
-export const PROMO_TEMPLATES = ['launch', 'update', 'screens', 'loved', 'reviews', 'download'];
+export const PROMO_TEMPLATES = ['launch', 'update', 'screens', 'feature', 'store', 'loved', 'reviews', 'highlight', 'rated', 'milestone', 'download'];
 export const OUT_DIR = path.join(os.homedir(), '.openappshot', 'marketing');
 
 async function get(url, accept = 'application/json') {
@@ -58,7 +58,7 @@ export async function promoMaterial({ app }) {
 
 /**
  * Render a card. Stats templates take range/format(4x5|9x16)/theme/hero/stats/list/pick; promo templates
- * take format(1x1|4x5|9x16|16x9)/style/accent/frame/badge/rating/headline/tagline/cta/notes/shots/quotes/reviews.
+ * take format(1x1|4x5|9x16|16x9)/style/accent/frame/badge/rating/headline/tagline/cta/notes/shots/quotes/reviews/review.
  * Saves the full-size PNG and returns its path, plus a smaller preview when asked.
  */
 export async function card(o, { preview = false } = {}) {
@@ -73,7 +73,7 @@ export async function card(o, { preview = false } = {}) {
   const params = promo
     ? {
         app, t, format: o.format, style: o.style, accent: hex(o.accent), frame: hex(o.frame), badge: flag(o.badge), rating: flag(o.rating),
-        h: o.headline, sub: o.tagline, cta: o.cta, notes: o.notes, shots: list(o.shots), quotes: list(o.quotes), n: o.reviews,
+        h: o.headline, sub: o.tagline, cta: o.cta, notes: o.notes, shots: list(o.shots), quotes: list(o.quotes), n: o.reviews, review: o.review,
       }
     : { app, t, range: o.range, format: o.format, theme: o.theme, hero: o.hero, stats: list(o.stats), list: flag(o.list), pick: o.pick };
   const png = await get(`/api/marketing?${qs(params)}`, 'image/png');

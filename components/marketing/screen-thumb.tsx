@@ -1,6 +1,7 @@
 'use client'
 
 import type { PromoTemplateId } from '@/lib/prefs'
+import type { HighlightReview } from '@/lib/marketing'
 import { cn } from '@/lib/utils'
 
 /** What the Marketing page knows about one app's promo cards (from /api/marketing/promo). */
@@ -10,6 +11,8 @@ export interface PromoScreens {
   defaults: string[]
   copy: Record<PromoTemplateId, { headline: string; tagline: string; cta: string; notes: string }>
   quotes: { index: number; body: string; reviewer: string; rating: number }[]
+  reviews: HighlightReview[] // every written review, newest first (Review Highlight)
+  defaultReview: string | null
   version: string // goes in the cards' URLs, so the browser can keep them
 }
 

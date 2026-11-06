@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Review Highlight**, a new promo card: one real review, as large as it fits, with its stars, title, who wrote it and where, and the app underneath. Pick the review in the card's popup from all of the app's written reviews (newest first, filtered by rating); until you do, it shows the newest short 5★ one. Long reviews get smaller text instead of being cut off. Also for scripts and Claude: `&review=<id>` on `/api/marketing`, with the ids in `/api/marketing/promo`.
+
+### Fixed
+- **Cleaner promo cards.** Headlines shrink to fit instead of ending in "…" (Top Rated on 9:16), and a headline's lines stay as typed (Loved By no longer breaks "102 Countries" in two). Release notes and features wrap to three lines before they're shortened, so the last one isn't cut mid-sentence. On the Reviews card the two reviews behind show their first two lines in full instead of fragments under the front one. The App Store Page card floats as a whole card when it fits, rather than stopping short with square corners. On 16:9, Features, Loved By and Reviews put the app and the App Store button along the bottom of the whole card. Milestone's confetti stays clear of the text.
+- A promo card's popup opens at full width again: on most screens it was cut to half the window, hiding the card's settings.
+- On phones, Marketing's size buttons show just the ratio (4:5), and each option's label stays with its controls when the row wraps.
+
 ## 1.5.0
 
 ### Added

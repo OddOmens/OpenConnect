@@ -952,7 +952,7 @@ server.registerTool(
   'marketing_promo_material',
   {
     title: 'Marketing: promo card material',
-    description: "For one app's promo cards: the screenshots they can show (ids for marketing_card's shots: s:<studio slide>, a:<App Store n>), each template's default wording, and the 5-star reviews the Reviews card can quote (indexes for quotes).",
+    description: "For one app's promo cards: the screenshots they can show (ids for marketing_card's shots: s:<studio slide>, a:<App Store n>), each template's default wording, the 5-star reviews the Reviews card can quote (indexes for quotes), and every written review Review Highlight can show (ids for review).",
     inputSchema: { app: z.string().describe('OpenConnect app: id, name or bundle id') },
     annotations: { readOnlyHint: true },
   },
@@ -965,7 +965,7 @@ server.registerTool(
     title: 'Marketing: render a card',
     description:
       'Render a Marketing card to PNG, saved on this Mac, and show it. Stats cards (overview, reach, map, rating, review, milestone) take range, format 4x5|9x16, theme, hero, stats, list, pick. ' +
-      'Promo cards for one app (launch, update, screens, loved, reviews, download) take format 1x1|4x5|9x16|16x9, style, accent, frame, badge, rating, headline, tagline, cta, notes, shots, quotes, reviews. Empty text uses the template wording; \\n breaks lines.',
+      'Promo cards for one app (launch, update, screens, feature, store, loved, reviews, highlight, rated, milestone, download) take format 1x1|4x5|9x16|16x9, style, accent, frame, badge, rating, headline, tagline, cta, notes, shots, quotes, reviews, review. Empty text uses the template wording; \\n breaks lines.',
     inputSchema: {
       app: mAppArg,
       template: z.enum([...marketing.STATS_TEMPLATES, ...marketing.PROMO_TEMPLATES]),
@@ -988,6 +988,7 @@ server.registerTool(
       shots: z.array(z.string()).optional().describe('Promo: screenshot ids from marketing_promo_material'),
       quotes: z.array(z.number().int()).optional().describe('Reviews card: review indexes, first in front'),
       reviews: z.union([z.literal(1), z.literal(3)]).optional().describe('Reviews card: one review or three'),
+      review: z.string().optional().describe('Review Highlight card: the review id (from marketing_promo_material reviews); default the newest short 5-star one'),
       out: z.string().optional().describe(`Where to save the PNG (default ${marketing.OUT_DIR})`),
     },
   },

@@ -1,12 +1,12 @@
 // Marketing promo cards: Launch, What's New, Screenshots, Features, App Store Page, Loved By,
-// Reviews, Top Rated, Milestone and Download. Unlike the
+// Reviews, Review Highlight, Top Rated, Milestone and Download. Unlike the
 // stats cards these are made to sell the app, so they come in several styles and an accent
 // colour, and their wording can be overridden.
 
 import type { PromoFormatId, PromoStyleId, PromoTemplateId } from '@/lib/prefs';
-import { defaultCopy, featureList, noteBullets, type PromoData } from '@/lib/marketing';
+import { defaultCopy, defaultHighlight, featureList, noteBullets, type PromoData } from '@/lib/marketing';
 import { DottedWorld, Icon, STAR_PATH, STAR_COLOR, WORLD_H, WORLD_W, fmtCompact, fmtDay } from './kit';
-import { TERRITORIES } from '@/lib/territories';
+import { TERRITORIES, TERRITORY_BY_CODE } from '@/lib/territories';
 
 export const PROMO_SIZES: Record<PromoFormatId, { width: number; height: number }> = {
   '1x1': { width: 1080, height: 1080 },
@@ -29,6 +29,7 @@ export interface PromoOptions {
   notes?: string;
   quotes?: number[];   // Reviews: which of data.quotes, the first in front
   reviewCount?: 1 | 3; // Reviews: one review, or three fanned out
+  review?: string;     // Review Highlight: the review's id (else the default one)
 }
 
 /** The app's images, inlined by the route before rendering. */
@@ -112,10 +113,24 @@ function colours(style: PromoStyleId, accent: string): Omit<Palette, 'frame'> {
 
 // --- Pieces ----------------------------------------------------------------------------
 
-/** Headline size that shrinks for longer lines (the longest line, when it has line breaks). */
-const headlineSize = (text: string, base: number) => {
-  const n = Math.max(...text.split('\n').map((l) => l.length));
-  return n > 48 ? base * 0.68 : n > 30 ? base * 0.8 : n > 18 ? base * 0.9 : base;
+// Headline type is set tight (negative tracking): a character is about half an em wide.
+const HEAD_EM = 0.54;
+
+/**
+ * Headline size that shrinks for longer lines, and further until it fits `width`: each line typed
+ * with a break stays on one line, and text without breaks wraps to at most `clamp` lines.
+ */
+const headlineSize = (text: string, base: number, width: number, clamp: number) => {
+  const lines = text.split('\n');
+  const n = Math.max(...lines.map((l) => l.length));
+  const size = n > 48 ? base * 0.68 : n > 30 ? base * 0.8 : n > 18 ? base * 0.9 : base;
+  const longestWord = Math.max(...text.split(/\s+/).map((w) => w.length));
+  const fits = (fs: number) =>
+    longestWord * fs * HEAD_EM <= width &&
+    (lines.length > 1 ? n * fs * HEAD_EM <= width : Math.ceil((n * fs * HEAD_EM * 1.08) / width) <= clamp);
+  let fs = size;
+  while (fs > base * 0.5 && !fits(fs)) fs *= 0.95;
+  return Math.round(fs);
 };
 
 // --- Fitting text into the card ----------------------------------------------------------
@@ -131,7 +146,7 @@ function textLines(text: string, fontPx: number, widthPx: number, clamp: number)
 
 /** Height of a headline block (see Headline). */
 const headlineHeight = (text: string, size: number, widthPx: number, clamp: number) => {
-  const fs = headlineSize(text, size);
+  const fs = headlineSize(text, size, widthPx, clamp);
   // Headline type is set tight (negative tracking), so it runs narrower than body text.
   return textLines(text, fs * 0.82, widthPx, clamp) * fs * 1.05;
 };
@@ -211,6 +226,9 @@ function Chip({ children, p, size = 26 }: { children: React.ReactNode; p: Palett
   );
 }
 
+// Release notes and features wrap to this many lines before they're shortened.
+const ITEM_LINES = 3;
+
 /** A tick in an accent circle and its line of text: release notes and features. */
 function CheckItem({ text, size, p }: { text: string; size: number; p: Palette }) {
   return (
@@ -220,7 +238,7 @@ function CheckItem({ text, size, p }: { text: string; size: number; p: Palette }
           <path d="M20 6 9 17l-5-5" />
         </svg>
       </div>
-      <div style={{ display: 'block', flex: 1, fontSize: size, lineHeight: 1.35, lineClamp: 2 }}>{text}</div>
+      <div style={{ display: 'block', flex: 1, fontSize: size, lineHeight: 1.35, lineClamp: ITEM_LINES }}>{text}</div>
     </div>
   );
 }
@@ -324,8 +342,9 @@ function AppLine({ data, icon, p, size = 72 }: { data: PromoData; icon: string |
   );
 }
 
-function Headline({ text, size, p, align = 'left', lines = 3 }: { text: string; size: number; p: Palette; align?: 'left' | 'center'; lines?: number }) {
-  const fs = headlineSize(text, size);
+/** `width` is the room it has: it shrinks to fit rather than being cut short. */
+function Headline({ text, size, width, p, align = 'left', lines = 3 }: { text: string; size: number; width: number; p: Palette; align?: 'left' | 'center'; lines?: number }) {
+  const fs = headlineSize(text, size, width, lines);
   return (
     <div style={{ display: 'block', flexShrink: 0, fontSize: fs, fontWeight: 800, letterSpacing: -fs * 0.035, lineHeight: 1.05, color: p.fg, textAlign: align, lineClamp: lines, whiteSpace: 'pre-line' }}>
       {text}
@@ -374,7 +393,7 @@ function Launch({ data, images, o, p }: Props) {
         <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', width: 900, gap: 36 }}>
           <Eyebrow p={p}>{eyebrow}</Eyebrow>
           <AppIcon src={images.icon} size={170} p={p} />
-          <Headline text={headline} size={104} p={p} lines={2} />
+          <Headline text={headline} size={104} width={900} p={p} lines={2} />
           <Tagline text={tagline(data, o)} size={34} p={p} lines={2} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
             {o.showBadge && <Badge p={p} cta={o.cta} />}
@@ -395,7 +414,7 @@ function Launch({ data, images, o, p }: Props) {
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: square ? 22 : 30, paddingTop: tall && shots.length ? 40 : 0, ...(shots.length ? {} : { flex: 1, justifyContent: 'center' }) }}>
         <Eyebrow p={p} size={square ? 22 : tall ? 30 : 24} center>{eyebrow}</Eyebrow>
         <AppIcon src={images.icon} size={square ? 130 : tall ? 250 : 170} p={p} />
-        <Headline text={headline} size={square ? 92 : tall ? 136 : 108} p={p} align="center" lines={2} />
+        <Headline text={headline} size={square ? 92 : tall ? 136 : 108} width={PROMO_SIZES[format].width - pad * 2} p={p} align="center" lines={2} />
         <Tagline text={tagline(data, o)} size={square ? 30 : tall ? 40 : 34} p={p} align="center" lines={tall ? 3 : 2} />
         {o.showBadge && <Badge p={p} cta={o.cta} scale={square ? 0.85 : tall ? 1.15 : 1} />}
         {!shots.length && <StatChips data={data} p={p} o={o} size={tall ? 34 : 28} center />}
@@ -441,7 +460,7 @@ function Update({ data, images, o, p }: Props) {
     notesPad * 2;
   const budget = H - pad * 2 - (landscape ? 0 : (square ? 64 : tall ? 96 : 80) + 32) - (landscape ? 80 + 32 : 0) - used;
   const bulletW = colW - notesPad * 2 - fs * 1.25 - 22;
-  const items = fitting(all, (b) => textLines(b, fs, bulletW, 2) * fs * 1.35, bulletGap, budget, 1);
+  const items = fitting(all, (b) => textLines(b, fs, bulletW, ITEM_LINES) * fs * 1.35, bulletGap, budget, 1);
   const notes = (
     <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, gap: bulletGap, padding: notesPad, borderRadius: 32, background: p.surface, border: `2px solid ${p.border}` }}>
       {items.map((b, i) => <CheckItem key={i} text={b} size={fs} p={p} />)}
@@ -460,7 +479,7 @@ function Update({ data, images, o, p }: Props) {
         <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: 1080 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
             <Eyebrow p={p}>{eyebrow}</Eyebrow>
-            <Headline text={headline} size={headSize} p={p} lines={3} />
+            <Headline text={headline} size={headSize} width={colW} p={p} lines={3} />
             {notes}
           </div>
           {footer}
@@ -476,7 +495,7 @@ function Update({ data, images, o, p }: Props) {
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center', gap }}>
         {tall && <AppIcon src={images.icon} size={200} p={p} />}
         <Eyebrow p={p} size={square ? 22 : tall ? 28 : 24}>{eyebrow}</Eyebrow>
-        <Headline text={headline} size={headSize} p={p} lines={3} />
+        <Headline text={headline} size={headSize} width={colW} p={p} lines={3} />
         {date && <div style={{ display: 'flex', flexShrink: 0, marginTop: -8, fontSize: square ? 26 : tall ? 34 : 30, color: p.muted }}>Released {date}</div>}
         {notes}
       </div>
@@ -510,7 +529,7 @@ function Screens({ data, images, o, p }: Props) {
   return (
     <Canvas format={format} p={p} pad={pad}>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18, height: textH, justifyContent: 'center' }}>
-        <Headline text={headline} size={square ? 80 : landscape ? 84 : tall ? 124 : 92} p={p} align="center" lines={2} />
+        <Headline text={headline} size={square ? 80 : landscape ? 84 : tall ? 124 : 92} width={inner} p={p} align="center" lines={2} />
         <Tagline text={tagline(data, o)} size={square ? 28 : tall ? 38 : 32} p={p} align="center" lines={tall ? 3 : 2} />
       </div>
       <div style={{ display: 'flex', flex: 1, alignItems: 'flex-start', justifyContent: 'center', paddingTop: Math.max(0, (availH - phoneW * (ratio + 0.07 + stagger)) / 2) }}>
@@ -579,19 +598,21 @@ function Loved({ data, images, o, p }: Props) {
   );
   if (landscape) {
     return (
-      <Canvas format={format} p={p} pad={pad} row>
-        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: leftW, paddingRight: 60 }}>
-          <Headline text={headline} size={110} p={p} lines={3} />
-          {footer}
+      <Canvas format={format} p={p} pad={pad}>
+        <div style={{ display: 'flex', flex: 1, alignItems: 'center' }}>
+          <div style={{ display: 'flex', width: leftW, paddingRight: 60 }}>
+            <Headline text={headline} size={110} width={leftW - 60} p={p} lines={3} />
+          </div>
+          {map}
         </div>
-        <div style={{ display: 'flex', flex: 1, alignItems: 'center' }}>{map}</div>
+        {footer}
       </Canvas>
     );
   }
   return (
     <Canvas format={format} p={p} pad={pad}>
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center', gap: square ? 40 : tall ? 72 : 56 }}>
-        <Headline text={headline} size={square ? 96 : tall ? 140 : 112} p={p} lines={3} />
+        <Headline text={headline} size={square ? 96 : tall ? 140 : 112} width={mapW} p={p} lines={2} />
         {map}
       </div>
       {footer}
@@ -636,50 +657,51 @@ function Reviews({ data, images, o, p }: Props) {
   const ratingH = hasRating ? numSize : 0;
   // Height the cards get: everything else on the card comes first.
   const stackH = landscape
-    ? H - pad * 2
+    ? H - pad * 2 - footerH - 32
     : H - pad * 2 - footerH - 32 - headlineHeight(headline, headSize, colW, 2) - gap - (ratingH ? ratingH + gap : 0) - gap;
 
-  // Front card, and the two behind it: narrower, raised so their stars show above it, and turned.
+  // Front card, and the two behind it: side by side, raised so their stars and first two lines show
+  // above it (the rest is tucked under it), and turned a little.
   const frontW = Math.round(fanned ? colW * 0.8 : landscape ? colW : colW * (tall ? 1 : 0.92));
-  const backW = Math.round(colW * 0.64);
+  const backW = Math.round(colW * 0.52);
   const fs = (q: Quote, base: number) => (q.body.length > 140 ? base * 0.86 : base);
-  const base = square ? (fanned ? 32 : 38) : tall ? (fanned ? 44 : 50) : landscape ? (fanned ? 42 : 48) : fanned ? 36 : 42;
+  const base = square ? (fanned ? 32 : 38) : tall ? (fanned ? 44 : 50) : landscape ? (fanned ? 34 : 44) : fanned ? 36 : 42;
   const cardPad = Math.round(base * 1.1);
-  const lift = fanned ? Math.round(base * 3.2) : 0; // how far the back cards rise above the front one
-  const tilt = Math.round(backW * 0.06); // room for a turned card's corners
+  const backSize = base * 0.78;
+  const BACK_LINES = 2;
+  const tilt = Math.round(backW * 0.07); // room for a turned card's corners
+  // How far the back cards rise above the front one: their stars and lines, and a little air.
+  const lift = fanned ? Math.round(cardPad + backSize * 0.9 + backSize * 0.55 + BACK_LINES * backSize * 1.4 + backSize * 0.6 + tilt) : 0;
   const chrome = (size: number) => cardPad * 2 + size * 0.9 + size * 0.55 + size * 0.55 + size * 0.75 * 1.25;
   const front = quotes[0];
   const frontFs = front ? fs(front, base) : base;
   const frontMax = Math.max(2, Math.floor((stackH - lift - tilt - chrome(frontFs)) / (frontFs * 1.4)));
   const frontLines = front ? textLines(`“${front.body}”`, frontFs, frontW - cardPad * 2, frontMax) : 0;
   const frontH = Math.round(chrome(frontFs) + frontLines * frontFs * 1.4);
-  const backH = Math.round(frontH * 0.88);
+  const backH = lift + Math.round(frontH * 0.35);
 
   // The shadow is two see-through layers under the card, not a box-shadow: satori draws those as a
   // blur filter, and blurring three big cards took resvg over five seconds.
-  const card = (q: Quote, width: number, size: number, lines: number, height?: number) => (
+  const card = (q: Quote, width: number, size: number, lines: number, height?: number, reviewer = true) => (
     <div style={{ display: 'flex', flexShrink: 0, padding: '2px 8px 18px', margin: '-2px -8px -18px', borderRadius: size * 0.9 + 8, background: 'rgba(0,0,0,0.05)' }}>
       <div style={{ display: 'flex', flexShrink: 0, padding: '1px 4px 9px', borderRadius: size * 0.9 + 4, background: 'rgba(0,0,0,0.07)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, width, ...(height ? { height } : {}), overflow: 'hidden', gap: size * 0.55, padding: cardPad, borderRadius: size * 0.9, background: paper.bg, border: `2px solid ${paper.border}`, color: paper.fg }}>
           <StarRow rating={q.rating} size={size * 0.9} gap={4} empty={paper.empty} />
           <div style={{ display: 'block', fontSize: size, lineHeight: 1.4, lineClamp: lines }}>{`“${q.body}”`}</div>
-          <div style={{ display: 'flex', fontSize: size * 0.75, color: paper.muted }}>{q.reviewer}</div>
+          {reviewer && <div style={{ display: 'flex', fontSize: size * 0.75, color: paper.muted }}>{q.reviewer}</div>}
         </div>
       </div>
     </div>
   );
-  const backCard = (q: Quote) => {
-    const size = fs(q, base) * 0.92;
-    return card(q, backW, size, Math.max(1, Math.floor((backH - chrome(size)) / (size * 1.4))), backH);
-  };
+  const backCard = (q: Quote) => card(q, backW, backSize, BACK_LINES, backH, false);
   // satori has no z-index: the back cards first, the front one painted last.
   const stack = front ? (
     <div style={{ display: 'flex', position: 'relative', flexShrink: 0, alignSelf: 'center', width: colW, height: lift + frontH, marginTop: fanned ? tilt : 0 }}>
       {quotes[1] && (
-        <div style={{ display: 'flex', position: 'absolute', left: 0, top: 0, transform: 'rotate(-6deg)' }}>{backCard(quotes[1])}</div>
+        <div style={{ display: 'flex', position: 'absolute', left: 0, top: tilt / 2, transform: 'rotate(-4deg)' }}>{backCard(quotes[1])}</div>
       )}
       {quotes[2] && (
-        <div style={{ display: 'flex', position: 'absolute', left: colW - backW, top: 0, transform: 'rotate(6deg)' }}>{backCard(quotes[2])}</div>
+        <div style={{ display: 'flex', position: 'absolute', left: colW - backW, top: tilt / 2, transform: 'rotate(4deg)' }}>{backCard(quotes[2])}</div>
       )}
       <div style={{ display: 'flex', position: 'absolute', left: Math.round((colW - frontW) / 2), top: lift }}>{card(front, frontW, frontFs, frontLines)}</div>
     </div>
@@ -707,26 +729,117 @@ function Reviews({ data, images, o, p }: Props) {
   );
   if (landscape) {
     return (
-      <Canvas format={format} p={p} pad={pad} row>
-        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: leftW, paddingRight: 60 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 40 }}>
-            <Headline text={headline} size={headSize} p={p} lines={3} />
+      <Canvas format={format} p={p} pad={pad}>
+        <div style={{ display: 'flex', flex: 1, alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', width: leftW, paddingRight: 60, gap: 40 }}>
+            <Headline text={headline} size={headSize} width={leftW - 60} p={p} lines={3} />
             {rating}
           </div>
-          {footer}
+          <div style={{ display: 'flex', flex: 1, flexDirection: 'column', justifyContent: 'center' }}>{stack}</div>
         </div>
-        <div style={{ display: 'flex', flex: 1, flexDirection: 'column', justifyContent: 'center' }}>{stack}</div>
+        {footer}
       </Canvas>
     );
   }
   return (
     <Canvas format={format} p={p} pad={pad}>
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center', gap }}>
-        <Headline text={headline} size={headSize} p={p} lines={2} />
+        <Headline text={headline} size={headSize} width={colW} p={p} lines={2} />
         {rating}
         {stack}
       </div>
       {footer}
+    </Canvas>
+  );
+}
+
+/** A big opening quote mark, drawn (the card font's own is thin at this size). */
+function QuoteMark({ size, color }: { size: number; color: string }) {
+  return (
+    <svg width={size} height={size * 0.76} viewBox="0 0 66 50">
+      <path d="M0 50V31.5C0 13.6 8.6 3.2 25.8 0l2.6 6.6C19.7 9.4 15.3 15 15 23.4h12.2V50zm36.6 0V31.5C36.6 13.6 45.2 3.2 62.4 0L65 6.6C56.3 9.4 51.9 15 51.6 23.4h12.2V50z" fill={color} />
+    </svg>
+  );
+}
+
+/**
+ * One real review, as large as it fits: its stars, title and text, who wrote it and where, and the
+ * app underneath. The review is picked in the card's popup; until then it's the newest short 5★ one.
+ */
+function Highlight({ data, images, o, p }: Props) {
+  const { format } = o;
+  const landscape = format === '16x9';
+  const tall = format === '9x16';
+  const square = format === '1x1';
+  const { width: W, height: H } = PROMO_SIZES[format];
+  const pad = landscape ? 104 : tall ? 96 : square ? 76 : 88;
+  const colW = Math.min(landscape ? 1480 : 920, W - pad * 2);
+  const review = (o.review && data.reviews.find((r) => r.id === o.review)) || defaultHighlight(data.reviews);
+  const headline = o.headline ?? '';
+  const footerSize = square ? 64 : tall ? 96 : 80;
+  const gap = square ? 24 : tall ? 40 : 32;
+
+  if (!review) {
+    // No written reviews yet: the numbers instead.
+    return (
+      <Canvas format={format} p={p} pad={pad}>
+        <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap }}>
+          <AppIcon src={images.icon} size={square ? 200 : 260} p={p} />
+          <Headline text={headline || `Try ${data.name}`} size={square ? 84 : 104} width={colW} p={p} align="center" lines={2} />
+          <StatChips data={data} p={p} o={o} size={square ? 24 : 28} center />
+        </div>
+        <Footer data={data} icon={images.icon} o={o} p={p} size={footerSize} />
+      </Canvas>
+    );
+  }
+
+  const markSize = square ? 96 : tall ? 150 : landscape ? 110 : 120;
+  const starSize = square ? 40 : tall ? 58 : 48;
+  const attrSize = square ? 28 : tall ? 38 : 32;
+  const country = review.country ? TERRITORY_BY_CODE[review.country]?.name ?? review.country : null;
+  // The title goes in when it says something the text doesn't start with.
+  const title = review.title && !review.body.toLowerCase().startsWith(review.title.toLowerCase().replace(/[.!…]+$/, '')) ? review.title : '';
+  const headSize = square ? 64 : tall ? 92 : 76;
+  const headH = headline ? headlineHeight(headline, headSize, colW, 2) + gap : 0;
+
+  // The text as large as fits between the stars and the name; long reviews get smaller type, and
+  // only past the smallest size are they shortened.
+  const room = H - pad * 2 - footerSize - 48 - headH - markSize * 0.76 - gap - starSize - gap - attrSize * 1.3 - gap;
+  const LH = 1.32;
+  const maxFs = square ? 56 : tall ? 76 : landscape ? 60 : 62;
+  const minFs = square ? 28 : tall ? 36 : 30;
+  const sized = (fs: number) => {
+    const titleFs = Math.round(fs * 1.12);
+    const titleH = title ? textLines(title, titleFs * 1.06, colW, 2) * titleFs * 1.2 + fs * 0.5 : 0;
+    // Semi-bold type runs wider than the half-em estimate.
+    const lines = textLines(review.body, fs * 1.06, colW, 99);
+    return { fs, titleFs, titleH, lines, fits: titleH + lines * fs * LH <= room };
+  };
+  let fit = sized(maxFs);
+  while (!fit.fits && fit.fs > minFs) fit = sized(Math.max(minFs, Math.floor(fit.fs * 0.94)));
+  const clamp = Math.max(2, Math.floor((room - fit.titleH) / (fit.fs * LH)));
+
+  return (
+    <Canvas format={format} p={p} pad={pad}>
+      <div style={{ display: 'flex', flex: 1, flexDirection: 'column', justifyContent: 'center', alignSelf: 'center', width: colW, gap }}>
+        {headline && <Headline text={headline} size={headSize} width={colW} p={p} lines={2} />}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+          <QuoteMark size={markSize} color={p.accent} />
+          <StarRow rating={review.rating} size={starSize} gap={Math.round(starSize * 0.16)} empty={p.border} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: fit.fs * 0.5 }}>
+          {title && <div style={{ display: 'block', fontSize: fit.titleFs, fontWeight: 800, letterSpacing: -fit.titleFs * 0.02, lineHeight: 1.2, lineClamp: 2 }}>{title}</div>}
+          <div style={{ display: 'block', fontSize: fit.fs, fontWeight: 600, letterSpacing: -fit.fs * 0.01, lineHeight: LH, lineClamp: clamp }}>{review.body}</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: attrSize * 0.5, fontSize: attrSize }}>
+          <div style={{ display: 'flex', width: attrSize * 1.4, height: 3, background: p.accent }} />
+          <span style={{ fontWeight: 600 }}>{review.reviewer}</span>
+          {country && <span style={{ color: p.muted }}>· {country}</span>}
+        </div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', paddingTop: 48 }}>
+        <Footer data={data} icon={images.icon} o={o} p={p} size={footerSize} />
+      </div>
     </Canvas>
   );
 }
@@ -744,7 +857,7 @@ function Download({ data, images, o, p }: Props) {
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, alignItems: 'center', justifyContent: 'center', gap: square || landscape ? 30 : 44 }}>
         <AppIcon src={images.icon} size={iconSize} p={p} />
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18, maxWidth: landscape ? 1400 : 920 }}>
-          <Headline text={headline} size={square ? 90 : landscape ? 100 : tall ? 124 : 110} p={p} align="center" lines={2} />
+          <Headline text={headline} size={square ? 90 : landscape ? 100 : tall ? 124 : 110} width={landscape ? 1400 : 920} p={p} align="center" lines={2} />
           <Tagline text={tagline(data, o)} size={square ? 28 : 34} p={p} align="center" lines={2} />
         </div>
         <StatChips data={data} p={p} o={o} size={square ? 24 : 28} center />
@@ -788,10 +901,10 @@ function Feature({ data, images, o, p }: Props) {
   // As many features as fit under the headline and tagline.
   const textH = (tall ? H * 0.5 : H - pad * 2 - footerSize - 40) - (tall ? footerSize + gap : 0);
   const budget = textH - headlineHeight(headline, headSize, colW, 3) - gap - (sub ? textLines(sub, subSize, colW, 3) * subSize * 1.35 + gap : 0);
-  const items = fitting(all, (f) => textLines(f, fs, colW - fs * 1.25 - 22, 2) * fs * 1.35, itemGap, budget);
+  const items = fitting(all, (f) => textLines(f, fs, colW - fs * 1.25 - 22, ITEM_LINES) * fs * 1.35, itemGap, budget);
   const text = (
     <div style={{ display: 'flex', flexDirection: 'column', width: colW, gap }}>
-      <Headline text={headline} size={headSize} p={p} lines={3} />
+      <Headline text={headline} size={headSize} width={colW} p={p} lines={3} />
       <Tagline text={sub} size={subSize} p={p} lines={3} />
       {items.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: itemGap }}>
@@ -816,7 +929,7 @@ function Feature({ data, images, o, p }: Props) {
         {text}
         {(shot || landscape) && <div style={{ display: 'flex', flex: 1, justifyContent: 'center' }}>{phone}</div>}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', paddingTop: 40, ...(landscape ? { width: colW } : {}) }}>
+      <div style={{ display: 'flex', flexDirection: 'column', paddingTop: 40 }}>
         <Footer data={data} icon={images.icon} o={o} p={p} size={footerSize} />
       </div>
     </Canvas>
@@ -854,8 +967,18 @@ function Store({ data, images, o, p }: Props) {
   const shots = images.screenshots.slice(0, count);
   const shotGap = Math.round(20 * u);
   const shotW = Math.floor((sheetW - sp * 2 - shotGap * (count - 1)) / count);
+  // The page's height, roughly: when it fits it floats in the middle with all four corners round;
+  // when it doesn't, it runs off the bottom edge (bottom corners square) rather than ending short.
+  const sheetGap = Math.round(34 * u);
+  const sheetH =
+    sp * 2 + iconSize + sheetGap +
+    (shown.length ? 52 * u + 17 * u * 1.3 + 48 * u + 20 * u * 1.3 + 16 * u + sheetGap : 0) +
+    (shots.length ? Math.max(...shots.map((s) => shotW * s.ratio)) : 6 * 26 * u * 1.35);
+  const headH = landscape ? 0 : headlineHeight(headline, square ? 76 : tall ? 124 : 96, W - pad * 2, 2) + 28 + (tall && o.showBadge ? 28 + 96 * 1.05 : 0) + (square ? 36 : tall ? 64 : 48);
+  const floats = headH + sheetH <= PROMO_SIZES[format].height - pad * 2;
+  const radius = 48 * u;
   const sheet = (
-    <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, width: sheetW, padding: sp, gap: Math.round(34 * u), borderRadius: `${48 * u}px ${48 * u}px 0 0`, background: paper.bg, border: `2px solid ${paper.border}`, color: paper.fg }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, width: sheetW, padding: sp, gap: sheetGap, borderRadius: floats ? radius : `${radius}px ${radius}px 0 0`, background: paper.bg, border: `2px solid ${paper.border}`, color: paper.fg }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: Math.round(30 * u) }}>
         <AppIcon src={images.icon} size={iconSize} p={p} />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, gap: 6 * u }}>
@@ -895,20 +1018,22 @@ function Store({ data, images, o, p }: Props) {
     return (
       <Canvas format={format} p={p} pad={pad} row>
         <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', width: leftW, paddingRight: 60, gap: 40 }}>
-          <Headline text={headline} size={100} p={p} lines={3} />
+          <Headline text={headline} size={100} width={leftW - 60} p={p} lines={3} />
           {o.showBadge && <div style={{ display: 'flex' }}><Badge p={p} cta={o.cta} /></div>}
         </div>
-        <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: -pad - 600 }}>{sheet}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: floats ? 'center' : 'flex-start', marginBottom: floats ? 0 : -pad - 600 }}>{sheet}</div>
       </Canvas>
     );
   }
   return (
     <Canvas format={format} p={p} pad={pad}>
+      {floats && <div style={{ display: 'flex', flex: 1 }} />}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 28, paddingBottom: square ? 36 : tall ? 64 : 48 }}>
-        <Headline text={headline} size={square ? 76 : tall ? 124 : 96} p={p} align="center" lines={2} />
+        <Headline text={headline} size={square ? 76 : tall ? 124 : 96} width={W - pad * 2} p={p} align="center" lines={2} />
         {tall && o.showBadge && <Badge p={p} cta={o.cta} scale={1.05} />}
       </div>
-      <div style={{ display: 'flex', flex: 1, justifyContent: 'center', alignItems: 'flex-start', marginBottom: -pad - 600 }}>{sheet}</div>
+      <div style={{ display: 'flex', ...(floats ? {} : { flex: 1, marginBottom: -pad - 600 }), flexDirection: 'column', alignItems: 'center' }}>{sheet}</div>
+      {floats && <div style={{ display: 'flex', flex: 1 }} />}
     </Canvas>
   );
 }
@@ -1000,7 +1125,7 @@ function Rated({ data, images, o, p }: Props) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 820 }}>{badge}</div>
         <div style={{ display: 'flex', flex: 1, flexDirection: 'column', justifyContent: 'space-between', paddingLeft: 40 }}>
           <div style={{ display: 'flex', flex: 1, flexDirection: 'column', justifyContent: 'center', gap: 32 }}>
-            <Headline text={headline} size={104} p={p} lines={3} />
+            <Headline text={headline} size={104} width={PROMO_SIZES[format].width - pad * 2 - 860} p={p} lines={3} />
             <Tagline text={sub} size={34} p={p} lines={3} />
           </div>
           <Footer data={data} icon={images.icon} o={o} p={p} size={footerSize} />
@@ -1012,7 +1137,7 @@ function Rated({ data, images, o, p }: Props) {
     <Canvas format={format} p={p} pad={pad}>
       <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: square ? 16 : tall ? 40 : 28 }}>
         {badge}
-        <Headline text={headline} size={square ? 72 : tall ? 120 : 92} p={p} align="center" lines={2} />
+        <Headline text={headline} size={square ? 72 : tall ? 120 : 92} width={PROMO_SIZES[format].width - pad * 2} p={p} align="center" lines={2} />
         <Tagline text={sub} size={square ? 26 : tall ? 38 : 32} p={p} align="center" lines={2} />
       </div>
       <Footer data={data} icon={images.icon} o={o} p={p} size={footerSize} />
@@ -1033,8 +1158,8 @@ function confetti(width: number, height: number, accent: string, footer: number)
     const x = rand() * width;
     const y = rand() * height;
     // Keep clear of the middle (an ellipse around the number and headline).
-    const dx = (x - width / 2) / (width * 0.42);
-    const dy = (y - height * 0.46) / (height * 0.36);
+    const dx = (x - width / 2) / (width * 0.5);
+    const dy = (y - height * 0.47) / (height * 0.37);
     // ...and of the footer.
     if (dx * dx + dy * dy < 1 || y > height - footer) continue;
     const round = rand() < 0.35;
@@ -1073,7 +1198,7 @@ function Milestone({ data, images, o, p }: Props) {
           <AppIcon src={images.icon} size={numSize * 0.9} p={p} />
         )}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, maxWidth: landscape ? 1300 : 920, marginTop: square ? 0 : 16 }}>
-          <Headline text={headline} size={square ? 80 : tall ? 120 : 100} p={p} align="center" lines={2} />
+          <Headline text={headline} size={square ? 80 : tall ? 120 : 100} width={landscape ? 1300 : 920} p={p} align="center" lines={2} />
           <Tagline text={sub} size={square ? 28 : tall ? 38 : 32} p={p} align="center" lines={2} />
         </div>
       </div>
@@ -1088,6 +1213,7 @@ const TEMPLATES: Record<PromoTemplateId, (props: Props) => React.ReactElement> =
   screens: Screens,
   loved: Loved,
   reviews: Reviews,
+  highlight: Highlight,
   download: Download,
   feature: Feature,
   store: Store,

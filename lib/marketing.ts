@@ -143,6 +143,23 @@ export interface PromoData {
   reached: string[];            // storefronts (country codes) with downloads, all time
   storefronts: number;          // how many App Store storefronts there are
   quotes: { title: string; body: string; reviewer: string; rating: number }[]; // up to 12; the Reviews card picks from these
+  reviews: HighlightReview[];   // every written review, newest first; Review Highlight picks one
+}
+
+export interface HighlightReview {
+  id: string;
+  title: string;
+  body: string;
+  reviewer: string;
+  rating: number;
+  country: string | null;      // storefront code
+  date: string | null;         // YYYY-MM-DD
+}
+
+/** The review Review Highlight shows until one is picked: the newest short-enough 5★ one. */
+export function defaultHighlight(list: HighlightReview[]): HighlightReview | null {
+  const five = list.filter((r) => r.rating === 5);
+  return five.find((r) => r.body.length >= 40 && r.body.length <= 300) ?? five[0] ?? list[0] ?? null;
 }
 
 /**
@@ -160,6 +177,17 @@ export async function promoData(appId: string): Promise<PromoData | null> {
       .map((q) => ({ title: plain(q.title || ''), body: plain(q.body || ''), reviewer: plain(q.reviewer || '') || 'App Store reviewer', rating: q.rating }))
       .filter((q) => q.body.length >= 20 && q.body.length <= 220)
       .slice(0, 12);
+    const all = (reviews({ appId, limit: 300, offset: 0 }).items as any[])
+      .map((q) => ({
+        id: String(q.id),
+        title: plain(q.title || ''),
+        body: plain(q.body || ''),
+        reviewer: plain(q.reviewer || '') || 'App Store reviewer',
+        rating: q.rating,
+        country: q.country_code || null,
+        date: q.created_date ? String(q.created_date).slice(0, 10) : null,
+      }))
+      .filter((q) => q.body.length > 0);
     return {
       appId,
       name: app.name.split(':')[0],
@@ -171,6 +199,7 @@ export async function promoData(appId: string): Promise<PromoData | null> {
       reached: Object.keys(r.apps[appId]?.countries ?? {}),
       storefronts: r.total,
       quotes,
+      reviews: all,
     };
   });
   return known && { ...known, listing: await listing(appId) };
@@ -185,6 +214,7 @@ export function defaultCopy(t: PromoTemplateId, data: PromoData) {
     screens: `See ${data.name}\nIn Action`,
     loved: data.countries > 1 ? `Loved In\n${data.countries} Countries` : `People Love\n${data.name}`,
     reviews: `People Love\n${data.name}`,
+    highlight: '',
     download: `Get ${data.name}${data.listing?.price === 'Free' ? ' free' : ''}`,
     feature: `Why\n${data.name}?`,
     store: 'Now On The\nApp Store',

@@ -6,17 +6,19 @@ import type { CardSizeId, PromoCardSettings, ReviewCount, PromoTemplateId, UiPre
 type Marketing = UiPrefs['marketing']
 
 /** What each template actually uses, so its popup only offers those. */
-export const PROMO_USES: Record<PromoTemplateId, { text: ('headline' | 'tagline' | 'cta' | 'notes')[]; shots: number; quotes: boolean; rating: boolean }> = {
-  launch: { text: ['headline', 'tagline', 'cta'], shots: 3, quotes: false, rating: true },
-  update: { text: ['headline', 'notes', 'cta'], shots: 1, quotes: false, rating: false },
-  screens: { text: ['headline', 'tagline', 'cta'], shots: 4, quotes: false, rating: false },
-  loved: { text: ['headline', 'cta'], shots: 0, quotes: false, rating: false },
-  reviews: { text: ['headline', 'cta'], shots: 0, quotes: true, rating: true },
-  download: { text: ['headline', 'tagline', 'cta'], shots: 0, quotes: false, rating: true },
-  feature: { text: ['headline', 'tagline', 'notes', 'cta'], shots: 1, quotes: false, rating: false },
-  store: { text: ['headline', 'tagline', 'cta'], shots: 3, quotes: false, rating: true },
-  rated: { text: ['headline', 'tagline', 'cta'], shots: 0, quotes: false, rating: false },
-  milestone: { text: ['headline', 'tagline', 'cta'], shots: 0, quotes: false, rating: false },
+// `quotes`: picks up to three of the short 5★ reviews (Reviews); `review`: picks any one review (Review Highlight).
+export const PROMO_USES: Record<PromoTemplateId, { text: ('headline' | 'tagline' | 'cta' | 'notes')[]; shots: number; quotes: boolean; review: boolean; rating: boolean }> = {
+  launch: { text: ['headline', 'tagline', 'cta'], shots: 3, quotes: false, review: false, rating: true },
+  update: { text: ['headline', 'notes', 'cta'], shots: 1, quotes: false, review: false, rating: false },
+  screens: { text: ['headline', 'tagline', 'cta'], shots: 4, quotes: false, review: false, rating: false },
+  loved: { text: ['headline', 'cta'], shots: 0, quotes: false, review: false, rating: false },
+  reviews: { text: ['headline', 'cta'], shots: 0, quotes: true, review: false, rating: true },
+  highlight: { text: ['headline', 'cta'], shots: 0, quotes: false, review: true, rating: false },
+  download: { text: ['headline', 'tagline', 'cta'], shots: 0, quotes: false, review: false, rating: true },
+  feature: { text: ['headline', 'tagline', 'notes', 'cta'], shots: 1, quotes: false, review: false, rating: false },
+  store: { text: ['headline', 'tagline', 'cta'], shots: 3, quotes: false, review: false, rating: true },
+  rated: { text: ['headline', 'tagline', 'cta'], shots: 0, quotes: false, review: false, rating: false },
+  milestone: { text: ['headline', 'tagline', 'cta'], shots: 0, quotes: false, review: false, rating: false },
 }
 
 export interface ResolvedPromo {
@@ -33,6 +35,7 @@ export interface ResolvedPromo {
   shots: string[]
   quotes?: number[]
   reviewCount: ReviewCount
+  review?: string
 }
 
 const set = <T,>(v: T | undefined | null) => (v === undefined || v === null || (v as unknown) === '' ? undefined : v)
@@ -59,6 +62,7 @@ export function resolvePromo(mk: Marketing, appId: string, t: PromoTemplateId, t
     shots: own.shots?.length ? own.shots : toolbarShots,
     quotes: t === 'reviews' && own.quotes?.length ? own.quotes : undefined,
     reviewCount: own.reviewCount ?? 3,
+    review: t === 'highlight' ? set(own.review) : undefined,
   }
 }
 
@@ -106,6 +110,7 @@ export function promoUrl(appId: string, t: PromoTemplateId, r: ResolvedPromo, v?
   if (r.notes) q.set('notes', r.notes)
   if (r.quotes?.length) q.set('quotes', r.quotes.join(','))
   if (t === 'reviews' && r.reviewCount === 1) q.set('n', '1')
+  if (r.review) q.set('review', r.review)
   if (v) q.set('v', v)
   return `/api/marketing?${q}`
 }
